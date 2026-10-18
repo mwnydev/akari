@@ -33,7 +33,7 @@
 - [x] 后端 Cargo workspace 骨架（4 个程序 + core/db/chain/runtime），core 费用计算过测试向量
 - [x] 前端 Turborepo 骨架（forum / wallet / admin + ui / fees / contracts / api-client），fees 过测试向量；typescript-eslint 暂不支持 TS 7，经 `.pnpmfile.cjs` 改用 TS 6 兼容包，支持后删除
 - [x] 合约 Foundry 骨架、测试网模拟 USDT（6 位）、FeeMath 过测试向量（覆盖率 100%，Slither 0 发现）
-- [x] CI 质量门禁初版（Rust / TS / Solidity + Slither / gitleaks）；待补：合约覆盖率 100% 硬门禁、knip、jscpd、cargo-llvm-cov、lefthook
+- [x] CI 质量门禁初版（Rust / TS / Solidity + Slither / gitleaks），GitHub Actions 首次全绿（be6881a）；待补：合约覆盖率 100% 硬门禁、knip、jscpd、cargo-llvm-cov、lefthook
 - [x] 本地依赖 compose（PostgreSQL 18.6 + PGroonga 4.1.0、Valkey 9.1.2、Mailpit 1.31.6）
 - [x] ADR 0001–0002；威胁分析 v0（docs/threat-model.md）
 - [x] ADR 0003–0005：EntryPoint v0.7 + Kernel v3.3；自写固定费 Paymaster（验证阶段预扣）；自写 48h 延迟恢复模块
