@@ -1,0 +1,7 @@
+# 沿用默认规则；只排除原样拷贝进来的第三方合约库（OpenZeppelin 测试里的错误名、示例 JWT 会误报）。
+[extend]
+useDefault = true
+
+[allowlist]
+description = "vendored third-party libraries"
+paths = ['''^contracts/lib/''']
