@@ -1,0 +1,114 @@
+/*
+ * 设计令牌（唯一定义处）。视觉风格：Liquid Glass（plan 第 14 节）。
+ * 毛玻璃只用于导航、侧栏、工具栏、弹窗、签名确认页等少数固定层；正文、列表、金额保持实底高对比。
+ * 使用方在 Tailwind 入口 CSS 中：@import "tailwindcss"; @import "@akari/ui/styles.css";
+ */
+
+@theme {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Helvetica Neue", Arial,
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --text-base: 16px;
+  --text-base--line-height: 1.7;
+
+  /* 圆角：内外层同心，内层 = 外层 − 内边距 */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 26px;
+  --radius-pill: 9999px;
+
+  /* 层级阴影 */
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.1);
+  --shadow-sheet: 0 2px 6px rgb(0 0 0 / 0.08), 0 24px 64px rgb(0 0 0 / 0.18);
+
+  /* 颜色（浅色）；状态色只表达含义 */
+  --color-bg: #f5f5f7;
+  --color-surface: #ffffff;
+  --color-fg: #1d1d1f;
+  --color-fg-muted: #6e6e73;
+  --color-border: rgb(0 0 0 / 0.1);
+  --color-accent: #0a66d8;
+  --color-success: #1a7f37;
+  --color-warning: #9a6700;
+  --color-danger: #c62828;
+
+  /* 玻璃材质 */
+  --color-glass: rgb(255 255 255 / 0.62);
+  --color-glass-border: rgb(255 255 255 / 0.5);
+  --blur-glass: 24px;
+
+  --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #000000;
+    --color-surface: #1c1c1e;
+    --color-fg: #f5f5f7;
+    --color-fg-muted: #98989d;
+    --color-border: rgb(255 255 255 / 0.12);
+    --color-accent: #4c9bff;
+    --color-success: #3fb950;
+    --color-warning: #d29922;
+    --color-danger: #ff6b6b;
+    --color-glass: rgb(28 28 30 / 0.6);
+    --color-glass-border: rgb(255 255 255 / 0.1);
+  }
+}
+
+/* 降低透明度 / 增强对比度：玻璃退回实色 */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :root {
+    --color-glass: var(--color-surface);
+    --color-glass-border: var(--color-border);
+    --blur-glass: 0px;
+  }
+}
+
+@utility glass {
+  background-color: var(--color-glass);
+  border: 1px solid var(--color-glass-border);
+  backdrop-filter: saturate(180%) blur(var(--blur-glass));
+  -webkit-backdrop-filter: saturate(180%) blur(var(--blur-glass));
+}
+
+/* 低端设备检测到掉帧时由脚本加上 data-no-blur，关闭模糊 */
+@utility glass-off {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background-color: var(--color-surface);
+}
+
+/* 金额：等宽数字 */
+@utility amount {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    color: var(--color-fg);
+    background-color: var(--color-bg);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  html[data-no-blur] .glass {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background-color: var(--color-surface);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

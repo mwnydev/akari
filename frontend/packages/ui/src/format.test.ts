@@ -1,0 +1,22 @@
+import { describe, expect, it } from "vitest";
+import { formatUsdt } from "./format";
+
+describe("formatUsdt", () => {
+  it("formats smallest units with 6 decimals and thousands separators", () => {
+    expect(formatUsdt("0")).toBe("0.000000");
+    expect(formatUsdt("1")).toBe("0.000001");
+    expect(formatUsdt(1_000_000n)).toBe("1.000000");
+    expect(formatUsdt("124124072")).toBe("124.124072");
+    expect(formatUsdt("1234567890123456")).toBe("1,234,567,890.123456");
+    expect(formatUsdt("-50000")).toBe("-0.050000");
+  });
+
+  it("is exact beyond float precision", () => {
+    expect(formatUsdt("9007199254740993000001")).toBe("9,007,199,254,740,993.000001");
+  });
+
+  it("rejects non-integer strings", () => {
+    expect(() => formatUsdt("1.5")).toThrow();
+    expect(() => formatUsdt("")).toThrow();
+  });
+});

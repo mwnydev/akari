@@ -1,0 +1,148 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.37;
+
+import {Test} from "forge-std/Test.sol";
+import {stdJson} from "forge-std/StdJson.sol";
+import {FeeMath} from "../src/libraries/FeeMath.sol";
+
+/// @dev External wrapper so reverts can be asserted with vm.expectRevert.
+contract FeeMathHarness {
+    function streamUnlocked(uint256 net, uint256 elapsed, uint256 periods) external pure returns (uint256) {
+        return FeeMath.streamUnlocked(net, elapsed, periods);
+    }
+}
+
+contract FeeMathTest is Test {
+    using stdJson for string;
+
+    string internal json;
+    FeeMathHarness internal harness;
+
+    function setUp() public {
+        json = vm.readFile(string.concat(vm.projectRoot(), "/../test-vectors/fees.json"));
+        harness = new FeeMathHarness();
+    }
+
+    function _uint(string memory key) internal view returns (uint256) {
+        return vm.parseUint(json.readString(key));
+    }
+
+    function _payer(string memory s) internal pure returns (FeeMath.Payer) {
+        bytes32 h = keccak256(bytes(s));
+        if (h == keccak256("seller")) return FeeMath.Payer.Seller;
+        if (h == keccak256("buyer")) return FeeMath.Payer.Buyer;
+        if (h == keccak256("half")) return FeeMath.Payer.Half;
+        revert("unknown payer");
+    }
+
+    function test_vectorVersion() public view {
+        assertEq(json.readUint(".version"), 1);
+    }
+
+    function test_feeVectors() public view {
+        uint256 n;
+        for (; vm.keyExistsJson(json, string.concat(".fees[", vm.toString(n), "]")); n++) {
+            string memory p = string.concat(".fees[", vm.toString(n), "]");
+            string memory name = json.readString(string.concat(p, ".name"));
+            uint256 amount = _uint(string.concat(p, ".amount"));
+            uint256 minFee = _uint(string.concat(p, ".minFee"));
+            FeeMath.Payer payer = _payer(json.readString(string.concat(p, ".feePayer")));
+
+            uint256 total = FeeMath.feeTotal(
+                amount, json.readUint(string.concat(p, ".feeBps")), minFee, json.readBool(string.concat(p, ".campaign"))
+            );
+            (uint256 bf, uint256 sf) = FeeMath.split(total, payer);
+            (uint256 bg, uint256 sg) = FeeMath.split(_uint(string.concat(p, ".baseGas")), payer);
+
+            assertEq(bf, _uint(string.concat(p, ".expect.buyerFee")), name);
+            assertEq(sf, _uint(string.concat(p, ".expect.sellerFee")), name);
+            assertEq(bg, _uint(string.concat(p, ".expect.buyerGas")), name);
+            assertEq(sg, _uint(string.concat(p, ".expect.sellerGas")), name);
+            assertEq(FeeMath.buyerPays(amount, bf, bg), _uint(string.concat(p, ".expect.buyerPays")), name);
+            assertEq(
+                FeeMath.disputeFee(total, minFee, json.readUint(string.concat(p, ".disputeMulBps"))),
+                _uint(string.concat(p, ".expect.disputeFee")),
+                name
+            );
+        }
+        assertGt(n, 0, "no fee vectors");
+    }
+
+    function test_streamVectors() public view {
+        uint256 n;
+        for (; vm.keyExistsJson(json, string.concat(".streams[", vm.toString(n), "]")); n++) {
+            string memory p = string.concat(".streams[", vm.toString(n), "]");
+            string memory name = json.readString(string.concat(p, ".name"));
+            uint256 amount = _uint(string.concat(p, ".amount"));
+            FeeMath.Payer payer = _payer(json.readString(string.concat(p, ".feePayer")));
+
+            uint256 total = FeeMath.feeTotal(
+                amount, json.readUint(string.concat(p, ".feeBps")), _uint(string.concat(p, ".minFee")), false
+            );
+            (, uint256 sf) = FeeMath.split(total, payer);
+            (, uint256 sg) = FeeMath.split(_uint(string.concat(p, ".baseGas")), payer);
+            uint256 net = FeeMath.streamNet(amount, sf, sg);
+            assertEq(net, _uint(string.concat(p, ".expect.unlockableNet")), name);
+
+            uint256 periods = json.readUint(string.concat(p, ".periods"));
+            uint256 k;
+            for (; vm.keyExistsJson(json, string.concat(p, ".expect.points[", vm.toString(k), "]")); k++) {
+                string memory q = string.concat(p, ".expect.points[", vm.toString(k), "]");
+                assertEq(
+                    FeeMath.streamUnlocked(net, json.readUint(string.concat(q, ".elapsedPeriods")), periods),
+                    _uint(string.concat(q, ".unlocked")),
+                    name
+                );
+            }
+            assertGt(k, 0, "no stream points");
+        }
+        assertGt(n, 0, "no stream vectors");
+    }
+
+    function test_claimNet() public view {
+        uint256 claimGas = _uint(".claimGas");
+        assertEq(FeeMath.claimNet(1_000_000, 0, claimGas), 980_000);
+        assertEq(FeeMath.claimNet(20_000, 0, claimGas), 0, "claimable == claimGas not allowed");
+        assertEq(FeeMath.claimNet(20_001, 0, claimGas), 1);
+        assertEq(FeeMath.claimNet(500, 500, claimGas), 0);
+    }
+
+    function test_streamUnlocked_zeroPeriodsReverts() public {
+        vm.expectRevert(FeeMath.ZeroPeriods.selector);
+        harness.streamUnlocked(1, 0, 0);
+    }
+
+    // ---- fuzz ----
+
+    function testFuzz_splitSumsToTotal(uint256 total, uint8 p) public pure {
+        (uint256 b, uint256 s) = FeeMath.split(total, FeeMath.Payer(p % 3));
+        assertEq(b + s, total);
+        if (p % 3 == 2) assertLe(s - b, 1);
+    }
+
+    function testFuzz_feeTotalBounds(uint128 amount, uint16 bps, uint64 minFee, bool campaign) public pure {
+        bps = uint16(bound(bps, 0, 1000));
+        uint256 fee = FeeMath.feeTotal(amount, bps, minFee, campaign);
+        uint256 raw = uint256(amount) * bps / 10_000;
+        if (campaign) assertEq(fee, raw);
+        else assertEq(fee, raw > minFee ? raw : minFee);
+    }
+
+    function testFuzz_streamUnlockedMonotonic(uint128 net, uint16 periods, uint16 e1, uint16 e2) public pure {
+        periods = uint16(bound(periods, 1, 8760)); // hourly x 365 days
+        (uint256 lo, uint256 hi) = e1 <= e2 ? (e1, e2) : (e2, e1);
+        uint256 a = FeeMath.streamUnlocked(net, lo, periods);
+        uint256 b = FeeMath.streamUnlocked(net, hi, periods);
+        assertLe(a, b);
+        assertLe(b, net);
+        assertEq(FeeMath.streamUnlocked(net, periods, periods), net);
+        assertEq(FeeMath.streamUnlocked(net, 0, periods), 0);
+    }
+
+    function testFuzz_claimNetNeverExceedsClaimable(uint128 unlocked, uint128 claimed, uint32 claimGas) public pure {
+        vm.assume(claimed <= unlocked);
+        uint256 got = FeeMath.claimNet(unlocked, claimed, claimGas);
+        assertLe(got, uint256(unlocked) - claimed);
+        if (got > 0) assertEq(got + claimGas, uint256(unlocked) - claimed);
+    }
+}

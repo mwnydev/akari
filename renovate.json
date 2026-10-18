@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":pinAllExceptPeerDependencies", "helpers:pinGitHubActionDigests"],
+  "timezone": "Asia/Shanghai",
+  "schedule": ["before 9am on monday"],
+  "rangeStrategy": "pin",
+  "prConcurrentLimit": 10,
+  "vulnerabilityAlerts": { "schedule": ["at any time"], "labels": ["security"] },
+  "packageRules": [
+    {
+      "description": "数据库等核心组件大版本等到 x.2 再升（plan 第 3 节）",
+      "matchPackageNames": ["groonga/pgroonga", "valkey/valkey"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "钱包与合约相关依赖单独 PR，资金相关改动需两人审查",
+      "matchPackageNames": ["viem", "wagmi", "@zerodev/**", "permissionless", "alloy", "alloy-**", "webauthn-rs"],
+      "groupName": null,
+      "labels": ["funds-review"]
+    }
+  ]
+}

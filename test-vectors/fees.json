@@ -1,0 +1,286 @@
+{
+  "version": 1,
+  "unit": "USDT smallest unit (6 decimals); all amounts are decimal strings",
+  "rules": {
+    "fee": "total = campaign ? floor(amount*feeBps/10000) : max(floor(amount*feeBps/10000), minFee)",
+    "split": "seller: (0,total); buyer: (total,0); half: buyer=floor(total/2), seller=total-buyer. Applies to fee and baseGas",
+    "buyerPays": "amount + buyerFee + buyerGas",
+    "disputeFee": "floor((feeTotal>0 ? feeTotal : minFee) * disputeMulBps / 10000)",
+    "streamNet": "amount - sellerFee - sellerGas",
+    "streamUnlocked": "floor(net * min(elapsedPeriods, periods) / periods)",
+    "claim": "claimable = unlocked - claimed; requires claimable > claimGas; seller receives claimable - claimGas"
+  },
+  "claimGas": "20000",
+  "fees": [
+    {
+      "name": "min fee applies, seller pays",
+      "amount": "5000000",
+      "feePayer": "seller",
+      "feeBps": 100,
+      "minFee": "1000000",
+      "campaign": false,
+      "baseGas": "100000",
+      "disputeMulBps": 10000,
+      "expect": {
+        "buyerFee": "0",
+        "sellerFee": "1000000",
+        "buyerGas": "0",
+        "sellerGas": "100000",
+        "buyerPays": "5000000",
+        "disputeFee": "1000000"
+      }
+    },
+    {
+      "name": "min fee applies, buyer pays",
+      "amount": "50000000",
+      "feePayer": "buyer",
+      "feeBps": 100,
+      "minFee": "1000000",
+      "campaign": false,
+      "baseGas": "100000",
+      "disputeMulBps": 10000,
+      "expect": {
+        "buyerFee": "1000000",
+        "sellerFee": "0",
+        "buyerGas": "100000",
+        "sellerGas": "0",
+        "buyerPays": "51100000",
+        "disputeFee": "1000000"
+      }
+    },
+    {
+      "name": "min fee split half",
+      "amount": "20000000",
+      "feePayer": "half",
+      "feeBps": 100,
+      "minFee": "1000000",
+      "campaign": false,
+      "baseGas": "100000",
+      "disputeMulBps": 10000,
+      "expect": {
+        "buyerFee": "500000",
+        "sellerFee": "500000",
+        "buyerGas": "50000",
+        "sellerGas": "50000",
+        "buyerPays": "20550000",
+        "disputeFee": "1000000"
+      }
+    },
+    {
+      "name": "1% of 1000 USDT, seller",
+      "amount": "1000000000",
+      "feePayer": "seller",
+      "feeBps": 100,
+      "minFee": "1000000",
+      "campaign": false,
+      "baseGas": "100000",
+      "disputeMulBps": 10000,
+      "expect": {
+        "buyerFee": "0",
+        "sellerFee": "10000000",
+        "buyerGas": "0",
+        "sellerGas": "100000",
+        "buyerPays": "1000000000",
+        "disputeFee": "10000000"
+      }
+    },
+    {
+      "name": "1% of 1000 USDT, half",
+      "amount": "1000000000",
+      "feePayer": "half",
+      "feeBps": 100,
+      "minFee": "1000000",
+      "campaign": false,
+      "baseGas": "100000",
+      "disputeMulBps": 10000,
+      "expect": {
+        "buyerFee": "5000000",
+        "sellerFee": "5000000",
+        "buyerGas": "50000",
+        "sellerGas": "50000",
+        "buyerPays": "1005050000",
+        "disputeFee": "10000000"
+      }
+    },
+    {
+      "name": "odd amount floors, half",
+      "amount": "123456789",
+      "feePayer": "half",
+      "feeBps": 100,
+      "minFee": "1000000",
+      "campaign": false,
+      "baseGas": "100000",
+      "disputeMulBps": 10000,
+      "expect": {
+        "buyerFee": "617283",
+        "sellerFee": "617284",
+        "buyerGas": "50000",
+        "sellerGas": "50000",
+        "buyerPays": "124124072",
+        "disputeFee": "1234567"
+      }
+    },
+    {
+      "name": "10% max rate",
+      "amount": "300000000",
+      "feePayer": "buyer",
+      "feeBps": 1000,
+      "minFee": "1000000",
+      "campaign": false,
+      "baseGas": "100000",
+      "disputeMulBps": 10000,
+      "expect": {
+        "buyerFee": "30000000",
+        "sellerFee": "0",
+        "buyerGas": "100000",
+        "sellerGas": "0",
+        "buyerPays": "330100000",
+        "disputeFee": "30000000"
+      }
+    },
+    {
+      "name": "free campaign rate 0",
+      "amount": "500000000",
+      "feePayer": "seller",
+      "feeBps": 0,
+      "minFee": "1000000",
+      "campaign": true,
+      "baseGas": "100000",
+      "disputeMulBps": 10000,
+      "expect": {
+        "buyerFee": "0",
+        "sellerFee": "0",
+        "buyerGas": "0",
+        "sellerGas": "100000",
+        "buyerPays": "500000000",
+        "disputeFee": "1000000"
+      }
+    },
+    {
+      "name": "campaign rate 0.5%",
+      "amount": "333333333",
+      "feePayer": "half",
+      "feeBps": 50,
+      "minFee": "1000000",
+      "campaign": true,
+      "baseGas": "100000",
+      "disputeMulBps": 10000,
+      "expect": {
+        "buyerFee": "833333",
+        "sellerFee": "833333",
+        "buyerGas": "50000",
+        "sellerGas": "50000",
+        "buyerPays": "334216666",
+        "disputeFee": "1666666"
+      }
+    }
+  ],
+  "streams": [
+    {
+      "name": "300 USDT daily x30, seller pays fees",
+      "amount": "300000000",
+      "feePayer": "seller",
+      "feeBps": 100,
+      "minFee": "1000000",
+      "baseGas": "100000",
+      "periods": 30,
+      "expect": {
+        "unlockableNet": "296900000",
+        "points": [
+          {
+            "elapsedPeriods": 0,
+            "unlocked": "0"
+          },
+          {
+            "elapsedPeriods": 1,
+            "unlocked": "9896666"
+          },
+          {
+            "elapsedPeriods": 15,
+            "unlocked": "148450000"
+          },
+          {
+            "elapsedPeriods": 29,
+            "unlocked": "287003333"
+          },
+          {
+            "elapsedPeriods": 30,
+            "unlocked": "296900000"
+          },
+          {
+            "elapsedPeriods": 31,
+            "unlocked": "296900000"
+          }
+        ]
+      }
+    },
+    {
+      "name": "100 USDT hourly x7, buyer pays fees",
+      "amount": "100000000",
+      "feePayer": "buyer",
+      "feeBps": 100,
+      "minFee": "1000000",
+      "baseGas": "100000",
+      "periods": 7,
+      "expect": {
+        "unlockableNet": "100000000",
+        "points": [
+          {
+            "elapsedPeriods": 0,
+            "unlocked": "0"
+          },
+          {
+            "elapsedPeriods": 1,
+            "unlocked": "14285714"
+          },
+          {
+            "elapsedPeriods": 3,
+            "unlocked": "42857142"
+          },
+          {
+            "elapsedPeriods": 6,
+            "unlocked": "85714285"
+          },
+          {
+            "elapsedPeriods": 7,
+            "unlocked": "100000000"
+          },
+          {
+            "elapsedPeriods": 100,
+            "unlocked": "100000000"
+          }
+        ]
+      }
+    },
+    {
+      "name": "odd 1000.000001 weekly x3, half",
+      "amount": "1000000001",
+      "feePayer": "half",
+      "feeBps": 100,
+      "minFee": "1000000",
+      "baseGas": "100000",
+      "periods": 3,
+      "expect": {
+        "unlockableNet": "994950001",
+        "points": [
+          {
+            "elapsedPeriods": 0,
+            "unlocked": "0"
+          },
+          {
+            "elapsedPeriods": 1,
+            "unlocked": "331650000"
+          },
+          {
+            "elapsedPeriods": 2,
+            "unlocked": "663300000"
+          },
+          {
+            "elapsedPeriods": 3,
+            "unlocked": "994950001"
+          }
+        ]
+      }
+    }
+  ]
+}

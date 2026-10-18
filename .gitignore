@@ -1,0 +1,23 @@
+# Rust
+/backend/target/
+# Node
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+# Foundry
+/contracts/out/
+/contracts/cache/
+/contracts/broadcast/*/31337/
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

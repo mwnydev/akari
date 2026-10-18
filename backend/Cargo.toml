@@ -1,0 +1,39 @@
+[workspace]
+resolver = "3"
+members = ["bins/*", "crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+forum-core = { path = "crates/core" }
+forum-db = { path = "crates/db" }
+forum-chain = { path = "crates/chain" }
+forum-runtime = { path = "crates/runtime" }
+
+tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "signal", "net"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+axum = "=0.8.9"
+tower-http = { version = "=0.7.1", features = ["trace", "timeout", "compression-gzip"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "1"
+thiserror = "=2.0.21"
+anyhow = "=1.0.104"
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "json"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
