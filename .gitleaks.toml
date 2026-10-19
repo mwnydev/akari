@@ -3,10 +3,11 @@
 useDefault = true
 
 [allowlist]
-description = "原样拷贝的第三方合约库；公开合约地址与本地 Anvil 专用开发私钥（由公开字符串 akari-dev-only:* 派生，chain id 31337，无真实价值）"
+description = "原样拷贝的第三方合约库；以太坊地址（恰好 20 字节，公开信息，不可能是密钥）；本地 Anvil 专用开发私钥（由公开字符串 akari-dev-only:* 派生，chain id 31337，无真实价值）"
 paths = ['''^contracts/lib/''']
-regexTarget = "match"
+regexTarget = "secret"
 regexes = [
-  '''0x7ab16Ff354AcB328452F1D445b3Ddee9a91e9e69''',
-  '''0x2bd477e315997bfc5018a2d4ef4780999f011bceb8cf602c009337739f641d81''',
+  # 锚定整串：32 字节私钥长度不同，不会被这条放行
+  '''^0x[0-9a-fA-F]{40}$''',
+  '''^0x2bd477e315997bfc5018a2d4ef4780999f011bceb8cf602c009337739f641d81$''',
 ]
