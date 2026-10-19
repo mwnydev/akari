@@ -1,0 +1,48 @@
+# {{ ansible_managed }}
+[Unit]
+Description={{ item.bin }}{% if item.instances is defined %} instance %i{% endif %}
+
+After=network-online.target postgresql.service valkey.service
+Wants=network-online.target
+
+[Service]
+User={{ item.user }}
+Group={{ item.user }}
+ExecStart={{ app_root }}/current/bin/{{ item.bin }}
+{% if item.instances is defined %}
+Environment=API_LISTEN=127.0.0.1:808%i
+{% endif %}
+EnvironmentFile=-/etc/akari/{{ item.bin }}.env
+{% for c in item.credentials | default([]) %}
+LoadCredentialEncrypted={{ c }}:/etc/akari/credstore/{{ c }}.cred
+{% endfor %}
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=30
+MemoryMax={{ item.memory_max }}
+{% if item.cpu_quota is defined %}
+CPUQuota={{ item.cpu_quota }}
+Nice=5
+{% endif %}
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictNamespaces=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+{% if item.bin == 'forum-sponsor' %}
+# forum-sponsor 只需出网访问 RPC 与 Bundler、本机数据库
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+{% endif %}
+
+[Install]
+WantedBy=multi-user.target

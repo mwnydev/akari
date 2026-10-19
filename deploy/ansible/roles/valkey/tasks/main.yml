@@ -1,0 +1,43 @@
+# 官方二进制包（Ubuntu noble 构建，glibc 2.39；Debian 13 为 2.41，可直接运行），校验 sha256。
+- name: Create valkey user
+  ansible.builtin.user:
+    name: valkey
+    system: true
+    shell: /usr/sbin/nologin
+    home: /var/lib/valkey
+
+- name: Download Valkey release
+  ansible.builtin.get_url:
+    url: "https://download.valkey.io/releases/valkey-{{ valkey_version }}-noble-x86_64.tar.gz"
+    dest: "/opt/valkey-{{ valkey_version }}.tar.gz"
+    checksum: "sha256:{{ valkey_sha256 }}"
+    mode: "0644"
+
+- name: Unpack Valkey
+  ansible.builtin.unarchive:
+    src: "/opt/valkey-{{ valkey_version }}.tar.gz"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/valkey-{{ valkey_version }}-noble-x86_64/bin/valkey-server"
+
+- name: Valkey config
+  ansible.builtin.template:
+    src: valkey.conf.j2
+    dest: /etc/valkey.conf
+    owner: valkey
+    mode: "0640"
+  notify: Restart valkey
+
+- name: Valkey unit
+  ansible.builtin.template:
+    src: valkey.service.j2
+    dest: /etc/systemd/system/valkey.service
+    mode: "0644"
+  notify: Restart valkey
+
+- name: Enable valkey
+  ansible.builtin.systemd_service:
+    name: valkey
+    enabled: true
+    state: started
+    daemon_reload: true

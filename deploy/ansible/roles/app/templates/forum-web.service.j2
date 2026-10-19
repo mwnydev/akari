@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Akari forum (Next.js standalone)
+After=network-online.target
+
+[Service]
+User=forum-web
+Group=forum-web
+WorkingDirectory={{ app_root }}/current/forum
+ExecStart=/opt/node-v{{ node_version }}-linux-x64/bin/node server.js
+Environment=NODE_ENV=production
+Environment=PORT={{ nextjs_port }}
+Environment=HOSTNAME=127.0.0.1
+EnvironmentFile=-/etc/akari/web.env
+Restart=on-failure
+MemoryMax={{ nextjs_memory_max }}
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

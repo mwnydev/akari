@@ -1,0 +1,36 @@
+# {{ ansible_managed }}
+{
+	admin unix//run/caddy/admin.sock
+	servers {
+		# 真实 IP 只信任 Cloudflare 网段的 CF-Connecting-IP（plan 第 11 节）
+		trusted_proxies static {{ (firewall_cf_v4 + firewall_cf_v6) | join(' ') }}
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+{{ site_domain }} {
+	tls {{ caddy_origin_cert }} {{ caddy_origin_key }} {
+		client_auth {
+			mode require_and_verify
+			trust_pool file {{ caddy_cf_origin_pull_ca }}
+		}
+	}
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy {% for p in api_ports %}127.0.0.1:{{ p }} {% endfor %}{
+			lb_policy least_conn
+			health_uri /api/v1/healthz
+			health_interval 5s
+		}
+	}
+
+	handle {
+		# 限制 Next.js 最大并发，超出返回 503，不会被撑爆内存（plan 第 11 节）
+		reverse_proxy 127.0.0.1:{{ nextjs_port }} {
+			transport http {
+				max_conns_per_host {{ nextjs_max_conns }}
+			}
+		}
+	}
+}

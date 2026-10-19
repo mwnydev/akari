@@ -1,0 +1,29 @@
+# 80/443 只放行 Cloudflare 网段（plan 第 11、13 节）；源站另由 Caddy 校验 Authenticated Origin Pulls。
+- name: Fetch Cloudflare IP ranges
+  ansible.builtin.uri:
+    url: "https://www.cloudflare.com/ips-{{ item }}"
+    return_content: true
+  loop: [v4, v6]
+  register: firewall_cf_ips
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Keep Cloudflare ranges for later roles (Caddy trusted_proxies)
+  ansible.builtin.set_fact:
+    firewall_cf_v4: "{{ firewall_cf_ips.results[0].content.split() }}"
+    firewall_cf_v6: "{{ firewall_cf_ips.results[1].content.split() }}"
+
+- name: Write nftables ruleset
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    mode: "0644"
+    validate: /usr/sbin/nft -c -f %s
+  notify: Reload nftables
+
+- name: Enable nftables
+  ansible.builtin.service:
+    name: nftables
+    enabled: true
+    state: started

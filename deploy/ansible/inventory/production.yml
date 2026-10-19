@@ -1,0 +1,5 @@
+# 生产：8 核 32 GB、NVMe ≥ 500 GB（plan 第 13 节）。主机地址上线前填写。
+production:
+  hosts:
+    prod-1:
+      ansible_host: 203.0.113.10 # 占位（TEST-NET-3）

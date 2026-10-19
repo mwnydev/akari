@@ -1,0 +1,17 @@
+# plan 第 8 节 PostgreSQL 参数（8 核 32 GB NVMe）
+pg_settings:
+  shared_buffers: 8GB
+  effective_cache_size: 20GB
+  work_mem: 32MB
+  maintenance_work_mem: 1GB
+  random_page_cost: 1.1
+  effective_io_concurrency: 200
+  max_wal_size: 8GB
+  checkpoint_timeout: 15min
+  huge_pages: "on"
+  max_connections: 150
+pg_memory_high: 16G
+huge_pages_count: 4400 # 8GB shared_buffers / 2MB + 余量
+valkey_maxmemory: 1536mb
+valkey_memory_max: 2G # plan 第 13 节 Valkey 2 GB，maxmemory 留出进程与 AOF 重写余量
+nextjs_memory_max: 2G

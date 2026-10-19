@@ -1,0 +1,21 @@
+#!/usr/sbin/nft -f
+# {{ ansible_managed }}
+flush ruleset
+
+table inet filter {
+  set cloudflare_v4 { type ipv4_addr; flags interval; elements = { {{ firewall_cf_v4 | join(', ') }} } }
+  set cloudflare_v6 { type ipv6_addr; flags interval; elements = { {{ firewall_cf_v6 | join(', ') }} } }
+
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iif lo accept
+    ct state established,related accept
+    ct state invalid drop
+    meta l4proto { icmp, ipv6-icmp } accept
+    tcp dport {{ ssh_port }} ct state new limit rate 10/minute accept
+    ip saddr @cloudflare_v4 tcp dport { 80, 443 } accept
+    ip6 saddr @cloudflare_v6 tcp dport { 80, 443 } accept
+  }
+  chain forward { type filter hook forward priority 0; policy drop; }
+  chain output { type filter hook output priority 0; policy accept; }
+}

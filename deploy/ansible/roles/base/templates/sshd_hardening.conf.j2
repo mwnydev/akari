@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+Port {{ ssh_port }}
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AllowUsers {{ ansible_user }}
+MaxAuthTries 3
+X11Forwarding no

@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+port 0
+unixsocket /run/valkey/valkey.sock
+unixsocketperm 770
+dir /var/lib/valkey
+appendonly yes
+appendfsync everysec
+maxmemory {{ valkey_maxmemory }}
+# 只放可丢的缓存、会话、推送（plan 第 2 节）；会话键不能被随意淘汰，用 volatile-lru 只淘汰带过期的键
+maxmemory-policy volatile-lru

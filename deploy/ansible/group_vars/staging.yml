@@ -1,0 +1,17 @@
+# plan 第 13 节测试服务器（4 核 12 GB）参数
+pg_settings:
+  shared_buffers: 2GB
+  effective_cache_size: 5GB
+  work_mem: 16MB
+  maintenance_work_mem: 256MB
+  random_page_cost: 1.1
+  effective_io_concurrency: 200
+  max_wal_size: 2GB
+  checkpoint_timeout: 15min
+  huge_pages: "try"
+  max_connections: 100
+pg_memory_high: 4G
+huge_pages_count: 0
+valkey_maxmemory: 384mb
+valkey_memory_max: 512M
+nextjs_memory_max: 1536M

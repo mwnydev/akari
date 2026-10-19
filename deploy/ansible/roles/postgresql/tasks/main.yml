@@ -1,0 +1,39 @@
+- name: Add PGDG apt repository
+  ansible.builtin.deb822_repository:
+    name: pgdg
+    types: deb
+    uris: https://apt.postgresql.org/pub/repos/apt
+    suites: "{{ ansible_distribution_release }}-pgdg"
+    components: main
+    signed_by: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
+- name: Add Groonga apt source (PGroonga)
+  ansible.builtin.apt:
+    deb: "https://packages.groonga.org/debian/groonga-apt-source-latest-{{ ansible_distribution_release }}.deb"
+
+- name: Install PostgreSQL, PGroonga and pgBackRest
+  ansible.builtin.apt:
+    name:
+      - "postgresql-{{ postgresql_version }}"
+      - "{{ pgroonga_package }}"
+      - pgbackrest
+    state: present
+    update_cache: true
+
+- name: PostgreSQL tuning (plan 第 8 节)
+  ansible.builtin.template:
+    src: akari.conf.j2
+    dest: "/etc/postgresql/{{ postgresql_version }}/main/conf.d/akari.conf"
+    owner: postgres
+    group: postgres
+    mode: "0644"
+  notify: Restart postgresql
+
+- name: Soft memory limit only (hard MemoryMax would OOM-kill the database)
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/postgresql@{{ postgresql_version }}-main.service.d/memory.conf"
+    mode: "0644"
+    content: |
+      [Service]
+      MemoryHigh={{ pg_memory_high }}
+  notify: Restart postgresql

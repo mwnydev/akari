@@ -1,0 +1,39 @@
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: [unattended-upgrades, apt-listchanges, ca-certificates, curl, gnupg, nftables, chrony, aide]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Enable automatic security updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+- name: Harden sshd (keys only, non-default port)
+  ansible.builtin.template:
+    src: sshd_hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-akari.conf
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Restart sshd
+
+- name: Kernel settings
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/90-akari.conf
+  loop: "{{ base_sysctl | dict2items }}"
+  vars:
+    base_sysctl:
+      vm.nr_hugepages: "{{ huge_pages_count }}"
+      vm.overcommit_memory: 1 # Valkey 后台持久化需要
+      vm.swappiness: 1
+      net.core.somaxconn: 4096

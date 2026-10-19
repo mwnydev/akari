@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+listen_addresses = ''            # 只走本机 Unix socket
+{% for k, v in pg_settings.items() %}
+{{ k }} = {{ v }}
+{% endfor %}
+default_toast_compression = lz4
+wal_compression = zstd
+jit = off
+shared_preload_libraries = 'pg_stat_statements,auto_explain'
+auto_explain.log_min_duration = '50ms'
+autovacuum_vacuum_scale_factor = 0.02
+autovacuum_analyze_scale_factor = 0.02
+# 连续归档到 R2：pgbackrest 配置待 R2 凭据就绪后启用（见 docs/PROGRESS.md）
+# archive_mode = on
+# archive_command = 'pgbackrest --stanza=akari archive-push %p'

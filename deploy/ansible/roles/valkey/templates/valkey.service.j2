@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Valkey {{ valkey_version }}
+After=network.target
+
+[Service]
+User=valkey
+Group=valkey
+ExecStart=/opt/valkey-{{ valkey_version }}-noble-x86_64/bin/valkey-server /etc/valkey.conf --supervised systemd
+Type=notify
+RuntimeDirectory=valkey
+RuntimeDirectoryMode=0750
+StateDirectory=valkey
+MemoryMax={{ valkey_memory_max }}
+ProtectSystem=strict
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

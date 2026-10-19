@@ -1,0 +1,10 @@
+- name: Akari single-host server
+  hosts: all
+  become: true
+  roles:
+    - base
+    - firewall
+    - postgresql
+    - valkey
+    - caddy
+    - app

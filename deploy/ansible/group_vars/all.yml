@@ -1,0 +1,33 @@
+# 版本与 plan 第 3 节一致；升级走 PR。
+ansible_user: deploy
+ansible_port: "{{ ssh_port }}"
+ssh_port: 22022
+timezone: UTC
+
+postgresql_version: 18
+pgroonga_package: postgresql-18-pgdg-pgroonga
+valkey_version: 9.1.2
+valkey_sha256: 0d2a79936cbafa5f527a5175536bb17bd3f767f95f53529e59dddfacf762eec0 # gitleaks:allow（公开校验和）
+
+app_root: /opt/akari
+app_releases_keep: 5
+# 每个程序独立系统用户（plan 第 13 节）；forum-sponsor 是唯一持有私钥的程序
+app_services:
+  - { unit: forum-api@, user: forum-api, bin: forum-api, memory_max: 512M, instances: [1, 2] }
+  - { unit: forum-worker, user: forum-worker, bin: forum-worker, memory_max: 1G, cpu_quota: 200% }
+  - { unit: forum-indexer, user: forum-indexer, bin: forum-indexer, memory_max: 400M }
+  - { unit: forum-sponsor, user: forum-sponsor, bin: forum-sponsor, memory_max: 100M, credentials: [paymaster-signer, relayer-hot-wallet] }
+
+# Caddy：源站证书用 Cloudflare Origin CA；只接受带 Cloudflare 客户端证书的连接（Authenticated Origin Pulls）
+site_domain: forum.example.com # 占位，域名待站长确定
+caddy_origin_cert: /etc/caddy/certs/origin.pem
+caddy_origin_key: /etc/caddy/certs/origin.key
+caddy_cf_origin_pull_ca: /etc/caddy/certs/cloudflare-origin-pull-ca.pem
+api_ports: [8081, 8082]
+nextjs_port: 3000
+nextjs_max_conns: 64
+
+# Next.js 运行时（plan 第 3 节：Node.js 24 LTS）
+node_version: 24.22.0
+node_sha256: cc2f601cee82d9a5a233302fe307abc600727035fd7d2c3a3571755989e95008 # gitleaks:allow（公开校验和）
+github_repo: mwnydev/akari
