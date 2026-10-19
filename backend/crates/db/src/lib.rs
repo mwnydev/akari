@@ -5,6 +5,7 @@ pub mod audit;
 pub mod chain;
 pub mod credits;
 pub mod exp;
+pub mod floor;
 pub mod forums;
 pub mod jobs;
 pub mod messages;

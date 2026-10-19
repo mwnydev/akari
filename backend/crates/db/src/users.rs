@@ -173,6 +173,20 @@ pub async fn id_by_name(db: impl PgExecutor<'_>, name: &str) -> Result<Option<i6
     Ok(row.map(|r| r.id))
 }
 
+/// 一批用户名（已转小写）对应的用户 ID；不存在的跳过。
+pub async fn ids_by_names(
+    db: impl PgExecutor<'_>,
+    lower_names: &[String],
+) -> Result<Vec<i64>, sqlx::Error> {
+    if lower_names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_file!("queries/users_ids_by_names.sql", lower_names)
+        .fetch_all(db)
+        .await?;
+    Ok(rows.into_iter().map(|r| r.id).collect())
+}
+
 /// 设置用户名的结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetUsername {

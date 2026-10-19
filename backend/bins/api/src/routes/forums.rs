@@ -179,21 +179,47 @@ async fn respond(
     next_cursor: Option<String>,
 ) -> ApiResult<Json<BoardResponse>> {
     let user_ids = topic_user_ids(pinned.iter().chain(&normal));
+    let n = pinned.len();
+    let mut all = summaries(state, &[pinned, normal].concat()).await?;
+    let topics = all.split_off(n);
     Ok(Json(BoardResponse {
         forum: forum.into(),
-        pinned: pinned.iter().map(TopicSummary::from).collect(),
-        topics: normal.iter().map(TopicSummary::from).collect(),
+        pinned: all,
+        topics,
         users: cards::load(state, &user_ids).await?,
         next_page,
         next_cursor,
     }))
 }
 
-/// 主题列表里出现的作者与最后回复者。
+/// 列表行：主题摘要，交易帖补上剩余库存（本页的交易帖一次查询）。
+pub async fn summaries(state: &AppState, topics: &[Topic]) -> ApiResult<Vec<TopicSummary>> {
+    let listings: Vec<i64> = topics.iter().filter_map(|t| t.listing_id).collect();
+    let stock: HashMap<i64, i64> = topics::listing_stock(&state.db, &listings)
+        .await?
+        .into_iter()
+        .collect();
+    Ok(topics
+        .iter()
+        .map(|t| {
+            let mut s = TopicSummary::from(t);
+            if let Some(trade) = &mut s.trade {
+                trade.stock = stock.get(&trade.listing_id).copied();
+            }
+            s
+        })
+        .collect())
+}
+
+/// 主题列表里出现的作者、最后回复者与参与者头像。
 pub fn topic_user_ids<'a>(topics: impl Iterator<Item = &'a Topic>) -> Vec<i64> {
     topics
-        .flat_map(|t| [Some(t.author_id), t.last_poster_id])
-        .flatten()
+        .flat_map(|t| {
+            [t.author_id]
+                .into_iter()
+                .chain(t.last_poster_id)
+                .chain(t.recent_posters.iter().copied())
+        })
         .collect()
 }
 

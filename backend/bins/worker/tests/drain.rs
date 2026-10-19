@@ -198,6 +198,57 @@ async fn in_site_notifications_are_stored_not_emailed(pool: PgPool) {
     assert_eq!(attempts, 1);
 }
 
+/// 窗口内的赞合成一条 `like` 通知（楼主自己的赞不算）；投递后再来的赞排下一条，全被取消时不通知。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn likes_are_merged_into_one_notification(pool: PgPool) {
+    use forum_db::floor;
+    let post: i64 = sqlx::query_scalar(
+        "INSERT INTO posts (topic_id, floor, author_id, html, plain_text) VALUES (7, 3, 1, '<p>x</p>', 'x') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mailer = Recorder::default();
+    let drain = || forum_worker::drain_once(&pool, &mailer, None, None);
+    let pending = || {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM outbox WHERE kind = 'notify.likes' AND sent_at IS NULL",
+        )
+        .fetch_one(&pool)
+    };
+
+    // 窗口为 0：马上到期，便于测试
+    floor::like(&pool, post, 2, true, 0.0).await.unwrap();
+    floor::like(&pool, post, 3, true, 0.0).await.unwrap();
+    floor::like(&pool, post, 1, false, 0.0).await.unwrap();
+    assert_eq!(pending().await.unwrap(), 1, "one digest per window");
+    assert_eq!(drain().await.unwrap(), 1);
+    assert_eq!(
+        notifications_of(&pool, 1).await,
+        vec![(
+            "like".into(),
+            Some(3),
+            json!({"topic_id": 7, "post_id": post, "floor": 3, "count": 2, "likers": [3, 2]})
+        )]
+    );
+
+    // 投递之后的新赞排下一条，只统计新的；赞了又取消的不通知
+    floor::like(&pool, post, 4, true, 0.0).await.unwrap();
+    assert_eq!(pending().await.unwrap(), 1);
+    floor::unlike(&pool, post, 4).await.unwrap();
+    assert_eq!(drain().await.unwrap(), 1);
+    assert_eq!(pending().await.unwrap(), 0);
+    assert_eq!(notifications_of(&pool, 1).await.len(), 1);
+    floor::like(&pool, post, 5, true, 0.0).await.unwrap();
+    assert_eq!(drain().await.unwrap(), 1);
+    let notes = notifications_of(&pool, 1).await;
+    assert_eq!(notes.len(), 2);
+    assert_eq!(
+        (notes[1].2["count"].as_i64(), notes[1].1),
+        (Some(1), Some(5))
+    );
+}
+
 fn order_updated(cause: &str) -> serde_json::Value {
     json!({"id": 7, "chain_id": 1, "contract": "0x", "mode": "escrow", "chain_order_id": 1, "buyer_id": 10,
            "seller_id": 11, "state": "funded", "level": "latest", "block_number": 5, "cause": cause,

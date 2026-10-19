@@ -20,16 +20,17 @@ use time::OffsetDateTime;
 use tower_sessions::Session;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::access::{Viewer, visible_forums};
+use crate::access::{Viewer, topic_access, visible_forums};
 use crate::cards;
 use crate::error::{ApiError, ApiResult, ErrorBody};
 use crate::moderation::{self, Class, Moderator, TopicChange};
 use crate::posting::{self, REPLY_RATE, after_commit, micros};
-use crate::routes::forums::{TOPICS_PER_PAGE, cursor_of, parse_cursor, topic_user_ids};
+use crate::routes::floor;
+use crate::routes::forums::{TOPICS_PER_PAGE, cursor_of, parse_cursor, summaries, topic_user_ids};
 use crate::state::AppState;
 use crate::views::{
-    CreatedPost, ForumView, LatestResponse, ModerationResult, PostView, TopicPage, TopicPageBody,
-    TopicSummary,
+    CreatedPost, ForumView, LatestResponse, ModerationResult, PostView, Timeline, TimelinePoint,
+    TopicPage, TopicPageBody,
 };
 
 /// 主题第 1 页缓存时长；内容变化时立即失效，这只是兜底。
@@ -112,19 +113,66 @@ pub async fn get(
     let can_reply =
         viewer.user.is_some() && (staff || (!flags.locked && level >= body.forum.reply_min_level));
     let total_pages = (body.topic.last_floor + PAGE_SIZE - 1) / PAGE_SIZE;
+    let (social, social_users) =
+        floor::page_social(&state, &body.posts, viewer.user.map(|u| u.id)).await?;
     let user_ids: Vec<i64> = [body.topic.author_id]
         .into_iter()
         .chain(body.posts.iter().map(|p| p.author_id))
+        .chain(social_users)
         .collect();
     let users = cards::load(&state, &user_ids).await?;
     after_commit("add_view", state.cache.add_view(id)).await;
     Ok(Json(TopicPage {
         body,
+        social,
         users,
         page,
         total_pages,
         can_reply,
         can_moderate: staff,
+    }))
+}
+
+/// 时间轴最多采样多少个楼层（滑块只有两百来像素高，相邻采样点之间按楼层插值）。
+const TIMELINE_POINTS: i32 = 100;
+
+/// 时间轴采样的楼层号：楼层不多时每层都取，否则含首尾均匀取 [`TIMELINE_POINTS`] 个。
+fn timeline_floors(last_floor: i32) -> Vec<i32> {
+    if last_floor <= TIMELINE_POINTS {
+        return (1..=last_floor).collect();
+    }
+    let span = i64::from(last_floor - 1);
+    let steps = i64::from(TIMELINE_POINTS - 1);
+    let mut floors: Vec<i32> = (0..=steps)
+        .filter_map(|i| i32::try_from(1 + i * span / steps).ok())
+        .collect();
+    floors.dedup();
+    floors
+}
+
+/// 楼层时间轴（主题页右侧的滑块）：楼层数、首尾时间与采样楼层的发帖时间。按楼层号走唯一索引，热帖也只查 100 个点。
+#[utoipa::path(
+    get, path = "/api/v1/topics/{id}/timeline", tag = "forum", operation_id = "topic_timeline",
+    params(("id" = i64, Path)),
+    responses((status = 200, body = Timeline), (status = 404, body = ErrorBody))
+)]
+pub async fn timeline(
+    State(state): State<AppState>,
+    session: Session,
+    Path(id): Path<i64>,
+) -> ApiResult<Json<Timeline>> {
+    let viewer = Viewer::load(&state, &session).await?;
+    let topic = topic_access(&state, &viewer, id).await?.topic;
+    let points = topics::floor_times(&state.db, id, &timeline_floors(topic.last_floor))
+        .await?
+        .into_iter()
+        .map(|(floor, at)| TimelinePoint { floor, at })
+        .collect();
+    Ok(Json(Timeline {
+        last_floor: topic.last_floor,
+        first_post_at: topic.created_at,
+        last_post_at: topic.last_post_at,
+        points,
     }))
 }
 
@@ -225,7 +273,7 @@ pub async fn latest_topics(
     forum_ids.dedup();
     let user_ids = topic_user_ids(out.iter());
     Ok(Json(LatestResponse {
-        topics: out.iter().map(TopicSummary::from).collect(),
+        topics: summaries(&state, &out).await?,
         forums: forum_ids
             .iter()
             .filter_map(|id| forums.get(id))
@@ -485,4 +533,25 @@ pub async fn moderate(
         forum_id: effect.new_forum,
         flags: effect.new_flags.into(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TIMELINE_POINTS, timeline_floors};
+
+    #[test]
+    fn timeline_samples_include_both_ends() {
+        assert_eq!(timeline_floors(1), [1]);
+        assert_eq!(timeline_floors(3), [1, 2, 3]);
+        assert_eq!(
+            timeline_floors(TIMELINE_POINTS).len(),
+            TIMELINE_POINTS as usize
+        );
+        for n in [TIMELINE_POINTS + 1, 2000, 1_000_000] {
+            let f = timeline_floors(n);
+            assert_eq!(f.len(), TIMELINE_POINTS as usize);
+            assert_eq!((f[0], *f.last().unwrap()), (1, n));
+            assert!(f.windows(2).all(|w| w[0] < w[1]));
+        }
+    }
 }

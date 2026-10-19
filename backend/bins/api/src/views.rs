@@ -1,5 +1,6 @@
 //! 论坛接口的响应结构。时间一律 RFC 3339（UTC）。
 
+use forum_db::floor::FloorComment;
 use forum_db::users::{Card, TradeCounts};
 use forum_db::{forums::Forum, posts::Post, topics};
 use serde::{Deserialize, Serialize};
@@ -69,6 +70,7 @@ pub struct TopicSummary {
     pub flags: TopicFlags,
     /// 回复数（楼层数 − 1）。
     pub replies: i32,
+    /// 楼层数（时间轴的总层数；首尾时间为 `created_at` 与 `last_post_at`）。
     pub last_floor: i32,
     pub last_poster_id: Option<i64>,
     #[serde(with = "time::serde::rfc3339")]
@@ -76,13 +78,67 @@ pub struct TopicSummary {
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
     pub views: i64,
-    /// 交易帖的交易帖 ID 与价格（USDT 最小单位，十进制字符串）；普通主题为空。
-    pub listing_id: Option<i64>,
-    pub price: Option<String>,
+    /// 列表行的参与者头像：楼主在前，之后是最近发言的人（新的在前，不重复），最多 5 个；名片在响应的 `users` 里。
+    pub participants: Vec<i64>,
+    /// 交易帖的信息行；普通主题为空。
+    pub trade: Option<TradeSummary>,
+    /// 拍卖帖的信息行（当前价、出价次数、剩余时间等）。拍卖还没上线，现在总是空。
+    pub auction: Option<AuctionSummary>,
 }
+
+/// 主题列表里交易帖的信息行。卖家就是楼主，成功率等信誉见 `users` 里楼主的名片（`reputation`）。
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TradeSummary {
+    pub listing_id: i64,
+    /// 价格，USDT 最小单位（十进制字符串）。
+    pub price: String,
+    /// 卖家参考汇率（ADR 0011，每 1 USDT 合多少元的 4 位小数定点数）；不填只显示 USDT。
+    pub cny_per_usdt: Option<i32>,
+    /// 自动发货（付款后即时交付）；否则卖家人工发货。
+    pub instant: bool,
+    /// 剩余库存：仍有效的公开报价还能成交的次数。没有公开报价时为空；只在主题列表里给出。
+    pub stock: Option<i64>,
+}
+
+/// 拍卖帖的信息行（拍卖上线时填写，ADR 0011）。
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AuctionSummary {
+    /// `usdt` 或 `cny`。
+    pub currency: String,
+    /// 当前价：USDT 时为最小单位，人民币时为分（十进制字符串）。
+    pub current: String,
+    /// 人民币计价时卖家签名的汇率。
+    pub cny_per_usdt: Option<i32>,
+    pub bids: i32,
+    #[serde(with = "time::serde::rfc3339")]
+    pub ends_at: OffsetDateTime,
+    pub reserve_met: bool,
+}
+
+/// 列表行最多显示几个参与者头像（含楼主）。
+const MAX_PARTICIPANTS: usize = 5;
 
 impl From<&topics::Topic> for TopicSummary {
     fn from(t: &topics::Topic) -> Self {
+        let participants = std::iter::once(t.author_id)
+            .chain(
+                t.recent_posters
+                    .iter()
+                    .copied()
+                    .filter(|&u| u != t.author_id),
+            )
+            .take(MAX_PARTICIPANTS)
+            .collect();
+        let trade = match (t.listing_id, &t.price) {
+            (Some(listing_id), Some(price)) => Some(TradeSummary {
+                listing_id,
+                price: price.clone(),
+                cny_per_usdt: t.cny_per_usdt,
+                instant: t.instant.unwrap_or(false),
+                stock: None,
+            }),
+            _ => None,
+        };
         Self {
             id: t.id,
             forum_id: t.forum_id,
@@ -96,8 +152,9 @@ impl From<&topics::Topic> for TopicSummary {
             last_post_at: t.last_post_at,
             created_at: t.created_at,
             views: t.view_count,
-            listing_id: t.listing_id,
-            price: t.price.clone(),
+            participants,
+            trade,
+            auction: None,
         }
     }
 }
@@ -218,16 +275,76 @@ pub struct TopicPageBody {
     pub posts: Vec<PostView>,
 }
 
+/// 一楼下方的社交区：点赞与最早的几条评论（朋友圈式，按访问者计算，不进主题页缓存）。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FloorSocialView {
+    pub post_id: i64,
+    pub likes: i32,
+    /// 访问者是否已赞（游客为假）。
+    pub liked: bool,
+    /// 最近点赞的几个人（最多 5 个，新的在前），其余显示「等 N 人」。
+    pub likers: Vec<i64>,
+    /// 未删除的评论总数。
+    pub comment_count: i32,
+    /// 最早的 5 条评论，按时间正序；其余用 `GET /api/v1/posts/{id}/comments?after=` 取。
+    pub comments: Vec<FloorComment>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TopicPage {
     #[serde(flatten)]
     pub body: TopicPageBody,
-    /// 主题作者与本页各楼层作者。
+    /// 本页各楼的点赞与评论，顺序同 `posts`（已删除的楼层为空）。
+    pub social: Vec<FloorSocialView>,
+    /// 主题作者、本页各楼层作者，以及点赞名单与评论里出现的人。
     pub users: Vec<UserCardView>,
     pub page: i32,
     pub total_pages: i32,
     pub can_reply: bool,
     pub can_moderate: bool,
+}
+
+/// 一楼的评论翻页。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CommentPage {
+    pub comments: Vec<FloorComment>,
+    /// 评论作者与被回复的人。
+    pub users: Vec<UserCardView>,
+    /// 还有更多时为下一页的 `after`。
+    pub next_cursor: Option<i64>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CreatedComment {
+    pub comment: FloorComment,
+    /// 该楼现在的评论数。
+    pub comment_count: i32,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct LikeState {
+    pub liked: bool,
+    /// 该楼现在的点赞数。
+    pub likes: i32,
+}
+
+/// 楼层时间轴（主题页右侧的滑块）：首尾时间与均匀采样的楼层时间，中间的楼层按相邻采样点插值。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct Timeline {
+    pub last_floor: i32,
+    #[serde(with = "time::serde::rfc3339")]
+    pub first_post_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub last_post_at: OffsetDateTime,
+    /// 楼层号升序，含 1 楼与最后一楼；楼层不多时每层都有。
+    pub points: Vec<TimelinePoint>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TimelinePoint {
+    pub floor: i32,
+    #[serde(with = "time::serde::rfc3339")]
+    pub at: OffsetDateTime,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

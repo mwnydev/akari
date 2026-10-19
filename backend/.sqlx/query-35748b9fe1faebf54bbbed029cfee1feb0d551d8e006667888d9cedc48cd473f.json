@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 楼层时间轴的采样点：指定楼层号的发帖时间，走唯一索引 (topic_id, floor)。$1 topic_id, $2 楼层号\nSELECT floor, created_at FROM posts\nWHERE topic_id = $1 AND floor = ANY($2::int[])\nORDER BY floor\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "floor",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "floor"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "35748b9fe1faebf54bbbed029cfee1feb0d551d8e006667888d9cedc48cd473f"
+}

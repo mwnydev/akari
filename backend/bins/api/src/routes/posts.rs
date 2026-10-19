@@ -5,8 +5,9 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use forum_core::ErrorCode;
 use forum_core::staff::{Permission, Scope};
+use forum_db::forums::Forum;
 use forum_db::posts::{self, PAGE_SIZE, Post, STATUS_DELETED_BY_AUTHOR, STATUS_DELETED_BY_STAFF};
-use forum_db::topics::{self, FLAG_HIDDEN, FLAG_LOCKED, Topic};
+use forum_db::topics::{self, FLAG_LOCKED, Topic};
 use forum_db::users::Actor;
 use forum_kv::forum_cache;
 use serde::Deserialize;
@@ -14,7 +15,7 @@ use serde_json::{Value, json};
 use tower_sessions::Session;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::access::Viewer;
+use crate::access::{TopicAccess, Viewer, topic_access};
 use crate::error::{ApiError, ApiResult, ErrorBody};
 use crate::moderation::{self, Class, Moderator, action};
 use crate::posting::{self, EDIT_RATE, after_commit};
@@ -24,28 +25,29 @@ use crate::views::{EditHistory, EditView, PostSource};
 const HISTORY_PAGE: i64 = 20;
 
 /// 楼层所在的主题，以及访问者能否以管理人员身份进入该板块。
-struct Ctx {
-    post: Post,
-    topic: Topic,
-    staff: bool,
+pub(crate) struct Ctx {
+    pub post: Post,
+    pub topic: Topic,
+    pub forum: Forum,
+    pub staff: bool,
 }
 
 /// 取楼层并检查可见性（隐藏主题、等级不够的板块对非管理人员表现为不存在）。
-async fn load(state: &AppState, viewer: &Viewer, post_id: i64) -> ApiResult<Ctx> {
+pub(crate) async fn load(state: &AppState, viewer: &Viewer, post_id: i64) -> ApiResult<Ctx> {
     let post = posts::by_id(&state.db, post_id)
         .await?
         .ok_or(ApiError(ErrorCode::NotFound))?;
-    let topic = topics::by_id(&state.db, post.topic_id)
-        .await?
-        .ok_or(ApiError(ErrorCode::NotFound))?;
-    let forum = forum_db::forums::by_id(&state.db, topic.forum_id)
-        .await?
-        .ok_or(ApiError(ErrorCode::NotFound))?;
-    let staff = viewer.is_staff(state, forum.id).await?;
-    if !staff && (topic.flags & FLAG_HIDDEN != 0 || viewer.level() < forum.view_min_level) {
-        return Err(ApiError(ErrorCode::NotFound));
-    }
-    Ok(Ctx { post, topic, staff })
+    let TopicAccess {
+        topic,
+        forum,
+        staff,
+    } = topic_access(state, viewer, post.topic_id).await?;
+    Ok(Ctx {
+        post,
+        topic,
+        forum,
+        staff,
+    })
 }
 
 /// 改动未删除的楼层：作者本人（锁定的主题只有管理人员能改，被禁言时不能改）直接放行，返回 `None`；

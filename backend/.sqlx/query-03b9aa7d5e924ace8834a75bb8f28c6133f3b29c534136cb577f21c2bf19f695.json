@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 恢复被管理人员删除的评论并给楼层评论数加一。返回该楼现在的评论数。$1 id\nWITH r AS (\n  UPDATE floor_comments SET status = 0 WHERE id = $1 AND status = 2\n  RETURNING post_id\n)\nUPDATE post_counters pc SET comments = pc.comments + 1\nFROM r\nWHERE pc.post_id = r.post_id\nRETURNING pc.comments\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "comments",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "post_counters",
+            "name": "comments"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "03b9aa7d5e924ace8834a75bb8f28c6133f3b29c534136cb577f21c2bf19f695"
+}

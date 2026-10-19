@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE post_counters SET likes_notified_at = $2 WHERE post_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "da1e480eb8e3a89692c1b820e551393b958efacc0ff0b31b45881a3192c6804e"
+}

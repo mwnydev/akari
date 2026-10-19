@@ -1,4 +1,5 @@
-//! 帖子内容：HTML 过滤（ammonia，plan 第 11、14 节）、纯文本提取（供 PGroonga 搜索）、链接与 @提及识别。
+//! 帖子内容：HTML 过滤（ammonia，plan 第 11、14 节）、纯文本提取（供 PGroonga 搜索）、链接与 @提及识别；
+//! 楼层评论（纯文本）的整理。
 //!
 //! 编辑器（Tiptap）提交 HTML 与 JSON 原稿；服务端只信任这里过滤后的 HTML。
 //! 过滤在事务外完成，热帖抢楼时不占行锁（plan 第 8 节）。
@@ -12,6 +13,8 @@ use ammonia::Builder;
 pub const MAX_HTML_BYTES: usize = 100 * 1024;
 /// 标题最多字符数。
 pub const MAX_TITLE_CHARS: usize = 120;
+/// 楼层评论最多字符数（与 `floor_comments.body` 的约束一致）。
+pub const MAX_COMMENT_CHARS: usize = 500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ContentError {
@@ -155,6 +158,33 @@ pub fn clean_title(title: &str) -> Result<String, ContentError> {
         return Err(ContentError::InvalidTitle);
     }
     Ok(t.to_owned())
+}
+
+/// 整理楼层评论（纯文本，不是 HTML）：换行、制表等控制字符换成空格，去掉零宽与双向文字控制字符
+/// （防止倒序显示冒充别的内容），去首尾空白；结果 1–500 个字符。
+pub fn clean_comment(text: &str) -> Result<String, ContentError> {
+    // 先粗略挡住超大输入，不为它分配
+    if text.len() > MAX_COMMENT_CHARS * 8 {
+        return Err(ContentError::TooLong);
+    }
+    let body: String = text
+        .chars()
+        .filter(|&c| !is_invisible_format(c))
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let body = body.trim();
+    if body.is_empty() {
+        return Err(ContentError::Empty);
+    }
+    if body.chars().count() > MAX_COMMENT_CHARS {
+        return Err(ContentError::TooLong);
+    }
+    Ok(body.to_owned())
+}
+
+/// 零宽字符、双向文字嵌入 / 覆盖 / 隔离控制符与 BOM。
+fn is_invisible_format(c: char) -> bool {
+    matches!(c, '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{2069}' | '\u{FEFF}')
 }
 
 /// 是否含站外链接：绝对地址（含 `mailto:`）的主机既不在 `internal_hosts`（本站）也不在 `image_hosts`
@@ -419,6 +449,28 @@ mod tests {
         assert_eq!(clean_title("a\u{7}b"), Err(ContentError::InvalidTitle));
         assert!(clean_title(&"字".repeat(120)).is_ok());
         assert!(clean_title(&"字".repeat(121)).is_err());
+    }
+
+    #[test]
+    fn comment_rules() {
+        assert_eq!(
+            clean_comment("  第一行\r\n第二行\t<b>x</b> ").unwrap(),
+            "第一行  第二行 <b>x</b>"
+        );
+        assert_eq!(
+            clean_comment("a\u{202E}gpj.exe\u{200B}").unwrap(),
+            "agpj.exe"
+        );
+        assert_eq!(clean_comment(" \n\u{200B} "), Err(ContentError::Empty));
+        assert!(clean_comment(&"字".repeat(MAX_COMMENT_CHARS)).is_ok());
+        assert_eq!(
+            clean_comment(&"字".repeat(MAX_COMMENT_CHARS + 1)),
+            Err(ContentError::TooLong)
+        );
+        assert_eq!(
+            clean_comment(&"a".repeat(MAX_COMMENT_CHARS * 8 + 1)),
+            Err(ContentError::TooLong)
+        );
     }
 
     #[test]

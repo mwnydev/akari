@@ -3,6 +3,7 @@
 use forum_core::ErrorCode;
 use forum_core::staff::{Permission, Scope, StaffRoles};
 use forum_db::forums::Forum;
+use forum_db::topics::{self, FLAG_HIDDEN, Topic};
 use forum_db::users::Actor;
 use time::{Duration, OffsetDateTime};
 use tower_sessions::Session;
@@ -60,6 +61,37 @@ impl Viewer {
         }
         self.is_staff(state, forum.id).await
     }
+}
+
+/// 访问者看得到的主题，以及访问者能否以管理人员身份进入它所在的板块。
+#[derive(Debug, Clone)]
+pub struct TopicAccess {
+    pub topic: Topic,
+    pub forum: Forum,
+    pub staff: bool,
+}
+
+/// 取主题并检查可见性：隐藏主题、等级不够的板块对非管理人员表现为不存在（`NOT_FOUND`）。
+pub async fn topic_access(
+    state: &AppState,
+    viewer: &Viewer,
+    topic_id: i64,
+) -> ApiResult<TopicAccess> {
+    let topic = topics::by_id(&state.db, topic_id)
+        .await?
+        .ok_or(ApiError(ErrorCode::NotFound))?;
+    let forum = forum_db::forums::by_id(&state.db, topic.forum_id)
+        .await?
+        .ok_or(ApiError(ErrorCode::NotFound))?;
+    let staff = viewer.is_staff(state, forum.id).await?;
+    if !staff && (topic.flags & FLAG_HIDDEN != 0 || viewer.level() < forum.view_min_level) {
+        return Err(ApiError(ErrorCode::NotFound));
+    }
+    Ok(TopicAccess {
+        topic,
+        forum,
+        staff,
+    })
 }
 
 /// 访问者能看到的全部板块：等级够的，加上自己管理的（管理范围一次查出，不逐个板块查）。

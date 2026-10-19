@@ -8,9 +8,9 @@ use std::time::Duration;
 
 use forum_core::ErrorCode;
 use forum_core::staff::{ModerationSettings, Permission, Scope, StaffRoles};
-use forum_db::posts;
 use forum_db::topics::{self, FLAG_FEATURED, Topic};
 use forum_db::{Postgres, Transaction, audit, outbox, sanctions};
+use forum_db::{floor, posts};
 use forum_kv::SlidingWindow;
 use forum_kv::forum_cache;
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,8 @@ pub mod action {
     pub const POST_EDIT: &str = "post.edit";
     pub const POST_DELETE: &str = "post.delete";
     pub const POST_RESTORE: &str = "post.restore";
+    pub const COMMENT_DELETE: &str = "comment.delete";
+    pub const COMMENT_RESTORE: &str = "comment.restore";
     pub const MUTE: &str = "user.mute";
     pub const AUCTION_BAN: &str = "user.auction_ban";
     pub const BAN: &str = "user.ban";
@@ -42,7 +44,7 @@ pub mod action {
 pub enum Class {
     /// 置顶、精华、锁定、移动、编辑、恢复。
     Content,
-    /// 删帖、隐藏主题。
+    /// 删帖、删评论、隐藏主题。
     Delete,
     /// 处罚与解除处罚。
     Sanction,
@@ -63,7 +65,11 @@ impl Class {
         match self {
             Self::Content => None,
             Self::Delete => Some((
-                &[action::POST_DELETE, action::TOPIC_HIDE],
+                &[
+                    action::POST_DELETE,
+                    action::COMMENT_DELETE,
+                    action::TOPIC_HIDE,
+                ],
                 s.anomaly_deletes,
             )),
             Self::Sanction => Some((
@@ -435,6 +441,18 @@ pub async fn revert(
                 effects.pages.push(d.topic_id);
             }
             Ok(done(ok))
+        }
+        // 评论不在主题页缓存里，不用失效；打开着的页面要刷新才看到
+        action::COMMENT_DELETE | action::COMMENT_RESTORE => {
+            let Some(id) = target_id(entry, "comment:") else {
+                return Ok(NotRevertible);
+            };
+            let changed = if a == action::COMMENT_DELETE {
+                floor::restore(&mut **tx, id).await?
+            } else {
+                floor::soft_delete(&mut **tx, id, floor::STATUS_DELETED_BY_STAFF).await?
+            };
+            Ok(done(changed.is_some()))
         }
         action::MUTE | action::AUCTION_BAN | action::BAN | action::DEVICE_BAN | action::IP_BAN => {
             let Some(d) = parse::<SanctionsDetail>(&entry.detail) else {

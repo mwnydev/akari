@@ -1490,6 +1490,156 @@
         }
       }
     },
+    "/api/v1/comments/{id}": {
+      "delete": {
+        "tags": ["forum"],
+        "summary": "删除评论（只改状态）。作者本人可删（锁定的主题只有管理人员能删，被禁言时不能删，同楼层）；\n他人的评论需要板块的删帖权限，计入删帖限速与异常检测，写审计日志（可恢复、可撤销）。",
+        "operationId": "delete_comment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "description": "管理人员删除他人评论时必填，写入审计日志。",
+            "required": false,
+            "schema": { "type": ["string", "null"] }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comments/{id}/report": {
+      "post": {
+        "tags": ["forum"],
+        "summary": "举报评论。",
+        "operationId": "report_comment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ReportRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/comments/{id}/restore": {
+      "post": {
+        "tags": ["forum"],
+        "summary": "恢复被管理人员删除的评论（删除的反向操作）。需要板块的删帖权限，写审计日志。",
+        "operationId": "restore_comment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RestoreCommentRequest" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/conversations": {
       "get": {
         "tags": ["messages"],
@@ -2973,6 +3123,91 @@
         }
       }
     },
+    "/api/v1/posts/{id}/comments": {
+      "get": {
+        "tags": ["forum"],
+        "summary": "一楼的评论（「展开其余」），按时间正序，每页 50 条。已删除楼层的评论只有管理人员能看。",
+        "operationId": "post_comments",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "游标：已经显示的最后一条评论 ID（主题页给出的前 5 条之后从第 5 条的 ID 开始）。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/CommentPage" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["forum"],
+        "summary": "评论楼层。门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户与评论限频。\n通知楼主、被回复的人与被 @ 的人，并推给打开着这个主题页的连接。",
+        "operationId": "create_comment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/NewCommentRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/CreatedComment" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/posts/{id}/history": {
       "get": {
         "tags": ["forum"],
@@ -3000,6 +3235,132 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/posts/{id}/like": {
+      "put": {
+        "tags": ["forum"],
+        "summary": "点赞（重复点赞不报错）。被封号的不能点赞。",
+        "operationId": "like_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/LikeState" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["forum"],
+        "summary": "取消赞（没赞过也不报错）。楼层已删除时也可以取消。",
+        "operationId": "unlike_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/LikeState" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/posts/{id}/report": {
+      "post": {
+        "tags": ["forum"],
+        "summary": "举报楼层（进管理人员的处理队列，按楼层所在板块）。",
+        "operationId": "report_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ReportRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
@@ -3259,6 +3620,33 @@
             }
           },
           "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/topics/{id}/timeline": {
+      "get": {
+        "tags": ["forum"],
+        "summary": "楼层时间轴（主题页右侧的滑块）：楼层数、首尾时间与采样楼层的发帖时间。按楼层号走唯一索引，热帖也只查 100 个点。",
+        "operationId": "topic_timeline",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Timeline" } }
+            }
+          },
+          "404": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
@@ -4149,6 +4537,26 @@
           "options": { "type": "object", "description": "原样传给 `navigator.credentials.get()`。" }
         }
       },
+      "AuctionSummary": {
+        "type": "object",
+        "description": "拍卖帖的信息行（拍卖上线时填写，ADR 0011）。",
+        "required": ["currency", "current", "bids", "ends_at", "reserve_met"],
+        "properties": {
+          "bids": { "type": "integer", "format": "int32" },
+          "cny_per_usdt": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "人民币计价时卖家签名的汇率。"
+          },
+          "currency": { "type": "string", "description": "`usdt` 或 `cny`。" },
+          "current": {
+            "type": "string",
+            "description": "当前价：USDT 时为最小单位，人民币时为分（十进制字符串）。"
+          },
+          "ends_at": { "type": "string", "format": "date-time" },
+          "reserve_met": { "type": "boolean" }
+        }
+      },
       "AuctionView": {
         "type": "object",
         "description": "拍卖成交（ADR 0011）：付款页显示拍卖币种成交价、卖家汇率与应付 USDT（订单 `amount`）。",
@@ -4484,6 +4892,24 @@
           "ok": { "type": "boolean", "description": "整条链完好。" }
         }
       },
+      "CommentPage": {
+        "type": "object",
+        "description": "一楼的评论翻页。",
+        "required": ["comments", "users"],
+        "properties": {
+          "comments": { "type": "array", "items": { "$ref": "#/components/schemas/FloorComment" } },
+          "next_cursor": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "还有更多时为下一页的 `after`。"
+          },
+          "users": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/UserCardView" },
+            "description": "评论作者与被回复的人。"
+          }
+        }
+      },
       "ConversationPage": {
         "type": "object",
         "required": ["conversations"],
@@ -4521,6 +4947,18 @@
             "type": "integer",
             "format": "int64",
             "description": "对方发来、我还没读的消息数（最多 100）。"
+          }
+        }
+      },
+      "CreatedComment": {
+        "type": "object",
+        "required": ["comment", "comment_count"],
+        "properties": {
+          "comment": { "$ref": "#/components/schemas/FloorComment" },
+          "comment_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "该楼现在的评论数。"
           }
         }
       },
@@ -4714,6 +5152,48 @@
           "transaction_builder": { "type": "object" }
         }
       },
+      "FloorComment": {
+        "type": "object",
+        "description": "楼层下的一条评论。`body` 是纯文本（服务端已去掉控制字符），客户端必须按文本渲染，不能当 HTML。",
+        "required": ["id", "post_id", "author_id", "body", "created_at"],
+        "properties": {
+          "author_id": { "type": "integer", "format": "int64" },
+          "body": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "id": { "type": "integer", "format": "int64" },
+          "post_id": { "type": "integer", "format": "int64" },
+          "reply_to_id": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "回复某条评论时，那条评论的作者。"
+          }
+        }
+      },
+      "FloorSocialView": {
+        "type": "object",
+        "description": "一楼下方的社交区：点赞与最早的几条评论（朋友圈式，按访问者计算，不进主题页缓存）。",
+        "required": ["post_id", "likes", "liked", "likers", "comment_count", "comments"],
+        "properties": {
+          "comment_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "未删除的评论总数。"
+          },
+          "comments": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/FloorComment" },
+            "description": "最早的 5 条评论，按时间正序；其余用 `GET /api/v1/posts/{id}/comments?after=` 取。"
+          },
+          "liked": { "type": "boolean", "description": "访问者是否已赞（游客为假）。" },
+          "likers": {
+            "type": "array",
+            "items": { "type": "integer", "format": "int64" },
+            "description": "最近点赞的几个人（最多 5 个，新的在前），其余显示「等 N 人」。"
+          },
+          "likes": { "type": "integer", "format": "int32" },
+          "post_id": { "type": "integer", "format": "int64" }
+        }
+      },
       "ForumView": {
         "type": "object",
         "required": [
@@ -4790,6 +5270,14 @@
             "description": "全站最新回复的普通主题（不含置顶与隐藏），只来自访问者看得到的板块。"
           },
           "users": { "type": "array", "items": { "$ref": "#/components/schemas/UserCardView" } }
+        }
+      },
+      "LikeState": {
+        "type": "object",
+        "required": ["liked", "likes"],
+        "properties": {
+          "liked": { "type": "boolean" },
+          "likes": { "type": "integer", "format": "int32", "description": "该楼现在的点赞数。" }
         }
       },
       "ListingTerms": {
@@ -5020,6 +5508,22 @@
           "last_message_id": { "type": "integer", "format": "int64" }
         }
       },
+      "NewCommentRequest": {
+        "type": "object",
+        "required": ["body"],
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "纯文本，1–500 字（换行与控制字符换成空格）；`@用户名` 会通知对方。"
+          },
+          "reply_to": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "回复这一楼里的某条评论（「回复 某人」）；为空表示直接评论楼层。"
+          }
+        },
+        "additionalProperties": false
+      },
       "NewListingRequest": {
         "allOf": [
           { "$ref": "#/components/schemas/NewTopicRequest" },
@@ -5167,17 +5671,17 @@
           "actor_id": {
             "type": ["integer", "null"],
             "format": "int64",
-            "description": "触发者（回复、@ 的作者，报价的对方）；系统通知为空。"
+            "description": "触发者（回复、@、评论的作者，最近点赞的人，报价的对方）；系统通知为空。"
           },
           "created_at": { "type": "string", "format": "date-time" },
           "id": { "type": "integer", "format": "int64" },
           "kind": {
             "type": "string",
-            "description": "`reply` / `mention` / `message` / `order` / `offer` / `system`。"
+            "description": "`reply` / `mention` / `comment` / `like` / `message` / `order` / `offer` / `system`。"
           },
           "payload": {
             "type": "object",
-            "description": "按类型：reply / mention 为 `{topic_id, post_id, floor}`；message 为 `{conversation_id, message_id}`；\noffer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；\nsystem 为发件箱原样内容（含 `event`）。"
+            "description": "按类型：reply / mention 为 `{topic_id, post_id, floor}`（评论里的 @ 另有 `comment_id`）；\ncomment 为 `{topic_id, post_id, floor, comment_id, reply}`（`reply` 为真：回复了你的评论，否则是评论了你的楼层）；\nlike 为 `{topic_id, post_id, floor, count, likers}`（合并窗口内新增的赞数与最近几位，新的在前）；\nmessage 为 `{conversation_id, message_id}`；\noffer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；\nsystem 为发件箱原样内容（含 `event`）。"
           },
           "read": { "type": "boolean" }
         }
@@ -5740,6 +6244,11 @@
         "required": ["html", "source"],
         "properties": { "html": { "type": "string" }, "source": { "type": "object" } }
       },
+      "ReportRequest": {
+        "type": "object",
+        "properties": { "reason": { "type": "string", "description": "可以不填，最多 500 字。" } },
+        "additionalProperties": false
+      },
       "ReputationView": {
         "type": "object",
         "description": "名片上的交易信誉（plan 第 7 节；只统计最终确认的链上订单）。",
@@ -5768,6 +6277,11 @@
             "minimum": 0
           }
         }
+      },
+      "RestoreCommentRequest": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": { "reason": { "type": "string", "description": "写入审计日志。" } }
       },
       "RestoreRequest": {
         "type": "object",
@@ -6275,6 +6789,29 @@
           "username": { "type": ["string", "null"] }
         }
       },
+      "Timeline": {
+        "type": "object",
+        "description": "楼层时间轴（主题页右侧的滑块）：首尾时间与均匀采样的楼层时间，中间的楼层按相邻采样点插值。",
+        "required": ["last_floor", "first_post_at", "last_post_at", "points"],
+        "properties": {
+          "first_post_at": { "type": "string", "format": "date-time" },
+          "last_floor": { "type": "integer", "format": "int32" },
+          "last_post_at": { "type": "string", "format": "date-time" },
+          "points": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TimelinePoint" },
+            "description": "楼层号升序，含 1 楼与最后一楼；楼层不多时每层都有。"
+          }
+        }
+      },
+      "TimelinePoint": {
+        "type": "object",
+        "required": ["floor", "at"],
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "floor": { "type": "integer", "format": "int32" }
+        }
+      },
       "TimeoutAction": {
         "type": "object",
         "description": "争议超过 `resolveTimeout` 未裁决时任何人可调用的兜底结算（担保合约里争议中的订单不能再延长期限，\n`extendDeadlines` 只对未进入争议的订单有效，所以这里没有延期操作）。",
@@ -6301,16 +6838,21 @@
           { "$ref": "#/components/schemas/TopicPageBody" },
           {
             "type": "object",
-            "required": ["users", "page", "total_pages", "can_reply", "can_moderate"],
+            "required": ["social", "users", "page", "total_pages", "can_reply", "can_moderate"],
             "properties": {
               "can_moderate": { "type": "boolean" },
               "can_reply": { "type": "boolean" },
               "page": { "type": "integer", "format": "int32" },
+              "social": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/FloorSocialView" },
+                "description": "本页各楼的点赞与评论，顺序同 `posts`（已删除的楼层为空）。"
+              },
               "total_pages": { "type": "integer", "format": "int32" },
               "users": {
                 "type": "array",
                 "items": { "$ref": "#/components/schemas/UserCardView" },
-                "description": "主题作者与本页各楼层作者。"
+                "description": "主题作者、本页各楼层作者，以及点赞名单与评论里出现的人。"
               }
             }
           }
@@ -6339,9 +6881,19 @@
           "last_floor",
           "last_post_at",
           "created_at",
-          "views"
+          "views",
+          "participants"
         ],
         "properties": {
+          "auction": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AuctionSummary",
+                "description": "拍卖帖的信息行（当前价、出价次数、剩余时间等）。拍卖还没上线，现在总是空。"
+              },
+              { "type": "null" }
+            ]
+          },
           "author_id": { "type": "integer", "format": "int64" },
           "created_at": { "type": "string", "format": "date-time" },
           "flags": { "$ref": "#/components/schemas/TopicFlags" },
@@ -6352,21 +6904,33 @@
             "format": "int32",
             "description": "0=普通、1=交易、2=争议。"
           },
-          "last_floor": { "type": "integer", "format": "int32" },
+          "last_floor": {
+            "type": "integer",
+            "format": "int32",
+            "description": "楼层数（时间轴的总层数；首尾时间为 `created_at` 与 `last_post_at`）。"
+          },
           "last_post_at": { "type": "string", "format": "date-time" },
           "last_poster_id": { "type": ["integer", "null"], "format": "int64" },
-          "listing_id": {
-            "type": ["integer", "null"],
-            "format": "int64",
-            "description": "交易帖的交易帖 ID 与价格（USDT 最小单位，十进制字符串）；普通主题为空。"
+          "participants": {
+            "type": "array",
+            "items": { "type": "integer", "format": "int64" },
+            "description": "列表行的参与者头像：楼主在前，之后是最近发言的人（新的在前，不重复），最多 5 个；名片在响应的 `users` 里。"
           },
-          "price": { "type": ["string", "null"] },
           "replies": {
             "type": "integer",
             "format": "int32",
             "description": "回复数（楼层数 − 1）。"
           },
           "title": { "type": "string" },
+          "trade": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TradeSummary",
+                "description": "交易帖的信息行；普通主题为空。"
+              },
+              { "type": "null" }
+            ]
+          },
           "views": { "type": "integer", "format": "int64" }
         }
       },
@@ -6468,6 +7032,29 @@
             }
           }
         ]
+      },
+      "TradeSummary": {
+        "type": "object",
+        "description": "主题列表里交易帖的信息行。卖家就是楼主，成功率等信誉见 `users` 里楼主的名片（`reputation`）。",
+        "required": ["listing_id", "price", "instant"],
+        "properties": {
+          "cny_per_usdt": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "卖家参考汇率（ADR 0011，每 1 USDT 合多少元的 4 位小数定点数）；不填只显示 USDT。"
+          },
+          "instant": {
+            "type": "boolean",
+            "description": "自动发货（付款后即时交付）；否则卖家人工发货。"
+          },
+          "listing_id": { "type": "integer", "format": "int64" },
+          "price": { "type": "string", "description": "价格，USDT 最小单位（十进制字符串）。" },
+          "stock": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "剩余库存：仍有效的公开报价还能成交的次数。没有公开报价时为空；只在主题列表里给出。"
+          }
+        }
       },
       "UnreadCount": {
         "type": "object",

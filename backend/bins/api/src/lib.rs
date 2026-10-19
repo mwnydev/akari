@@ -73,6 +73,16 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::posts::history))
         .routes(routes!(routes::posts::source))
         .routes(routes!(routes::posts::restore))
+        .routes(routes!(routes::floor::like, routes::floor::unlike))
+        .routes(routes!(
+            routes::floor::comments,
+            routes::floor::create_comment
+        ))
+        .routes(routes!(routes::floor::delete_comment))
+        .routes(routes!(routes::floor::restore_comment))
+        .routes(routes!(routes::floor::report_post))
+        .routes(routes!(routes::floor::report_comment))
+        .routes(routes!(routes::topics::timeline))
         .routes(routes!(
             routes::moderation::user_sanctions,
             routes::moderation::sanction_user

@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 交易帖的剩余库存（主题列表）：仍有效的公开报价（指定买家的不算）的可成交次数减去已成交（未回滚）的订单数，按交易帖合计。\n-- 没有有效公开报价的交易帖不返回。走 offers_listing 与 escrow_orders_offer。$1 listing ids\nSELECT o.listing_id AS \"listing_id!\",\n       sum(o.max_fills - (\n         SELECT count(*) FROM escrow_orders e\n         WHERE e.offer_hash = o.offer_hash AND e.chain_id = o.chain_id AND e.contract = o.verifying_contract\n           AND e.state <> 0\n       ))::bigint AS \"stock!\"\nFROM offers o\nWHERE o.listing_id = ANY($1::bigint[]) AND o.buyer_id IS NULL AND o.status = 'pending' AND o.expires_at > now()\nGROUP BY o.listing_id\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "listing_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "listing_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "stock!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "44da6dbabd68738d63734dcb90554553c7f6bc999d5622445bb131f0427c4720"
+}

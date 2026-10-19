@@ -28,6 +28,10 @@ const BIG_TABLES: &[&str] = &[
     "exp_ledger",
     "uploads",
     "user_trade_stats",
+    "post_likes",
+    "post_counters",
+    "floor_comments",
+    "reports",
 ];
 
 #[derive(Debug, Default)]
@@ -1047,4 +1051,194 @@ async fn staff_queries_use_indexes(db: PgPool) {
             );
         }
     }
+}
+
+/// 楼层点赞与评论（设计稿 v2）：在热帖每楼 50 个赞、10 条评论（1 条已删除）、其余 5 万个 1 楼各 2 个赞 1 条评论的数据上。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn floor_social_queries_use_indexes(db: PgPool) {
+    seed(&db).await;
+    sqlx::raw_sql(
+        r"
+        INSERT INTO post_likes (post_id, user_id, created_at)
+        SELECT p.id, 1 + (p.id * 7 + g) % 1000, now() - (g || ' minutes')::interval
+        FROM posts p, generate_series(1, 50) g WHERE p.topic_id = 2;
+        INSERT INTO post_likes (post_id, user_id) SELECT p.id, 1 + g FROM posts p, generate_series(1, 2) g WHERE p.topic_id <> 2;
+        INSERT INTO floor_comments (post_id, author_id, body, status)
+        SELECT p.id, 1 + g % 1000, 'c' || g, CASE WHEN g = 10 THEN 1 ELSE 0 END
+        FROM posts p, generate_series(1, 10) g WHERE p.topic_id = 2;
+        INSERT INTO floor_comments (post_id, author_id, body) SELECT id, author_id, 'c' FROM posts WHERE topic_id <> 2;
+        INSERT INTO post_counters (post_id, likes, comments)
+        SELECT p.id, (SELECT count(*) FROM post_likes l WHERE l.post_id = p.id),
+               (SELECT count(*) FROM floor_comments c WHERE c.post_id = p.id AND c.status = 0)
+        FROM posts p;
+        INSERT INTO reports (target_kind, target_id, forum_id, reporter_id) SELECT 1, g, 1, 1 + g % 1000 FROM generate_series(1, 20000) g;
+        ANALYZE;
+        ",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+    // 热帖第 50 页的 20 个楼层
+    let post_ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM posts WHERE topic_id = 2 AND floor BETWEEN 981 AND 1000",
+    )
+    .fetch_all(&db)
+    .await
+    .unwrap();
+    let post = post_ids[3];
+
+    let sql = q!("posts_social.sql");
+    for index in ["post_counters_pkey", "post_likes_recent", "post_likes_pkey"] {
+        check(
+            &db,
+            "posts_social",
+            sqlx::query(sql).bind(&post_ids).bind(7_i64).bind(5_i64),
+            index,
+        )
+        .await;
+    }
+
+    let sql = q!("comments_preview.sql");
+    check(
+        &db,
+        "comments_preview",
+        sqlx::query(sql).bind(&post_ids).bind(5_i64),
+        "floor_comments_post",
+    )
+    .await;
+
+    let sql = q!("comments_after.sql");
+    check(
+        &db,
+        "comments_after",
+        sqlx::query(sql).bind(post).bind(0_i64).bind(51_i64),
+        "floor_comments_post",
+    )
+    .await;
+
+    let sql = q!("comment_by_id.sql");
+    check(
+        &db,
+        "comment_by_id",
+        sqlx::query(sql).bind(1234_i64),
+        "floor_comments_pkey",
+    )
+    .await;
+
+    // 写语句（EXPLAIN 不执行）：楼层、计数行、评论都按主键 / 唯一索引定位
+    let sql = q!("post_like.sql");
+    for index in ["posts_pkey", "post_counters_pkey"] {
+        check(
+            &db,
+            "post_like",
+            sqlx::query(sql)
+                .bind(post)
+                .bind(9_i64)
+                .bind(true)
+                .bind(300.0_f64),
+            index,
+        )
+        .await;
+    }
+
+    let sql = q!("post_unlike.sql");
+    for index in ["post_likes_pkey", "post_counters_pkey"] {
+        check(
+            &db,
+            "post_unlike",
+            sqlx::query(sql).bind(post).bind(9_i64),
+            index,
+        )
+        .await;
+    }
+
+    let sql = q!("comment_create.sql");
+    for index in ["posts_pkey", "floor_comments_pkey"] {
+        check(
+            &db,
+            "comment_create",
+            sqlx::query(sql)
+                .bind(post)
+                .bind(9_i64)
+                .bind(Some(1234_i64))
+                .bind("x")
+                .bind(vec![3_i64]),
+            index,
+        )
+        .await;
+    }
+
+    for (name, sql) in [
+        ("comment_soft_delete", q!("comment_soft_delete.sql")),
+        ("comment_restore", q!("comment_restore.sql")),
+    ] {
+        let q = if name == "comment_restore" {
+            sqlx::query(sql).bind(1234_i64)
+        } else {
+            sqlx::query(sql).bind(1234_i64).bind(1_i16)
+        };
+        check(&db, name, q, "floor_comments_pkey").await;
+    }
+
+    // 合并点赞通知：水位之后的赞只读索引
+    let since: time::OffsetDateTime = sqlx::query_scalar("SELECT now() - interval '10 minutes'")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    let sql = q!("likes_digest.sql");
+    check(
+        &db,
+        "likes_digest",
+        sqlx::query(sql).bind(post).bind(Some(since)).bind(3_i32),
+        "post_likes_recent",
+    )
+    .await;
+
+    // 时间轴：100 个采样楼层走 (topic_id, floor) 唯一索引
+    let floors: Vec<i32> = (0..100).map(|i| 1 + i * 20).collect();
+    let sql = q!("topic_timeline.sql");
+    check(
+        &db,
+        "topic_timeline",
+        sqlx::query(sql).bind(2_i64).bind(&floors),
+        "posts_topic_id_floor_key",
+    )
+    .await;
+
+    // 主题列表的库存：交易帖下的公开报价，再按报价哈希数订单
+    let listings: Vec<i64> = (1..=50).collect();
+    let sql = q!("listing_stock.sql");
+    for index in ["offers_listing", "escrow_orders_offer"] {
+        check(
+            &db,
+            "listing_stock",
+            sqlx::query(sql).bind(&listings),
+            index,
+        )
+        .await;
+    }
+
+    let names: Vec<String> = (1..=5).map(|i| format!("user_{i}")).collect();
+    let sql = q!("users_ids_by_names.sql");
+    check(
+        &db,
+        "users_ids_by_names",
+        sqlx::query(sql).bind(&names),
+        "users_username",
+    )
+    .await;
+
+    // 冲突检查走唯一约束的索引，计划里只有插入本身
+    let sql = q!("report_create.sql");
+    let (info, plan) = explain(
+        &db,
+        sqlx::query(sql)
+            .bind(1_i16)
+            .bind(5_i64)
+            .bind(1_i32)
+            .bind(7_i64)
+            .bind(""),
+    )
+    .await;
+    assert!(info.seq_scans.is_empty(), "report_create: {plan:#}");
 }

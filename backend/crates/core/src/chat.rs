@@ -9,6 +9,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
+use crate::floor::FloorComment;
+
 /// 一条消息最多字数（私信与订单聊天相同）。
 pub const MAX_MESSAGE_CHARS: usize = 2000;
 
@@ -72,11 +74,14 @@ pub struct OrderMessage {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Notification {
     pub id: i64,
-    /// `reply` / `mention` / `message` / `order` / `offer` / `system`。
+    /// `reply` / `mention` / `comment` / `like` / `message` / `order` / `offer` / `system`。
     pub kind: String,
-    /// 触发者（回复、@ 的作者，报价的对方）；系统通知为空。
+    /// 触发者（回复、@、评论的作者，最近点赞的人，报价的对方）；系统通知为空。
     pub actor_id: Option<i64>,
-    /// 按类型：reply / mention 为 `{topic_id, post_id, floor}`；message 为 `{conversation_id, message_id}`；
+    /// 按类型：reply / mention 为 `{topic_id, post_id, floor}`（评论里的 @ 另有 `comment_id`）；
+    /// comment 为 `{topic_id, post_id, floor, comment_id, reply}`（`reply` 为真：回复了你的评论，否则是评论了你的楼层）；
+    /// like 为 `{topic_id, post_id, floor, count, likers}`（合并窗口内新增的赞数与最近几位，新的在前）；
+    /// message 为 `{conversation_id, message_id}`；
     /// offer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；
     /// system 为发件箱原样内容（含 `event`）。
     #[cfg_attr(feature = "openapi", schema(value_type = Object))]
@@ -124,6 +129,27 @@ pub enum Event {
     },
     /// 订阅的会话 / 订单里对方上下线。
     Presence(Presence),
+    /// 订阅了主题页的连接：楼层下新增（或被恢复）一条评论；`comments` 为该楼现在的评论数。
+    Comment {
+        topic_id: i64,
+        comment: FloorComment,
+        comments: i32,
+    },
+    /// 订阅了主题页的连接：评论被删除。
+    CommentRemoved {
+        topic_id: i64,
+        post_id: i64,
+        comment_id: i64,
+        comments: i32,
+    },
+    /// 订阅了主题页的连接：`user_id` 赞了（`liked`）或取消赞，`likes` 为该楼现在的点赞数。
+    Likes {
+        topic_id: i64,
+        post_id: i64,
+        user_id: i64,
+        liked: bool,
+        likes: i32,
+    },
     /// 对方正在输入（只发给订阅了该会话 / 订单的连接）。
     Typing {
         conversation_id: Option<i64>,

@@ -7,20 +7,23 @@
 //! 90 秒内没收到客户端任何帧即断开。有连接即在线；心跳同时续期在线状态。
 //!
 //! **服务端推送**（`type`）：`message`、`read`（私信）；`order_message`、`order_read`、`order`（订单）；
-//! `notification`；`presence`、`typing`（只在订阅的会话 / 订单里）；`resync`（推送通道断过，见下）。
+//! `notification`；`presence`、`typing`（只在订阅的会话 / 订单里）；`comment`、`comment_removed`、`likes`
+//! （只在订阅的主题页里）；`resync`（推送通道断过，见下）。
 //! 结构见 `forum_core::chat::Event`。
 //!
 //! **客户端消息**：
 //! - `{"type":"subscribe","conversation_id":1}` / `{"type":"subscribe","order_id":2}`：打开会话或订单页时订阅
 //!   （检查权限；仲裁员要订阅才收得到订单推送），回 `{"type":"subscribed",…,"presence":[对方在线状态]}`；
-//!   之后收到对方上下线与正在输入。`unsubscribe` 同理。每条连接最多订阅 20 个。
+//!   之后收到对方上下线与正在输入。`unsubscribe` 同理。每条连接最多订阅 20 个（会话、订单、主题页合计）。
+//! - `{"type":"subscribe","topic_id":3}`：打开主题页时订阅（检查主题可见性），之后收到楼层下的新评论、
+//!   删除评论与点赞数变化（`presence` 为空）。主题被隐藏后不再推送。
 //! - `{"type":"typing","conversation_id":1}`（或 `order_id`）：只能在已订阅的会话 / 订单里发，每 2 秒最多一次。
 //!
 //! **断线重连与补拉**：推送只负责「尽快」，不保证送达。客户端记住每个打开的会话 / 订单的最后一条消息 ID 和最新通知 ID，
 //! 重连（或收到 `resync`）后先重新订阅，再用 REST 补拉：
 //! `GET /api/v1/conversations/{id}/messages?after=<最后 ID>`、`GET /api/v1/orders/{id}/messages?after=<最后 ID>`、
 //! `GET /api/v1/notifications?after=<最新 ID>`（都按时间正序，`has_more` / `next_cursor` 为真就继续拉），
-//! 订单状态用 `GET /api/v1/orders/{id}`。补拉与推送可能重复，按消息 ID 去重。
+//! 订单状态用 `GET /api/v1/orders/{id}`，主题页重新取当前页。补拉与推送可能重复，按消息 / 评论 ID 去重。
 
 use std::time::{Duration, Instant};
 
@@ -61,13 +64,15 @@ const CLOSE_POLICY: u16 = 1008;
 struct Target {
     conversation_id: Option<i64>,
     order_id: Option<i64>,
+    topic_id: Option<i64>,
 }
 
 impl Target {
     fn topic(&self) -> Option<Topic> {
-        match (self.conversation_id, self.order_id) {
-            (Some(c), None) => Some(Topic::Conversation(c)),
-            (None, Some(o)) => Some(Topic::Order(o)),
+        match (self.conversation_id, self.order_id, self.topic_id) {
+            (Some(c), None, None) => Some(Topic::Conversation(c)),
+            (None, Some(o), None) => Some(Topic::Order(o)),
+            (None, None, Some(t)) => Some(Topic::Thread(t)),
             _ => None,
         }
     }
@@ -92,23 +97,41 @@ enum Reply {
     },
     Pong,
     Subscribed {
-        conversation_id: Option<i64>,
-        order_id: Option<i64>,
+        #[serde(flatten)]
+        target: TargetIds,
         presence: Vec<Presence>,
     },
     Unsubscribed {
-        conversation_id: Option<i64>,
-        order_id: Option<i64>,
+        #[serde(flatten)]
+        target: TargetIds,
     },
     Error {
         code: ErrorCode,
     },
 }
 
-fn ids_of(topic: Topic) -> (Option<i64>, Option<i64>) {
+/// 回复里标明订阅对象（对应的那个字段有值，其余为空）。
+#[derive(Debug, Default, Serialize)]
+struct TargetIds {
+    conversation_id: Option<i64>,
+    order_id: Option<i64>,
+    topic_id: Option<i64>,
+}
+
+fn ids_of(topic: Topic) -> TargetIds {
     match topic {
-        Topic::Conversation(c) => (Some(c), None),
-        Topic::Order(o) => (None, Some(o)),
+        Topic::Conversation(c) => TargetIds {
+            conversation_id: Some(c),
+            ..TargetIds::default()
+        },
+        Topic::Order(o) => TargetIds {
+            order_id: Some(o),
+            ..TargetIds::default()
+        },
+        Topic::Thread(t) => TargetIds {
+            topic_id: Some(t),
+            ..TargetIds::default()
+        },
     }
 }
 
@@ -328,10 +351,8 @@ impl Connection {
             ClientMsg::Unsubscribe(t) => match t.topic() {
                 Some(topic) => {
                     self.state.hub.unsubscribe(self.id, topic);
-                    let (conversation_id, order_id) = ids_of(topic);
                     Ok(Some(Reply::Unsubscribed {
-                        conversation_id,
-                        order_id,
+                        target: ids_of(topic),
                     }))
                 }
                 None => Err(ApiError(ErrorCode::InvalidParameter)),
@@ -360,21 +381,31 @@ impl Connection {
                     .map(|u| (u, p.open()))
                     .collect()
             }
+            Topic::Thread(id) => {
+                let viewer = crate::access::Viewer {
+                    user: forum_db::users::actor(&self.state.db, me).await?,
+                };
+                crate::access::topic_access(&self.state, &viewer, id).await?;
+                Vec::new()
+            }
         };
         if !self.state.hub.subscribe(self.id, topic, watched.clone()) {
             return Err(ApiError(ErrorCode::RateLimited));
         }
         let ids: Vec<i64> = watched.iter().map(|(u, _)| *u).collect();
-        let (conversation_id, order_id) = ids_of(topic);
         Ok(Some(Reply::Subscribed {
-            conversation_id,
-            order_id,
+            target: ids_of(topic),
             presence: presence::lookup(&self.state, Some(me), &ids).await?,
         }))
     }
 
     async fn typing(&self, t: &Target, last: &mut Option<Instant>) -> ApiResult<()> {
         let topic = t.topic().ok_or(ApiError(ErrorCode::InvalidParameter))?;
+        let (conversation_id, order_id) = match topic {
+            Topic::Conversation(c) => (Some(c), None),
+            Topic::Order(o) => (None, Some(o)),
+            Topic::Thread(_) => return Err(ApiError(ErrorCode::InvalidParameter)),
+        };
         if !self.state.hub.is_subscribed(self.id, topic) {
             return Err(ApiError(ErrorCode::Forbidden));
         }
@@ -382,7 +413,6 @@ impl Connection {
             return Ok(());
         }
         *last = Some(Instant::now());
-        let (conversation_id, order_id) = ids_of(topic);
         self.state
             .hub
             .publish(

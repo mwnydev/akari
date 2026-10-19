@@ -1,11 +1,14 @@
 -- 回帖（plan 第 8 节）：分配楼层、插入楼层与原稿、写发件箱，一条多 CTE 语句；在自动提交下执行，
 -- 主题行锁只持有到语句结束（亚毫秒）。隐藏或锁定的主题不更新任何行（$7 为真时管理人员可回复锁定帖）。
+-- 同一条 UPDATE 维护列表的参与者头像：楼主之外最近发言的 4 个人（新的在前，不重复）。
 -- $1 topic_id, $2 author_id, $3 html, $4 plain_text, $5 source, $6 mentions, $7 allow_locked
 WITH pid AS (
   SELECT nextval(pg_get_serial_sequence('posts', 'id')) AS id
 ), t AS (
   UPDATE topics
-  SET last_floor = last_floor + 1, last_post_id = pid.id, last_poster_id = $2, last_post_at = now()
+  SET last_floor = last_floor + 1, last_post_id = pid.id, last_poster_id = $2, last_post_at = now(),
+      recent_posters = CASE WHEN topics.author_id = $2 THEN topics.recent_posters
+                            ELSE (ARRAY[$2::bigint] || array_remove(topics.recent_posters, $2))[1:4] END
   FROM pid
   WHERE topics.id = $1 AND (topics.flags & 8) = 0 AND ((topics.flags & 4) = 0 OR $7)
   RETURNING topics.id, topics.forum_id, topics.author_id, topics.flags, topics.last_floor, topics.last_post_at

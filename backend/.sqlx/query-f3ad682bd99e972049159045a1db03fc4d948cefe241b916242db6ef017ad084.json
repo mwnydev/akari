@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- 深分页：按 (last_post_at, id) 游标，走部分索引 topics_forum_list（排除置顶与隐藏，与 Valkey 有序集合语义一致）。\n-- $1 forum_id, $2 before_at, $3 before_id, $4 limit\nSELECT t.id, t.forum_id, t.author_id, t.title, t.kind, t.flags, t.last_floor, t.last_post_id, t.last_poster_id,\n       t.last_post_at, t.created_at, t.view_count, l.id AS \"listing_id?\", l.price::text AS \"price?\"\nFROM topics t\nLEFT JOIN trade_listings l ON l.topic_id = t.id\nWHERE t.forum_id = $1 AND (t.flags & 9) = 0 AND (t.last_post_at, t.id) < ($2, $3)\nORDER BY t.last_post_at DESC, t.id DESC\nLIMIT $4\n",
+  "query": "-- 按主键批量取主题（板块列表从 Valkey 取到 ID 后用）；交易帖带上交易帖 ID、价格、参考汇率与发货方式（同一次查询，不逐个取）。$1 ids\nSELECT t.id, t.forum_id, t.author_id, t.title, t.kind, t.flags, t.last_floor, t.last_post_id, t.last_poster_id,\n       t.last_post_at, t.created_at, t.view_count, t.recent_posters, l.id AS \"listing_id?\", l.price::text AS \"price?\",\n       l.cny_per_usdt AS \"cny_per_usdt?\", (l.terms->>'instant')::boolean AS \"instant?\"\nFROM topics t\nLEFT JOIN trade_listings l ON l.topic_id = t.id\nWHERE t.id = ANY($1::bigint[])\n",
   "describe": {
     "columns": [
       {
@@ -137,6 +137,17 @@
       },
       {
         "ordinal": 12,
+        "name": "recent_posters",
+        "type_info": "Int8Array",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "recent_posters"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
         "name": "listing_id?",
         "type_info": "Int8",
         "origin": {
@@ -147,18 +158,32 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "price?",
         "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "cny_per_usdt?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "trade_listings",
+            "name": "cny_per_usdt"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "instant?",
+        "type_info": "Bool",
         "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
-        "Int4",
-        "Timestamptz",
-        "Int8",
-        "Int8"
+        "Int8Array"
       ]
     },
     "nullable": [
@@ -175,8 +200,11 @@
       false,
       false,
       false,
+      true,
+      null,
+      true,
       null
     ]
   },
-  "hash": "47eefe74220ee9e942bb1f0c4abbedd04c4937e600ef9881018412b5ba60e1fd"
+  "hash": "f3ad682bd99e972049159045a1db03fc4d948cefe241b916242db6ef017ad084"
 }

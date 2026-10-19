@@ -1,0 +1,104 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 发评论：插入评论、楼层评论数加一、写通知，一条语句（与回帖一样在自动提交下执行，计数行锁只持有到语句结束）。\n-- 楼层已删除，或回复的评论不在这一楼 / 已删除时不写任何行。通知：楼主（评论了你的楼层）、被回复的人\n-- （回复了你的评论；被回复的就是楼主时只发这一条）、被 @ 的人（不重复通知前两者）。\n-- $1 post_id, $2 author_id, $3 回复的评论 ID（可空）, $4 body, $5 mentions\nWITH p AS (\n  SELECT id, topic_id, floor, author_id FROM posts WHERE id = $1 AND status = 0\n), r AS (\n  SELECT author_id FROM floor_comments WHERE id = $3 AND post_id = $1 AND status = 0\n), c AS (\n  INSERT INTO floor_comments (post_id, author_id, reply_to_id, body)\n  SELECT p.id, $2, (SELECT author_id FROM r), $4 FROM p\n  WHERE $3::bigint IS NULL OR EXISTS (SELECT 1 FROM r)\n  RETURNING id, post_id, author_id, reply_to_id, body, created_at\n), k AS (\n  INSERT INTO post_counters AS pc (post_id, comments)\n  SELECT post_id, 1 FROM c\n  ON CONFLICT (post_id) DO UPDATE SET comments = pc.comments + 1\n  RETURNING pc.comments\n), n AS (\n  INSERT INTO outbox (kind, payload)\n  SELECT 'notify.comment', jsonb_build_object('to', u.to_id, 'from', $2::bigint, 'topic_id', p.topic_id, 'post_id', p.id,\n                                              'floor', p.floor, 'comment_id', c.id, 'reply', u.reply)\n  FROM p, c, LATERAL (VALUES (c.reply_to_id, true), (p.author_id, false)) AS u (to_id, reply)\n  WHERE u.to_id IS NOT NULL AND u.to_id <> $2 AND (u.reply OR u.to_id IS DISTINCT FROM c.reply_to_id)\n), m AS (\n  INSERT INTO outbox (kind, payload)\n  SELECT 'notify.mention', jsonb_build_object('to', u, 'from', $2::bigint, 'topic_id', p.topic_id, 'post_id', p.id,\n                                              'floor', p.floor, 'comment_id', c.id)\n  FROM p, c, unnest($5::bigint[]) AS u\n  WHERE u <> $2 AND u <> p.author_id AND u IS DISTINCT FROM c.reply_to_id\n)\nSELECT c.id AS \"id!\", c.post_id AS \"post_id!\", c.author_id AS \"author_id!\", c.reply_to_id, c.body AS \"body!\",\n       c.created_at AS \"created_at!\", k.comments AS \"comments!\"\nFROM c, k\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "post_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "post_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "author_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "author_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "reply_to_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "reply_to_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "body!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "body"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "comments!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "post_counters",
+            "name": "comments"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dac98d480216f3bca7a36f5de18a3a26176121f2ec924e1ce5e83cf59a8355ed"
+}

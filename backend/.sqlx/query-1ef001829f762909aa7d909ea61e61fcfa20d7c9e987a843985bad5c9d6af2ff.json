@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 一页楼层各自最早的 N 条评论（按时间正序），每楼一次部分索引范围扫描。$1 post ids, $2 N\nSELECT c.id AS \"id!\", c.post_id AS \"post_id!\", c.author_id AS \"author_id!\", c.reply_to_id, c.body AS \"body!\",\n       c.created_at AS \"created_at!\"\nFROM unnest($1::bigint[]) AS p(id)\nCROSS JOIN LATERAL (\n  SELECT f.id, f.post_id, f.author_id, f.reply_to_id, f.body, f.created_at\n  FROM floor_comments f\n  WHERE f.post_id = p.id AND f.status = 0\n  ORDER BY f.id\n  LIMIT $2\n) c\nORDER BY c.post_id, c.id\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "post_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "post_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "author_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "author_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "reply_to_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "reply_to_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "body!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "body"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "1ef001829f762909aa7d909ea61e61fcfa20d7c9e987a843985bad5c9d6af2ff"
+}

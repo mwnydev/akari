@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 点赞（幂等）：楼层存在且未删除才写；新赞在同一条语句里给计数加一。需要通知楼主（$3）且这一楼还没有待发的合并通知时，\n-- 排一条 $4 秒后投递的 `notify.likes`：窗口内的赞由 worker 投递时合并成一条通知（`likes_digest.sql`）。\n-- 已经赞过时不改任何行（`changed` 为假），返回当前计数。$1 post_id, $2 user_id, $3 是否通知楼主, $4 合并窗口（秒）\nWITH l AS (\n  INSERT INTO post_likes (post_id, user_id)\n  SELECT id, $2 FROM posts WHERE id = $1 AND status = 0\n  ON CONFLICT DO NOTHING\n  RETURNING post_id\n), c AS (\n  INSERT INTO post_counters AS pc (post_id, likes, like_notify_pending)\n  SELECT post_id, 1, $3 FROM l\n  ON CONFLICT (post_id) DO UPDATE SET likes = pc.likes + 1, like_notify_pending = pc.like_notify_pending OR $3\n  RETURNING pc.likes, old.like_notify_pending AS was_pending\n), n AS (\n  INSERT INTO outbox (kind, payload, next_attempt_at)\n  SELECT 'notify.likes', jsonb_build_object('post_id', $1::bigint), now() + make_interval(secs => $4)\n  FROM c\n  WHERE $3 AND c.was_pending IS NOT TRUE\n)\nSELECT EXISTS (SELECT 1 FROM posts WHERE id = $1 AND status = 0) AS \"found!\", EXISTS (SELECT 1 FROM l) AS \"changed!\",\n       coalesce((SELECT likes FROM c), (SELECT likes FROM post_counters WHERE post_id = $1), 0) AS \"likes!\"\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "found!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "changed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "likes!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bool",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "1425680830ebd30a70087955cb27e32e8792edb6094de3f9d62213b252a08b71"
+}

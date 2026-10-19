@@ -706,6 +706,60 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/comments/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * 删除评论（只改状态）。作者本人可删（锁定的主题只有管理人员能删，被禁言时不能删，同楼层）；
+     *     他人的评论需要板块的删帖权限，计入删帖限速与异常检测，写审计日志（可恢复、可撤销）。
+     */
+    delete: operations["delete_comment"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/comments/{id}/report": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 举报评论。 */
+    post: operations["report_comment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/comments/{id}/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 恢复被管理人员删除的评论（删除的反向操作）。需要板块的删帖权限，写审计日志。 */
+    post: operations["restore_comment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/conversations": {
     parameters: {
       query?: never;
@@ -1299,6 +1353,27 @@ export interface paths {
     patch: operations["edit"];
     trace?: never;
   };
+  "/api/v1/posts/{id}/comments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 一楼的评论（「展开其余」），按时间正序，每页 50 条。已删除楼层的评论只有管理人员能看。 */
+    get: operations["post_comments"];
+    put?: never;
+    /**
+     * 评论楼层。门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户与评论限频。
+     *     通知楼主、被回复的人与被 @ 的人，并推给打开着这个主题页的连接。
+     */
+    post: operations["create_comment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/posts/{id}/history": {
     parameters: {
       query?: never;
@@ -1310,6 +1385,41 @@ export interface paths {
     get: operations["history"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/posts/{id}/like": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** 点赞（重复点赞不报错）。被封号的不能点赞。 */
+    put: operations["like_post"];
+    post?: never;
+    /** 取消赞（没赞过也不报错）。楼层已删除时也可以取消。 */
+    delete: operations["unlike_post"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/posts/{id}/report": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 举报楼层（进管理人员的处理队列，按楼层所在板块）。 */
+    post: operations["report_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1418,6 +1528,23 @@ export interface paths {
     put?: never;
     /** 回帖。楼层在一条多 CTE 语句里分配，HTML 在事务外过滤（plan 第 8 节）。 */
     post: operations["reply"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/topics/{id}/timeline": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 楼层时间轴（主题页右侧的滑块）：楼层数、首尾时间与采样楼层的发帖时间。按楼层号走唯一索引，热帖也只查 100 个点。 */
+    get: operations["topic_timeline"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1886,6 +2013,23 @@ export interface components {
       /** @description 原样传给 `navigator.credentials.get()`。 */
       options: Record<string, unknown>;
     };
+    /** @description 拍卖帖的信息行（拍卖上线时填写，ADR 0011）。 */
+    AuctionSummary: {
+      /** Format: int32 */
+      bids: number;
+      /**
+       * Format: int32
+       * @description 人民币计价时卖家签名的汇率。
+       */
+      cny_per_usdt?: number | null;
+      /** @description `usdt` 或 `cny`。 */
+      currency: string;
+      /** @description 当前价：USDT 时为最小单位，人民币时为分（十进制字符串）。 */
+      current: string;
+      /** Format: date-time */
+      ends_at: string;
+      reserve_met: boolean;
+    };
     /** @description 拍卖成交（ADR 0011）：付款页显示拍卖币种成交价、卖家汇率与应付 USDT（订单 `amount`）。 */
     AuctionView: {
       auction_id: string;
@@ -2092,6 +2236,17 @@ export interface components {
       /** @description 整条链完好。 */
       ok: boolean;
     };
+    /** @description 一楼的评论翻页。 */
+    CommentPage: {
+      comments: components["schemas"]["FloorComment"][];
+      /**
+       * Format: int64
+       * @description 还有更多时为下一页的 `after`。
+       */
+      next_cursor?: number | null;
+      /** @description 评论作者与被回复的人。 */
+      users: components["schemas"]["UserCardView"][];
+    };
     ConversationPage: {
       conversations: components["schemas"]["ConversationView"][];
       /** Format: int64 */
@@ -2116,6 +2271,14 @@ export interface components {
        * @description 对方发来、我还没读的消息数（最多 100）。
        */
       unread: number;
+    };
+    CreatedComment: {
+      comment: components["schemas"]["FloorComment"];
+      /**
+       * Format: int32
+       * @description 该楼现在的评论数。
+       */
+      comment_count: number;
     };
     CreatedListing: {
       /** @description 报价里的 `listingHash`（`0x` + 64 位十六进制）。 */
@@ -2278,6 +2441,41 @@ export interface components {
       safe?: string | null;
       transaction_builder: Record<string, unknown>;
     };
+    /** @description 楼层下的一条评论。`body` 是纯文本（服务端已去掉控制字符），客户端必须按文本渲染，不能当 HTML。 */
+    FloorComment: {
+      /** Format: int64 */
+      author_id: number;
+      body: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int64 */
+      id: number;
+      /** Format: int64 */
+      post_id: number;
+      /**
+       * Format: int64
+       * @description 回复某条评论时，那条评论的作者。
+       */
+      reply_to_id?: number | null;
+    };
+    /** @description 一楼下方的社交区：点赞与最早的几条评论（朋友圈式，按访问者计算，不进主题页缓存）。 */
+    FloorSocialView: {
+      /**
+       * Format: int32
+       * @description 未删除的评论总数。
+       */
+      comment_count: number;
+      /** @description 最早的 5 条评论，按时间正序；其余用 `GET /api/v1/posts/{id}/comments?after=` 取。 */
+      comments: components["schemas"]["FloorComment"][];
+      /** @description 访问者是否已赞（游客为假）。 */
+      liked: boolean;
+      /** @description 最近点赞的几个人（最多 5 个，新的在前），其余显示「等 N 人」。 */
+      likers: number[];
+      /** Format: int32 */
+      likes: number;
+      /** Format: int64 */
+      post_id: number;
+    };
     ForumView: {
       /** @description 能否发交易帖。 */
       allow_trade: boolean;
@@ -2327,6 +2525,14 @@ export interface components {
       /** @description 全站最新回复的普通主题（不含置顶与隐藏），只来自访问者看得到的板块。 */
       topics: components["schemas"]["TopicSummary"][];
       users: components["schemas"]["UserCardView"][];
+    };
+    LikeState: {
+      liked: boolean;
+      /**
+       * Format: int32
+       * @description 该楼现在的点赞数。
+       */
+      likes: number;
     };
     /** @description 交易帖条款（预填给报价；实际成交以卖家签名的报价为准）。 */
     ListingTerms: {
@@ -2490,6 +2696,15 @@ export interface components {
       /** Format: int64 */
       last_message_id: number;
     };
+    NewCommentRequest: {
+      /** @description 纯文本，1–500 字（换行与控制字符换成空格）；`@用户名` 会通知对方。 */
+      body: string;
+      /**
+       * Format: int64
+       * @description 回复这一楼里的某条评论（「回复 某人」）；为空表示直接评论楼层。
+       */
+      reply_to?: number | null;
+    };
     NewListingRequest: components["schemas"]["NewTopicRequest"] & {
       /**
        * Format: int32
@@ -2581,17 +2796,20 @@ export interface components {
     Notification: {
       /**
        * Format: int64
-       * @description 触发者（回复、@ 的作者，报价的对方）；系统通知为空。
+       * @description 触发者（回复、@、评论的作者，最近点赞的人，报价的对方）；系统通知为空。
        */
       actor_id?: number | null;
       /** Format: date-time */
       created_at: string;
       /** Format: int64 */
       id: number;
-      /** @description `reply` / `mention` / `message` / `order` / `offer` / `system`。 */
+      /** @description `reply` / `mention` / `comment` / `like` / `message` / `order` / `offer` / `system`。 */
       kind: string;
       /**
-       * @description 按类型：reply / mention 为 `{topic_id, post_id, floor}`；message 为 `{conversation_id, message_id}`；
+       * @description 按类型：reply / mention 为 `{topic_id, post_id, floor}`（评论里的 @ 另有 `comment_id`）；
+       *     comment 为 `{topic_id, post_id, floor, comment_id, reply}`（`reply` 为真：回复了你的评论，否则是评论了你的楼层）；
+       *     like 为 `{topic_id, post_id, floor, count, likers}`（合并窗口内新增的赞数与最近几位，新的在前）；
+       *     message 为 `{conversation_id, message_id}`；
        *     offer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；
        *     system 为发件箱原样内容（含 `event`）。
        */
@@ -2986,6 +3204,10 @@ export interface components {
       html: string;
       source: Record<string, unknown>;
     };
+    ReportRequest: {
+      /** @description 可以不填，最多 500 字。 */
+      reason?: string;
+    };
     /** @description 名片上的交易信誉（plan 第 7 节；只统计最终确认的链上订单）。 */
     ReputationView: {
       /** Format: int32 */
@@ -3010,6 +3232,10 @@ export interface components {
        * @description 成功率（万分比）= 成功 ÷（成功 + 本人责任失败）；不满 10 笔为空。
        */
       success_rate_bps?: number | null;
+    };
+    RestoreCommentRequest: {
+      /** @description 写入审计日志。 */
+      reason: string;
     };
     RestoreRequest: {
       /** @description 写入审计日志。 */
@@ -3347,6 +3573,23 @@ export interface components {
       user_id: number;
       username?: string | null;
     };
+    /** @description 楼层时间轴（主题页右侧的滑块）：首尾时间与均匀采样的楼层时间，中间的楼层按相邻采样点插值。 */
+    Timeline: {
+      /** Format: date-time */
+      first_post_at: string;
+      /** Format: int32 */
+      last_floor: number;
+      /** Format: date-time */
+      last_post_at: string;
+      /** @description 楼层号升序，含 1 楼与最后一楼；楼层不多时每层都有。 */
+      points: components["schemas"]["TimelinePoint"][];
+    };
+    TimelinePoint: {
+      /** Format: date-time */
+      at: string;
+      /** Format: int32 */
+      floor: number;
+    };
     /**
      * @description 争议超过 `resolveTimeout` 未裁决时任何人可调用的兜底结算（担保合约里争议中的订单不能再延长期限，
      *     `extendDeadlines` 只对未进入争议的订单有效，所以这里没有延期操作）。
@@ -3371,9 +3614,11 @@ export interface components {
       can_reply: boolean;
       /** Format: int32 */
       page: number;
+      /** @description 本页各楼的点赞与评论，顺序同 `posts`（已删除的楼层为空）。 */
+      social: components["schemas"]["FloorSocialView"][];
       /** Format: int32 */
       total_pages: number;
-      /** @description 主题作者与本页各楼层作者。 */
+      /** @description 主题作者、本页各楼层作者，以及点赞名单与评论里出现的人。 */
       users: components["schemas"]["UserCardView"][];
     };
     /** @description 主题页里与访问者无关、可以缓存的部分。名片不在里面：名片有自己的缓存，改名、升级后立即可见。 */
@@ -3383,6 +3628,7 @@ export interface components {
       topic: components["schemas"]["TopicSummary"];
     };
     TopicSummary: {
+      auction?: components["schemas"]["AuctionSummary"] | null;
       /** Format: int64 */
       author_id: number;
       /** Format: date-time */
@@ -3397,24 +3643,24 @@ export interface components {
        * @description 0=普通、1=交易、2=争议。
        */
       kind: number;
-      /** Format: int32 */
+      /**
+       * Format: int32
+       * @description 楼层数（时间轴的总层数；首尾时间为 `created_at` 与 `last_post_at`）。
+       */
       last_floor: number;
       /** Format: date-time */
       last_post_at: string;
       /** Format: int64 */
       last_poster_id?: number | null;
-      /**
-       * Format: int64
-       * @description 交易帖的交易帖 ID 与价格（USDT 最小单位，十进制字符串）；普通主题为空。
-       */
-      listing_id?: number | null;
-      price?: string | null;
+      /** @description 列表行的参与者头像：楼主在前，之后是最近发言的人（新的在前，不重复），最多 5 个；名片在响应的 `users` 里。 */
+      participants: number[];
       /**
        * Format: int32
        * @description 回复数（楼层数 − 1）。
        */
       replies: number;
       title: string;
+      trade?: components["schemas"]["TradeSummary"] | null;
       /** Format: int64 */
       views: number;
     };
@@ -3477,6 +3723,25 @@ export interface components {
       seller_fault_fail: number;
       /** @description 成功订单金额合计（USDT 最小单位，十进制字符串）。 */
       volume: string;
+    };
+    /** @description 主题列表里交易帖的信息行。卖家就是楼主，成功率等信誉见 `users` 里楼主的名片（`reputation`）。 */
+    TradeSummary: {
+      /**
+       * Format: int32
+       * @description 卖家参考汇率（ADR 0011，每 1 USDT 合多少元的 4 位小数定点数）；不填只显示 USDT。
+       */
+      cny_per_usdt?: number | null;
+      /** @description 自动发货（付款后即时交付）；否则卖家人工发货。 */
+      instant: boolean;
+      /** Format: int64 */
+      listing_id: number;
+      /** @description 价格，USDT 最小单位（十进制字符串）。 */
+      price: string;
+      /**
+       * Format: int64
+       * @description 剩余库存：仍有效的公开报价还能成交的次数。没有公开报价时为空；只在主题列表里给出。
+       */
+      stock?: number | null;
     };
     UnreadCount: {
       /**
@@ -5644,6 +5909,194 @@ export interface operations {
       };
     };
   };
+  delete_comment: {
+    parameters: {
+      query?: {
+        /** @description 管理人员删除他人评论时必填，写入审计日志。 */
+        reason?: string | null;
+      };
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  report_comment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReportRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  restore_comment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RestoreCommentRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
   list_conversations: {
     parameters: {
       query?: {
@@ -7435,6 +7888,103 @@ export interface operations {
       };
     };
   };
+  post_comments: {
+    parameters: {
+      query?: {
+        /** @description 游标：已经显示的最后一条评论 ID（主题页给出的前 5 条之后从第 5 条的 ID 开始）。 */
+        after?: number | null;
+      };
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CommentPage"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  create_comment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["NewCommentRequest"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CreatedComment"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
   history: {
     parameters: {
       query?: {
@@ -7458,6 +8008,167 @@ export interface operations {
         };
       };
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  like_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LikeState"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  unlike_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LikeState"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  report_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReportRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -7766,6 +8477,35 @@ export interface operations {
         };
       };
       429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  topic_timeline: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Timeline"];
+        };
+      };
+      404: {
         headers: {
           [name: string]: unknown;
         };

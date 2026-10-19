@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 用户名（已转小写）→ ID，评论里的 @提及用；走唯一索引 users_username。$1 小写用户名\nSELECT id FROM users WHERE lower(username) = ANY($1::text[]) AND username IS NOT NULL\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4610eed8abdb12e678c61e1d5937197f4eff79af201edd566b8147636e508856"
+}

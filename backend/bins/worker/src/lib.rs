@@ -72,6 +72,8 @@ pub enum Delivery {
 pub struct InSite {
     pub notifications: Vec<NewNotification>,
     pub push: Option<Push>,
+    /// 合并的点赞通知：投递时统计这一楼（帖子 ID）上一条通知之后的新赞。
+    pub like_digest: Option<i64>,
 }
 
 /// 推送已入库的数据（发布方在别的程序，只记了 ID 或状态）。
@@ -133,7 +135,13 @@ fn notice(
             payload: body,
         }],
         push: None,
+        like_digest: None,
     })
+}
+
+#[derive(Deserialize)]
+struct PostId {
+    post_id: i64,
 }
 
 /// 订单状态变化：推给双方；链上事件与回滚另写通知（确认级别升级只推送，不通知）。
@@ -164,18 +172,25 @@ fn order_updated(payload: &Value) -> Result<InSite, RenderError> {
             level: o.level,
             correction: o.correction,
         }),
+        like_digest: None,
     })
 }
 
 /// 把发件箱消息渲染成投递动作。新增消息类型时在这里加分支。
 ///
-/// 站内通知：`notify.reply` / `notify.mention` / `notify.message` / `notify.offer` 各成同名通知；
+/// 站内通知：`notify.reply` / `notify.mention` / `notify.comment` / `notify.message` / `notify.offer` 各成同名通知；
+/// `notify.likes` 在投递时合并成一条 `like` 通知（见 [`forum_db::floor::take_like_digest`]）；
 /// `notify.system` 与其他 `notify.*`（如提币地址提醒）成为 `system` 通知（`event` = 去掉前缀的类型）。
 pub fn render(msg: &outbox::Message) -> Result<Delivery, RenderError> {
     let p = &msg.payload;
     let in_site = match msg.kind.as_str() {
         "notify.reply" => notice(notifications::KIND_REPLY, p, None)?,
         "notify.mention" => notice(notifications::KIND_MENTION, p, None)?,
+        "notify.comment" => notice(notifications::KIND_COMMENT, p, None)?,
+        forum_db::floor::NOTIFY_LIKES => InSite {
+            like_digest: Some(serde_json::from_value::<PostId>(p.clone())?.post_id),
+            ..InSite::default()
+        },
         "notify.message" => notice(notifications::KIND_MESSAGE, p, None)?,
         "notify.offer" => notice(notifications::KIND_OFFER, p, None)?,
         "order.updated" => order_updated(p)?,
@@ -298,9 +313,22 @@ fn envelope(route: Route, event: &Event) -> Option<Envelope> {
 /// 写通知并准备推送（在投递事务里读取要推送的行）。
 async fn deliver(
     tx: &mut Transaction<'_, Postgres>,
-    site: InSite,
+    mut site: InSite,
     out: &mut Vec<Envelope>,
 ) -> Result<(), sqlx::Error> {
+    if let Some(post_id) = site.like_digest
+        && let Some(d) = forum_db::floor::take_like_digest(tx, post_id).await?
+    {
+        site.notifications.push(NewNotification {
+            user_id: d.to,
+            kind: notifications::KIND_LIKE,
+            actor_id: d.likers.first().copied(),
+            payload: json!({
+                "topic_id": d.topic_id, "post_id": d.post_id, "floor": d.floor,
+                "count": d.count, "likers": d.likers,
+            }),
+        });
+    }
     for (user, n) in notifications::insert(&mut **tx, &site.notifications).await? {
         out.extend(envelope(
             Route::Users { ids: vec![user] },

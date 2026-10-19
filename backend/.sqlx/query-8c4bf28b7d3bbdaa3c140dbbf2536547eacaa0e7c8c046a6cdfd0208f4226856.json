@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE post_counters SET like_notify_pending = false WHERE post_id = $1 RETURNING likes_notified_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "likes_notified_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "post_counters",
+            "name": "likes_notified_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "8c4bf28b7d3bbdaa3c140dbbf2536547eacaa0e7c8c046a6cdfd0208f4226856"
+}

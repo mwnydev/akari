@@ -1,4 +1,4 @@
-//! 发帖、回帖、编辑共用的写入前检查：处罚、限流、新用户限制、内容过滤；以及写入后的缓存维护。
+//! 发帖、回帖、评论、编辑共用的写入前检查：处罚、限流、新用户限制、内容过滤；以及写入后的缓存维护。
 
 use std::time::Duration;
 
@@ -20,6 +20,13 @@ pub const TOPIC_RATE: SlidingWindow =
 pub const REPLY_RATE: SlidingWindow =
     SlidingWindow::new("post-reply", 60, Duration::from_secs(600));
 pub const EDIT_RATE: SlidingWindow = SlidingWindow::new("post-edit", 30, Duration::from_secs(600));
+/// 楼层评论；新用户与发帖、回帖共用 [`NEW_USER_RATE`]。
+pub const COMMENT_RATE: SlidingWindow =
+    SlidingWindow::new("post-comment", 60, Duration::from_secs(600));
+/// 点赞与取消赞合计。
+pub const LIKE_RATE: SlidingWindow = SlidingWindow::new("post-like", 120, Duration::from_secs(600));
+/// 举报楼层与评论合计。
+pub const REPORT_RATE: SlidingWindow = SlidingWindow::new("report", 20, Duration::from_secs(3600));
 /// 注册 24 小时内：发主题与回帖合计每小时最多 5 条（plan 第 9 节）。
 pub const NEW_USER_RATE: SlidingWindow =
     SlidingWindow::new("post-new-user", 5, Duration::from_secs(3600));
@@ -107,6 +114,12 @@ pub fn clean(state: &AppState, actor: &Actor, html: &str, source: &Value) -> Api
     }
     cleaned.mentions.truncate(MAX_MENTIONS);
     Ok(cleaned)
+}
+
+/// 评论里 `@用户名` 对应的用户 ID（[`forum_core::floor::mention_names`]，不存在的用户名跳过）。
+pub async fn comment_mentions(state: &AppState, body: &str) -> ApiResult<Vec<i64>> {
+    let names = forum_core::floor::mention_names(body);
+    Ok(forum_db::users::ids_by_names(&state.db, &names).await?)
 }
 
 /// Valkey 有序集合的分数：`last_post_at` 的微秒时间戳。

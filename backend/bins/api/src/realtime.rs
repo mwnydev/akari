@@ -119,6 +119,13 @@ impl Registry {
                 .copied()
                 .filter(|c| self.conns.get(c).is_some_and(|l| l.user_id != *except))
                 .collect(),
+            Route::Watchers { topic } => self
+                .by_topic
+                .get(topic)
+                .into_iter()
+                .flatten()
+                .copied()
+                .collect(),
             Route::Presence { user_id, hidden } => self
                 .watchers
                 .get(user_id)
@@ -385,6 +392,24 @@ mod tests {
             (drain(&mut ra1), drain(&mut ra2), drain(&mut rb)),
             (1, 0, 0)
         );
+
+        // 主题页：订阅了的连接都收到，包括本人
+        assert!(h.subscribe(a1, Topic::Thread(7), Vec::new()));
+        assert!(h.subscribe(arb, Topic::Thread(7), Vec::new()));
+        h.dispatch(&env(Route::Watchers {
+            topic: Topic::Thread(7),
+        }));
+        assert_eq!(
+            (
+                drain(&mut ra1),
+                drain(&mut ra2),
+                drain(&mut rb),
+                drain(&mut rarb)
+            ),
+            (1, 0, 0, 1)
+        );
+        h.unsubscribe(a1, Topic::Thread(7));
+        h.unsubscribe(arb, Topic::Thread(7));
 
         // 上下线：隐身用户只推给经由进行中订单关注他的连接
         h.dispatch(&env(Route::Presence {

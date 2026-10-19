@@ -4,6 +4,7 @@ pub mod admin_auth;
 pub mod arbitration;
 pub mod auth;
 pub mod chain;
+pub mod floor;
 pub mod forums;
 pub mod health;
 pub mod me;

@@ -11,6 +11,8 @@ pub const UNREAD_CAP: i64 = 100;
 
 pub const KIND_REPLY: &str = "reply";
 pub const KIND_MENTION: &str = "mention";
+pub const KIND_COMMENT: &str = "comment";
+pub const KIND_LIKE: &str = "like";
 pub const KIND_MESSAGE: &str = "message";
 pub const KIND_ORDER: &str = "order";
 pub const KIND_OFFER: &str = "offer";

@@ -19,12 +19,13 @@ pub const CONN_TTL: Duration = Duration::from_secs(90);
 /// 最近活跃时间最多每分钟写一次库。
 const SEEN_GATE: Duration = Duration::from_secs(60);
 
-/// 订阅对象：会话或订单。
+/// 订阅对象：会话、订单，或打开着的论坛主题页（楼层评论与点赞实时更新）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Topic {
     Conversation(i64),
     Order(i64),
+    Thread(i64),
 }
 
 /// 事件发给哪些连接。
@@ -37,6 +38,8 @@ pub enum Route {
     Order { id: i64, users: Vec<i64> },
     /// 只发给订阅了 `topic` 的连接，`except` 本人的连接除外（正在输入）。
     Subscribers { topic: Topic, except: i64 },
+    /// 订阅了 `topic` 的所有连接（主题页的评论与点赞）。
+    Watchers { topic: Topic },
     /// 上下线：订阅了 `user_id` 参与的会话或订单的连接；`hidden`（隐身）时只发给订阅了进行中订单的交易对手。
     Presence { user_id: i64, hidden: bool },
 }

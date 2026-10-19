@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 删除评论（只改状态）并给楼层评论数减一；已删除的不再改。返回该楼现在的评论数。$1 id, $2 status（1 作者、2 管理人员）\nWITH d AS (\n  UPDATE floor_comments SET status = $2 WHERE id = $1 AND status = 0\n  RETURNING post_id\n)\nUPDATE post_counters pc SET comments = pc.comments - 1\nFROM d\nWHERE pc.post_id = d.post_id\nRETURNING pc.comments\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "comments",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "post_counters",
+            "name": "comments"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a9675e30791764eb2d0bfbb72406ae76a61ebc046377b19a23854dd93ae8f8ec"
+}

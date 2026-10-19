@@ -29,9 +29,13 @@ pub struct Topic {
     pub last_post_at: OffsetDateTime,
     pub created_at: OffsetDateTime,
     pub view_count: i64,
-    /// 交易帖（kind = 交易）的交易帖 ID 与价格（USDT 最小单位，十进制字符串）。
+    /// 楼主之外最近发言的最多 4 个人，新的在前（回帖时维护）。
+    pub recent_posters: Vec<i64>,
+    /// 交易帖（kind = 交易）的交易帖 ID、价格（USDT 最小单位，十进制字符串）、卖家参考汇率与是否自动发货。
     pub listing_id: Option<i64>,
     pub price: Option<String>,
+    pub cny_per_usdt: Option<i32>,
+    pub instant: Option<bool>,
 }
 
 impl Topic {
@@ -192,6 +196,32 @@ pub async fn set_title(db: impl PgExecutor<'_>, id: i64, title: &str) -> Result<
         .execute(db)
         .await?;
     Ok(())
+}
+
+/// 交易帖的剩余库存（仍有效的公开报价的可成交次数减去已成交订单）：`(交易帖 ID, 库存)`；没有有效公开报价的不返回。
+pub async fn listing_stock(
+    db: impl PgExecutor<'_>,
+    listing_ids: &[i64],
+) -> Result<Vec<(i64, i64)>, sqlx::Error> {
+    if listing_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_file!("queries/listing_stock.sql", listing_ids)
+        .fetch_all(db)
+        .await?;
+    Ok(rows.into_iter().map(|r| (r.listing_id, r.stock)).collect())
+}
+
+/// 指定楼层号的发帖时间 `(楼层, 时间)`，按楼层升序；不存在的楼层不返回。
+pub async fn floor_times(
+    db: impl PgExecutor<'_>,
+    topic_id: i64,
+    floors: &[i32],
+) -> Result<Vec<(i32, OffsetDateTime)>, sqlx::Error> {
+    let rows = sqlx::query_file!("queries/topic_timeline.sql", topic_id, floors)
+        .fetch_all(db)
+        .await?;
+    Ok(rows.into_iter().map(|r| (r.floor, r.created_at)).collect())
 }
 
 /// 批量累加浏览数（worker 每 10 秒回写一次）。

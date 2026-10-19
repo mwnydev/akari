@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 取消赞（幂等）：删掉赞并在同一条语句里给计数减一；没赞过时不改任何行（`changed` 为假）。返回当前计数。$1 post_id, $2 user_id\nWITH d AS (\n  DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2\n  RETURNING post_id\n), c AS (\n  UPDATE post_counters pc SET likes = pc.likes - 1\n  FROM d\n  WHERE pc.post_id = d.post_id\n  RETURNING pc.likes\n)\nSELECT EXISTS (SELECT 1 FROM d) AS \"changed!\",\n       coalesce((SELECT likes FROM c), (SELECT likes FROM post_counters WHERE post_id = $1), 0) AS \"likes!\"\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "changed!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "likes!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "0eee44a7483b1cd58f2a8d6776cacb82facfe6f743e83883bc8f8154c4e08670"
+}

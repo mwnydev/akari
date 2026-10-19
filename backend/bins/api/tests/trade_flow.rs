@@ -263,7 +263,7 @@ async fn listing_requires_wallet_and_valid_terms(db: PgPool) {
     assert_eq!(r.body["content_hash"], hash);
     assert_eq!(r.body["terms"]["bond"], "0");
     assert_eq!(r.body["cny_per_usdt"], Value::Null);
-    // 主题帖本身照常可读；主题、板块列表、跨板块最新都带交易帖 ID 与价格
+    // 主题帖本身照常可读；主题、板块列表、跨板块最新都带交易帖信息行（交易帖 ID 与价格）
     let r = call(
         &app,
         "GET",
@@ -273,16 +273,19 @@ async fn listing_requires_wallet_and_valid_terms(db: PgPool) {
     )
     .await;
     assert_eq!(r.status, StatusCode::OK);
-    assert_eq!(r.body["topic"]["listing_id"], listing_id);
-    assert_eq!(r.body["topic"]["price"], "45000000");
+    assert_eq!(r.body["topic"]["trade"]["listing_id"], listing_id);
+    assert_eq!(r.body["topic"]["trade"]["price"], "45000000");
     assert_eq!(r.body["forum"]["allow_trade"], true);
     for path in ["/api/v1/forums/market/topics", "/api/v1/topics/latest"] {
         let r = call(&app, "GET", path, None, &[]).await;
         assert_eq!(r.status, StatusCode::OK, "{path}");
         let t = &r.body["topics"][0];
         assert_eq!(t["id"], topic_id, "{path}");
-        assert_eq!(t["listing_id"], listing_id, "{path}");
-        assert_eq!(t["price"], "45000000", "{path}");
+        assert_eq!(t["trade"]["listing_id"], listing_id, "{path}");
+        assert_eq!(t["trade"]["price"], "45000000", "{path}");
+        // 还没有公开报价：没有库存数字；拍卖位留空
+        assert_eq!(t["trade"]["stock"], Value::Null, "{path}");
+        assert_eq!(t["auction"], Value::Null, "{path}");
     }
     // 隐藏后交易帖也看不到
     sqlx::query("UPDATE topics SET flags = 8 WHERE id = $1")
