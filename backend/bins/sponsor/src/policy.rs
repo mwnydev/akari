@@ -1,7 +1,8 @@
 //! 代付白名单与费用档位（plan 第 5 节「gas 规则」「次数上限」，ADR 0004）。纯函数，不碰网络和数据库。
 //!
 //! - 只认 USDT、Escrow、StreamEscrow 与账户自身（签名者变更）；Paymaster 合约和其他任何地址一律拒绝。
-//! - USDT 只能 `approve` 给担保合约，或 `transfer` 提回交易所。
+//! - USDT 只能 `approve` 给担保合约，或 `transfer` 提回交易所：收款方必须是用户已生效的提币地址
+//!   （plan 第 5 节「提币地址冷却」；冷却中或已撤销的地址不代付）。
 //! - 付款前的操作（下单、提回、超时取回退款、撤销报价、改签名者……）收代付费；付款后的操作免费，
 //!   由担保合约结算时扣固定 gas 费。免费额度用完的操作：标记发货、开始、领取直接拒绝，延长确认期与和解改收代付费。
 
@@ -283,8 +284,13 @@ fn market_action(contract: Address, market: Market, decoded: (Method, Option<U25
     }
 }
 
-/// 逐笔检查白名单。`sender` 是发起操作的账户（签名者变更是账户调用自己）。
-pub fn classify(calls: &[Call], sender: Address, c: &Contracts) -> Result<Vec<Action>, Reject> {
+/// 逐笔检查白名单。`sender` 是发起操作的账户（签名者变更是账户调用自己）；`withdraw_to` 是用户已生效的提币地址。
+pub fn classify(
+    calls: &[Call],
+    sender: Address,
+    c: &Contracts,
+    withdraw_to: &[Address],
+) -> Result<Vec<Action>, Reject> {
     if calls.is_empty() || calls.len() > MAX_CALLS {
         return Err(Reject::not_allowed(format!(
             "operation must contain 1..={MAX_CALLS} calls"
@@ -308,9 +314,16 @@ pub fn classify(calls: &[Call], sender: Address, c: &Contracts) -> Result<Vec<Ac
                     };
                 }
                 if let Ok(t) = IERC20::transferCall::abi_decode(data) {
-                    // TODO(withdraw-address): 提币地址功能（plan 第 5 节「提币地址冷却」）上线后，只允许转到用户
-                    // 已生效的提币地址；在那之前任何地址都放行（转账本身仍需用户 Passkey 签名，且收代付费）。
-                    return Ok(Action::Transfer { to: t.to });
+                    return if withdraw_to.contains(&t.to) {
+                        Ok(Action::Transfer { to: t.to })
+                    } else {
+                        Err(Reject::new(
+                            ErrorCode::WithdrawAddressNotActive,
+                            format!(
+                                "call {i}: transfer recipient is not an active withdraw address"
+                            ),
+                        ))
+                    };
                 }
                 return Err(not_allowed(i, "token method not sponsored"));
             }
@@ -452,8 +465,10 @@ mod tests {
         U256::from(n)
     }
 
+    const WITHDRAW_TO: Address = Address::repeat_byte(0x99);
+
     fn classify1(c: Call) -> Result<Action, Reject> {
-        classify(&[c], SENDER, &contracts()).map(|mut v| v.remove(0))
+        classify(&[c], SENDER, &contracts(), &[WITHDRAW_TO]).map(|mut v| v.remove(0))
     }
 
     #[test]
@@ -485,10 +500,24 @@ mod tests {
     }
 
     #[test]
-    fn transfer_out_is_allowed() {
-        let to = Address::repeat_byte(0x99);
-        let c = call(TOKEN, IERC20::transferCall { to, amount: id(5) });
-        assert_eq!(classify1(c).unwrap(), Action::Transfer { to });
+    fn transfer_only_to_active_withdraw_addresses() {
+        let c = call(
+            TOKEN,
+            IERC20::transferCall {
+                to: WITHDRAW_TO,
+                amount: id(5),
+            },
+        );
+        assert_eq!(classify1(c).unwrap(), Action::Transfer { to: WITHDRAW_TO });
+        // 冷却中、已撤销或从没登记过的地址都不在已生效列表里；转给自己的钱包或合约同样拒绝。
+        for to in [Address::repeat_byte(0x98), SENDER, ESCROW, PAYMASTER] {
+            let c = call(TOKEN, IERC20::transferCall { to, amount: id(5) });
+            assert_eq!(
+                classify1(c).unwrap_err().code,
+                ErrorCode::WithdrawAddressNotActive,
+                "{to}"
+            );
+        }
     }
 
     #[test]
@@ -525,9 +554,9 @@ mod tests {
             data: Bytes::from_static(&[0xe9, 0xae, 0x5c, 0x53]),
         };
         assert!(classify1(self_execute).is_err());
-        assert!(classify(&[], SENDER, &contracts()).is_err());
+        assert!(classify(&[], SENDER, &contracts(), &[]).is_err());
         let many = vec![call(ESCROW, Escrow::releaseCall { orderId: id(1) }); MAX_CALLS + 1];
-        assert!(classify(&many, SENDER, &contracts()).is_err());
+        assert!(classify(&many, SENDER, &contracts(), &[]).is_err());
     }
 
     #[test]

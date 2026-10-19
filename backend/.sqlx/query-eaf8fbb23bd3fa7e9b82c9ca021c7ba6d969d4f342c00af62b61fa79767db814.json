@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE withdraw_addresses SET revoked_at = now() WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eaf8fbb23bd3fa7e9b82c9ca021c7ba6d969d4f342c00af62b61fa79767db814"
+}

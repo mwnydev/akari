@@ -62,10 +62,12 @@ pub fn wallet_state() -> WalletState {
             escrow: Some(ESCROW.parse().unwrap()),
             usdt: Some(USDT.parse().unwrap()),
             wallet_init_versions: vec![forum_chain::anvil::dev_wallet_version()],
+            contracts: vec![ESCROW.parse().unwrap(), USDT.parse().unwrap()],
         },
         limits: TradeLimits::default(),
         verifier: Arc::new(FakeVerifier),
         sponsor: None,
+        rpc: None,
     }
 }
 

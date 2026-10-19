@@ -448,3 +448,59 @@ async fn hot_queries_use_indexes(db: PgPool) {
     )
     .await;
 }
+
+/// 提币地址：1000 个用户各有 5 个地址（其中 3 个已撤销）。代付检查、列表与添加前检查都按用户走索引。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn withdraw_address_queries_use_indexes(db: PgPool) {
+    sqlx::raw_sql(
+        r"
+        INSERT INTO users (email) SELECT 'u' || g || '@example.com' FROM generate_series(1, 1000) g;
+        INSERT INTO withdraw_addresses (user_id, chain_id, address, label, active_at, revoked_at)
+        SELECT 1 + g % 1000, 421614, decode(lpad(to_hex(g), 40, '0'), 'hex'), '', now(),
+               CASE WHEN g % 5 < 3 THEN now() END
+        FROM generate_series(1, 5000) g;
+        ANALYZE;
+        ",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+    let addr = vec![0x11_u8; 20];
+    let cases = [
+        (
+            "withdraw_addresses_active",
+            sqlx::query(q!("withdraw_addresses_active.sql"))
+                .bind(7_i64)
+                .bind(421614_i64),
+            "withdraw_addresses_live",
+        ),
+        (
+            "withdraw_addresses_list",
+            sqlx::query(q!("withdraw_addresses_list.sql"))
+                .bind(7_i64)
+                .bind(421614_i64)
+                .bind(forum_db::withdraw::LIST_LIMIT),
+            "withdraw_addresses_user",
+        ),
+        (
+            "withdraw_addresses_stats",
+            sqlx::query(q!("withdraw_addresses_stats.sql"))
+                .bind(7_i64)
+                .bind(421614_i64)
+                .bind(addr),
+            "withdraw_addresses_live",
+        ),
+    ];
+    for (name, q, index) in cases {
+        let (info, plan) = explain(&db, q).await;
+        assert!(
+            !info.seq_scans.iter().any(|t| t == "withdraw_addresses"),
+            "{name}: seq scan\n{plan:#}"
+        );
+        assert!(
+            info.indexes.iter().any(|i| i == index),
+            "{name}: expected index {index}, used {:?}\n{plan:#}",
+            info.indexes
+        );
+    }
+}

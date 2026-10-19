@@ -70,11 +70,14 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::PasskeyRequired
         | ErrorCode::WalletRequired
         | ErrorCode::SponsorNotAllowed
-        | ErrorCode::SponsorSuspended => StatusCode::FORBIDDEN,
+        | ErrorCode::SponsorSuspended
+        | ErrorCode::WithdrawAddressNotActive => StatusCode::FORBIDDEN,
         ErrorCode::OfferUnavailable | ErrorCode::Conflict | ErrorCode::SponsorPending => {
             StatusCode::CONFLICT
         }
-        ErrorCode::SponsorUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+        ErrorCode::SponsorUnavailable | ErrorCode::ChainUnavailable => {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
         ErrorCode::NotFound => StatusCode::NOT_FOUND,
         ErrorCode::ResendTooSoon
         | ErrorCode::RateLimited
@@ -99,7 +102,10 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::PasskeyFailed
         | ErrorCode::TooManyPasskeys
         | ErrorCode::WalletAddressMismatch
-        | ErrorCode::SimulationFailed => StatusCode::BAD_REQUEST,
+        | ErrorCode::SimulationFailed
+        | ErrorCode::WithdrawAddressInvalid
+        | ErrorCode::WithdrawAddressForbidden
+        | ErrorCode::WithdrawAddressLimit => StatusCode::BAD_REQUEST,
     }
 }
 

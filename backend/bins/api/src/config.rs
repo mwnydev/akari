@@ -48,6 +48,9 @@ pub struct ChainConfig {
     pub usdt: Option<Address>,
     /// 钱包初始化参数版本（ADR 0008）；为空时不能登记钱包地址。
     pub wallet_init_versions: Vec<WalletInitVersion>,
+    /// 本站用到的全部合约：担保、分期、参数、代币、EntryPoint、Paymaster、Kernel 实现 / 工厂 / 验证器。
+    /// 不能登记为提币地址；链上读代理只放行对它们（与调用者自己的钱包）的 `eth_call`。
+    pub contracts: Vec<Address>,
 }
 
 impl ChainConfig {
@@ -62,12 +65,15 @@ impl ChainConfig {
 /// 否则用 `CHAIN_ID` / `ESCROW_ADDRESS` / `USDT_ADDRESS`（只用于不接链的本地开发）。
 fn chain() -> anyhow::Result<(ChainConfig, Option<forum_chain::config::ChainConfig>)> {
     let Some(path) = std::env::var_os("CHAIN_CONFIG").filter(|p| !p.is_empty()) else {
+        let escrow = opt_address("ESCROW_ADDRESS")?;
+        let usdt = opt_address("USDT_ADDRESS")?;
         let chain = ChainConfig {
             // 默认 Arbitrum Sepolia；主网 42161。
             chain_id: num_or("CHAIN_ID", 421_614)?,
-            escrow: opt_address("ESCROW_ADDRESS")?,
-            usdt: opt_address("USDT_ADDRESS")?,
+            escrow,
+            usdt,
             wallet_init_versions: Vec::new(),
+            contracts: escrow.into_iter().chain(usdt).collect(),
         };
         return Ok((chain, None));
     };
@@ -83,8 +89,32 @@ fn chain() -> anyhow::Result<(ChainConfig, Option<forum_chain::config::ChainConf
         escrow: Some(address(file.contracts.escrow)),
         usdt: Some(address(file.token.address)),
         wallet_init_versions: file.wallet_init_versions.clone(),
+        contracts: known_contracts(&file).into_iter().map(address).collect(),
     };
     Ok((chain, Some(file)))
+}
+
+fn known_contracts(file: &forum_chain::config::ChainConfig) -> Vec<alloy::primitives::Address> {
+    let c = &file.contracts;
+    let mut all = vec![c.escrow, c.stream, c.config, file.token.address];
+    if let Some(aa) = &file.aa {
+        all.extend([aa.entry_point, aa.paymaster]);
+        all.extend(&aa.factories);
+    }
+    for v in &file.wallet_init_versions {
+        all.extend([
+            v.kernel_implementation,
+            v.kernel_factory,
+            v.kernel_meta_factory,
+            v.webauthn_validator,
+            v.entry_point,
+            v.paymaster,
+            v.approve_token,
+        ]);
+    }
+    all.sort();
+    all.dedup();
+    all
 }
 
 fn list(value: &str) -> Vec<String> {
@@ -182,5 +212,36 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty()),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    #[test]
+    fn known_contracts_cover_markets_token_aa_and_kernel() {
+        let text = include_str!("../../../crates/chain/chain.example.toml");
+        let file = forum_chain::config::ChainConfig::parse(text, |k| {
+            (k == "CHAIN_RPC_PRIMARY_HTTP").then(|| "https://rpc.example".to_owned())
+        })
+        .unwrap();
+        let all = super::known_contracts(&file);
+        let v = &file.wallet_init_versions[0];
+        for a in [
+            file.contracts.escrow,
+            file.contracts.stream,
+            file.contracts.config,
+            file.token.address,
+            v.kernel_factory,
+            v.kernel_meta_factory,
+            v.webauthn_validator,
+            v.entry_point,
+            v.paymaster,
+        ] {
+            assert!(all.contains(&a), "{a}");
+        }
+        // 示例里 token、EntryPoint、Paymaster 与初始化参数里的重复，只出现一次。
+        assert_eq!(all.iter().filter(|&&a| a == file.token.address).count(), 1);
     }
 }

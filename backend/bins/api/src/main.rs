@@ -51,6 +51,12 @@ async fn main() -> anyhow::Result<()> {
         chain: cfg.chain.clone(),
         limits: cfg.trade_limits,
         verifier,
+        rpc: cfg
+            .chain_file
+            .as_ref()
+            .map(forum_chain::rpc::FailoverRpc::from_config)
+            .transpose()?
+            .map(Arc::new),
         sponsor: match (&cfg.sponsor_url, &cfg.sponsor_token) {
             (Some(url), Some(token)) => Some(SponsorProxy::new(url, token.clone())?),
             _ => {

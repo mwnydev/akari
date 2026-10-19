@@ -58,6 +58,33 @@ pub fn wallet_code(code: &str) -> Rendered {
     (subject, html, text)
 }
 
+/// 添加了提币地址（plan 第 5 节「提币地址冷却」）。`address` 是完整地址，`active_at` 是已格式化的生效时间；
+/// 第一个地址 `immediate` 为真。冷却期内本人可以撤销，正文写明不是本人操作时怎么办。
+pub fn withdraw_address_added(address: &str, active_at: &str, immediate: bool) -> Rendered {
+    let when = if immediate {
+        "已立即生效".to_owned()
+    } else {
+        format!("将于 {active_at} 生效")
+    };
+    let subject = format!("提币地址已添加，{when}");
+    let advice = if immediate {
+        "如果不是你本人操作，请立即在钱包页「提币地址」里撤销，并在「设置 → 设备管理」里踢出其他设备。"
+    } else {
+        "生效前可以随时撤销。如果不是你本人操作，请立即在钱包页「提币地址」里撤销，并在「设置 → 设备管理」里踢出其他设备。"
+    };
+    let html = layout(
+        "提币地址已添加",
+        &format!(
+            "<p>你的账号添加了提币地址：</p><p style=\"font-family:ui-monospace,monospace;word-break:break-all\">{address}</p>\
+             <p>{when}。{advice}</p>"
+        ),
+    );
+    let text = format!(
+        "你的账号添加了提币地址：{address}\n{when}。{advice}\n\n官方永远不会向你索要验证码、恢复码，也不会要求私下转账。"
+    );
+    (subject, html, text)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -71,5 +98,17 @@ mod tests {
         let (subject, html, text) = super::wallet_code("654321");
         assert!(subject.contains("654321") && html.contains("654321") && text.contains("654321"));
         assert!(subject.contains("开通交易") && text.contains("不是你本人"));
+    }
+
+    #[test]
+    fn withdraw_address_added_states_when_it_takes_effect() {
+        let addr = "0x1111111111111111111111111111111111111111";
+        let (subject, html, text) =
+            super::withdraw_address_added(addr, "2026-10-20 08:00 UTC", false);
+        assert!(subject.contains("将于 2026-10-20 08:00 UTC 生效"));
+        assert!(html.contains(addr) && text.contains(addr));
+        assert!(text.contains("撤销"));
+        let (subject, _, text) = super::withdraw_address_added(addr, "ignored", true);
+        assert!(subject.contains("立即生效") && !text.contains("ignored"));
     }
 }

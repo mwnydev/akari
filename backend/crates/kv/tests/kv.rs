@@ -58,6 +58,24 @@ async fn ephemeral_take_is_single_use_and_expires() {
 }
 
 #[tokio::test]
+async fn ephemeral_get_keeps_the_value_until_expiry() {
+    let Some(pool) = pool() else { return };
+    let key = format!("test:eph:{}", unique());
+    assert_eq!(forum_kv::ephemeral::get(&pool, &key).await.unwrap(), None);
+    forum_kv::ephemeral::put(&pool, &key, "a", Duration::from_millis(200))
+        .await
+        .unwrap();
+    for _ in 0..2 {
+        assert_eq!(
+            forum_kv::ephemeral::get(&pool, &key).await.unwrap(),
+            Some("a".to_owned())
+        );
+    }
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert_eq!(forum_kv::ephemeral::get(&pool, &key).await.unwrap(), None);
+}
+
+#[tokio::test]
 async fn session_store_roundtrip_and_expiry() {
     let Some(pool) = pool() else { return };
     let store = ValkeySessionStore::new(pool);

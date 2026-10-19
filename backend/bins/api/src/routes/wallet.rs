@@ -165,7 +165,10 @@ pub async fn reverify_verify(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn current_user(state: &AppState, session: &Session) -> ApiResult<forum_db::users::User> {
+pub(crate) async fn current_user(
+    state: &AppState,
+    session: &Session,
+) -> ApiResult<forum_db::users::User> {
     let id = current_user_id(session).await?;
     forum_db::users::find_by_id(&state.db, id)
         .await?

@@ -62,6 +62,13 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::wallet::assert_finish))
         .routes(routes!(routes::wallet::create_account))
         .routes(routes!(routes::aa::rpc))
+        .routes(routes!(routes::chain::chain_rpc))
+        .routes(routes!(routes::chain::balances))
+        .routes(routes!(
+            routes::withdraw::list_withdraw_addresses,
+            routes::withdraw::add_withdraw_address
+        ))
+        .routes(routes!(routes::withdraw::revoke_withdraw_address))
         .routes(routes!(routes::trade::params))
         .routes(routes!(routes::trade::create_listing))
         .routes(routes!(routes::trade::get_listing))

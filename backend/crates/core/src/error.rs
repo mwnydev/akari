@@ -84,6 +84,16 @@ pub enum ErrorCode {
     SimulationFailed,
     #[error("sponsor service unavailable")]
     SponsorUnavailable,
+    #[error("invalid withdraw address")]
+    WithdrawAddressInvalid,
+    #[error("withdraw address not allowed")]
+    WithdrawAddressForbidden,
+    #[error("too many withdraw addresses")]
+    WithdrawAddressLimit,
+    #[error("withdraw address not active")]
+    WithdrawAddressNotActive,
+    #[error("chain read unavailable")]
+    ChainUnavailable,
     #[error("internal error")]
     Internal,
 }
@@ -130,6 +140,11 @@ impl ErrorCode {
             Self::SponsorSuspended => "链上失败次数过多，代付已暂停 24 小时",
             Self::SimulationFailed => "交易预演失败，请检查余额和订单状态",
             Self::SponsorUnavailable => "代付服务暂时不可用，请稍后再试",
+            Self::WithdrawAddressInvalid => "地址格式不正确，请检查后重新粘贴",
+            Self::WithdrawAddressForbidden => "不能使用本人钱包地址或平台合约地址",
+            Self::WithdrawAddressLimit => "最多保存 10 个提币地址",
+            Self::WithdrawAddressNotActive => "只能提到已生效的提币地址",
+            Self::ChainUnavailable => "暂时无法读取链上数据，请稍后再试",
             Self::Internal => "服务暂时不可用，请稍后再试",
         }
     }

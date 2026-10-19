@@ -12,6 +12,7 @@ pub mod topics;
 pub mod trade;
 pub mod users;
 pub mod wallet;
+pub mod withdraw;
 
 pub use sqlx::{PgPool, Postgres, Transaction};
 

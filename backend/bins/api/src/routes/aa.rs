@@ -84,7 +84,8 @@ impl SponsorProxy {
     }
 }
 
-async fn limit(state: &AppState, rule: &SlidingWindow, id: &str) -> ApiResult<()> {
+/// 按任意标识（IP、用户 ID）限频。
+pub(crate) async fn limit(state: &AppState, rule: &SlidingWindow, id: &str) -> ApiResult<()> {
     if rule
         .hit(&state.kv, &format!("{}{id}", state.cache.ns()))
         .await?

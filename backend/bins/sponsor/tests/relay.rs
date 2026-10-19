@@ -733,9 +733,18 @@ async fn sponsors_and_relays_user_operations(db: PgPool) {
     let by_hash = ok(&router, user_a, "eth_getUserOperationByHash", json!([hash])).await;
     assert_eq!(by_hash["transactionHash"], r["receipt"]["transactionHash"]);
 
-    // 2. 提回交易所 9 USDT：模拟通过并签名后，用户（所有者直接调用账户）先把钱转走，链上 callData 回滚，
+    // 2. 提回交易所 9 USDT（转到已生效的提币地址）：模拟通过并签名后，用户（所有者直接调用账户）先把钱转走，链上 callData 回滚，
     //    代付费照样在验证阶段扣走。
     let exchange = Address::repeat_byte(0xe1);
+    sqlx::query(
+        "INSERT INTO withdraw_addresses (user_id, chain_id, address, label, active_at) VALUES ($1, $2, $3, 'ex', now())",
+    )
+    .bind(user_a)
+    .bind(CHAIN_ID as i64)
+    .bind(exchange.to_vec())
+    .execute(&db)
+    .await
+    .unwrap();
     let transfer = UserOperation {
         sender,
         nonce: U256::from(1),

@@ -1,6 +1,6 @@
 //! 代付签名（ERC-7677 `pm_getPaymasterStubData` / `pm_getPaymasterData`）与 gas 估算。
 //!
-//! 签名前依次检查：目标 EntryPoint 与链 → sender 是本人钱包 → 部署工厂在白名单 → callData 白名单 →
+//! 签名前依次检查：目标 EntryPoint 与链 → sender 是本人钱包 → 部署工厂在白名单 → callData 白名单（含提币地址）→
 //! 暂停 / 待上链 / 每单额度 → gas 上限 → 模拟。签名 2 分钟有效（`validAfter` = 当前时间），绑定这一笔操作。
 //! 额度、待上链检查与写入签名记录在同一事务里、按账户和订单加咨询锁，并发请求不会多拿免费次数。
 
@@ -135,6 +135,16 @@ impl Sponsor {
         }
     }
 
+    /// 用户已生效的提币地址：USDT 只代付转到这些地址（plan 第 5 节「提币地址冷却」）。
+    async fn withdraw_addresses(&self, user_id: i64) -> Result<Vec<Address>> {
+        let chain_id = i64::try_from(self.chain_id()).map_err(anyhow::Error::from)?;
+        let rows = forum_db::withdraw::active_addresses(&self.db, user_id, chain_id).await?;
+        Ok(rows
+            .iter()
+            .filter_map(|a| Address::try_from(a.as_slice()).ok())
+            .collect())
+    }
+
     fn check_factory(&self, op: &UserOperation) -> Result<()> {
         match op.factory.filter(|f| !f.is_zero()) {
             Some(f) if !self.aa.factories.contains(&f) => {
@@ -244,7 +254,8 @@ impl Sponsor {
         self.check_wallet(user_id, op.sender).await?;
         self.check_factory(op)?;
         let calls = kernel::decode(&op.call_data)?;
-        let actions = policy::classify(&calls, op.sender, &self.contracts)?;
+        let withdraw_to = self.withdraw_addresses(user_id).await?;
+        let actions = policy::classify(&calls, op.sender, &self.contracts, &withdraw_to)?;
         let delivered = self.delivered(&actions).await?;
         let mut conn = self.db.acquire().await?;
         self.check_account(&mut conn, user_id, op).await?;

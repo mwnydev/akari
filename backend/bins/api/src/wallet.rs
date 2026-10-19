@@ -1,4 +1,4 @@
-//! 钱包相关的共享状态：Webauthn 实例、钱包来源校验、会话里的「近期验证」标记、链参数。
+//! 钱包相关的共享状态：Webauthn 实例、钱包来源校验、会话里的「近期验证」标记、链参数与链上读节点。
 
 use std::sync::Arc;
 
@@ -8,6 +8,7 @@ use axum::http::request::Parts;
 use forum_auth::passkey::{UserHandles, webauthn::Webauthn};
 use forum_chain::config::WalletInitVersion;
 use forum_chain::kernel::{AddressResolver, PasskeyPublicKey};
+use forum_chain::rpc::FailoverRpc;
 use forum_core::ErrorCode;
 use forum_core::eip712::{Address, Domain};
 use forum_core::trade::TradeLimits;
@@ -83,6 +84,8 @@ pub struct WalletState {
     pub verifier: Arc<dyn AddressVerifier>,
     /// 本机 forum-sponsor（代付签名与代发）；未配置时 `/api/v1/aa/rpc` 返回 `SPONSOR_UNAVAILABLE`。
     pub sponsor: Option<SponsorProxy>,
+    /// 链上读节点（主备，取自 `CHAIN_CONFIG`）；未配置时链上读代理与余额返回 `CHAIN_UNAVAILABLE`。
+    pub rpc: Option<Arc<FailoverRpc>>,
 }
 
 impl WalletState {

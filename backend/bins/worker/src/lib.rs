@@ -31,6 +31,14 @@ struct NewDevice {
     at: String,
 }
 
+#[derive(Deserialize)]
+struct WithdrawAddressAdded {
+    to: String,
+    address: String,
+    active_at: String,
+    immediate: bool,
+}
+
 /// 一条发件箱消息的投递方式。
 #[derive(Debug)]
 pub enum Delivery {
@@ -61,6 +69,13 @@ fn render_email(msg: &outbox::Message) -> Result<Email, RenderError> {
         "email.new_device" => {
             let p: NewDevice = serde_json::from_value(msg.payload.clone())?;
             (p.to, templates::new_device(&p.at))
+        }
+        "email.withdraw_address_added" => {
+            let p: WithdrawAddressAdded = serde_json::from_value(msg.payload.clone())?;
+            (
+                p.to,
+                templates::withdraw_address_added(&p.address, &p.active_at, p.immediate),
+            )
         }
         _ => return Err(RenderError::UnknownKind),
     };

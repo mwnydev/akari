@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 已生效（过了冷却期、未撤销）的提币地址：forum-sponsor 只代付转到这些地址的 USDT。$1 user_id, $2 chain_id\nSELECT address\nFROM withdraw_addresses\nWHERE user_id = $1 AND chain_id = $2 AND revoked_at IS NULL AND active_at <= now()\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "address",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "withdraw_addresses",
+            "name": "address"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5ced588f7c416fd7966940b1efc4b7ef58bb08c8907d0cb441f2559148fce41d"
+}
