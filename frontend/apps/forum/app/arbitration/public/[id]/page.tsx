@@ -2,9 +2,9 @@ import { ApiError } from "@akari/api-client";
 import { Amount, Badge, Card } from "@akari/ui";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { AppShell } from "../../../../components/forum/AppShell";
 import { RulingList } from "../../../../components/arbitration/CaseSections";
 import { PageError } from "../../../../components/PageError";
-import { SiteNav } from "../../../../components/SiteNav";
 import { load, serverApi } from "../../../../lib/api";
 import { caseStatusLabel } from "../../../../lib/arbitration";
 import { formatTime } from "../../../../lib/display";
@@ -25,16 +25,14 @@ export default async function PublicRulingPage({ params }: { params: Promise<{ i
   if (r instanceof ApiError) {
     if (r.status === 404) notFound();
     return (
-      <>
-        <SiteNav />
+      <AppShell>
         <PageError error={r} />
-      </>
+      </AppShell>
     );
   }
   return (
-    <>
-      <SiteNav />
-      <main className="mx-auto max-w-3xl space-y-4 px-4 py-5">
+    <AppShell>
+      <div className="max-w-3xl space-y-4">
         <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold">
           裁决公示 · 案件 #{r.case_id}
           <Badge data-testid="public-status">{caseStatusLabel(r)}</Badge>
@@ -60,7 +58,7 @@ export default async function PublicRulingPage({ params }: { params: Promise<{ i
           裁决只是意见：链上执行由仲裁 Safe（3 人
           2/3）完成，只能把钱分给买卖双方。本页不显示当事人与仲裁员的身份。
         </p>
-      </main>
-    </>
+      </div>
+    </AppShell>
   );
 }

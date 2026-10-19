@@ -1,35 +1,35 @@
 import { ApiError } from "@akari/api-client";
-import { Amount, Badge, Card, EmptyState, ErrorState, NetworkBadge, UserCard } from "@akari/ui";
-import { Clock, ShieldCheck, Zap } from "lucide-react";
+import { Button, Card, ErrorState } from "@akari/ui";
+import { ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import { AppShell } from "../../../components/forum/AppShell";
+import { BottomComposer } from "../../../components/forum/BottomComposer";
+import { ComposerProvider } from "../../../components/forum/ComposerContext";
+import { FloorStream } from "../../../components/forum/Floor";
+import { LiveFloors } from "../../../components/forum/LiveFloor";
+import { ReplyNotice } from "../../../components/forum/ReplyNotice";
+import { SellerCard } from "../../../components/forum/SellerCard";
+import { TopicHeader } from "../../../components/forum/TopicHeader";
+import { TradeActions } from "../../../components/forum/TradeActions";
+import { TradePanel } from "../../../components/forum/TradePanel";
 import { PresenceDot } from "../../../components/live/PresenceDot";
 import { PageError } from "../../../components/PageError";
-import { Prose } from "../../../components/Prose";
-import { SiteNav } from "../../../components/SiteNav";
 import { OfferCard } from "../../../components/trade/OfferCard";
 import { load, serverApi } from "../../../lib/api";
-import {
-  cardLookup,
-  formatDays,
-  profileHref,
-  tradeReputation,
-  userName,
-} from "../../../lib/display";
-import {
-  cnyReference,
-  FEE_PAYERS,
-  feePayerOf,
-  formatCnyPerUsdt,
-  orderCostPreview,
-} from "../../../lib/fees";
-import { boardHref, topicHref } from "../../../lib/links";
+import { cardLookup, formatTime } from "../../../lib/display";
+import { FEE_PAYERS, feePayerOf, orderCostPreview } from "../../../lib/fees";
+import { topicHref } from "../../../lib/links";
+import { headerViewer } from "../../../lib/nav";
+import { WALLET_ORIGIN } from "../../../lib/public-config";
+import { getMe } from "../../../lib/session";
+import { personCard, topicHeaderView } from "../../../lib/topic-views";
 
 type Params = Promise<{ id: string }>;
 
-/** 交易帖 = 主题（标题、正文）+ 交易条款；两者都按主题的可见性返回。 */
+/** 交易帖 = 主题（标题、正文与第 1 页讨论）+ 交易条款；两者都按主题的可见性返回。 */
 const loadListing = cache(async (id: number) => {
   const api = await serverApi();
   const listing = await load(api.GET("/api/v1/listings/{id}", { params: { path: { id } } }));
@@ -53,164 +53,126 @@ function shortHash(h: string): string {
   return h.length > 20 ? `${h.slice(0, 10)}…${h.slice(-8)}` : h;
 }
 
+/** 正文列与右侧面板；窄屏面板排在标题和楼层之间。 */
+const columns = "xl:grid xl:grid-cols-[minmax(0,1fr)_21rem] xl:grid-rows-[auto_1fr] xl:gap-x-8";
+
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const data = await loadListing(listingId((await params).id));
   return data instanceof ApiError ? {} : { title: data.topic.topic.title };
 }
 
 export default async function TradePage({ params }: { params: Params }) {
-  const data = await loadListing(listingId((await params).id));
+  const id = listingId((await params).id);
+  const [data, me] = await Promise.all([loadListing(id), getMe()]);
   if (data instanceof ApiError) {
     if (data.status === 404) notFound();
     return (
-      <>
-        <SiteNav />
+      <AppShell>
         <PageError error={data} />
-      </>
+      </AppShell>
     );
   }
-  const { listing, topic, offers, params: tradeParams } = data;
-  const { forum } = topic;
-  const first = topic.posts.find((p) => p.floor === 1);
-  const seller = cardLookup(topic.users)(listing.seller_id);
+  const { listing, topic: page, offers, params: tradeParams } = data;
+  const { forum, topic } = page;
+  const user = cardLookup(page.users);
+  const seller = user(listing.seller_id);
   const terms = listing.terms;
-  const feePayer = feePayerOf(terms.fee_payer);
   const cost =
-    tradeParams instanceof ApiError ? null : orderCostPreview(listing.price, feePayer, tradeParams);
-  const bond = terms.bond ?? "0";
+    tradeParams instanceof ApiError
+      ? null
+      : orderCostPreview(listing.price, feePayerOf(terms.fee_payer), tradeParams);
+  const offer = offers instanceof ApiError ? undefined : offers.find((o) => o.status === "pending");
+  const mentionable = page.users.filter((u) => u.id !== me?.id);
+  const isSeller = me?.id === listing.seller_id;
+  const here = `/trade/${id}`;
+  const now = new Date();
 
   return (
-    <>
-      <SiteNav active={boardHref(forum.slug)} />
-      <main className="mx-auto grid max-w-5xl gap-4 px-4 py-5 lg:grid-cols-[1fr_20rem]">
-        <section className="min-w-0 space-y-3">
-          <nav aria-label="位置" className="text-sm text-fg-muted">
-            <Link href="/" className="hover:text-fg">
-              首页
-            </Link>{" "}
-            /{" "}
-            <Link href={boardHref(forum.slug)} className="hover:text-fg">
-              {forum.name}
-            </Link>
-          </nav>
-          <h1 className="text-2xl leading-snug font-semibold">
-            <Badge tone="warning" className="mr-2 align-[4px]">
-              担保
-            </Badge>
-            {topic.topic.title}
-          </h1>
-          <Card>
-            <UserCard
-              name={userName(seller)}
-              avatar={seller.avatar_url ?? undefined}
-              level={seller.level}
-              reputation={tradeReputation(seller.reputation)}
-              href={profileHref(seller)}
-              avatarBadge={<PresenceDot userId={seller.id} avatarSize={44} />}
-            />
-            <p className="mt-1 text-xs text-fg-muted">
-              交易信誉只统计链上已最终确认的订单；详细记录见卖家主页
-            </p>
-            <div className="mt-4">
-              {first && !first.deleted ? (
-                <Prose html={first.html} />
-              ) : (
-                <p className="text-fg-muted italic">卖家已删除说明</p>
-              )}
-            </div>
-            <p className="mt-4 text-xs break-all text-fg-muted">
-              内容快照 <span className="amount">{shortHash(listing.content_hash)}</span> ·
-              报价签名锁定这份标题、说明、价格与条款，卖家之后编辑帖子不影响已签报价与已成交订单
-            </p>
-          </Card>
-          <p className="text-sm">
-            <Link href={topicHref(topic.topic.id)} className="text-accent hover:underline">
-              查看讨论（{topic.topic.replies} 条回复）
-            </Link>
-          </p>
-        </section>
-        <aside className="min-w-0 space-y-3">
-          <Card className="space-y-4">
-            <div>
-              <p className="text-sm text-fg-muted">标价</p>
-              <p className="text-3xl font-semibold">
-                <Amount value={listing.price} />
-              </p>
-              {listing.cny_per_usdt ? (
-                <p className="mt-1 text-sm text-fg-muted">
-                  ≈ {cnyReference(listing.price, listing.cny_per_usdt)}（卖家参考汇率{" "}
-                  {formatCnyPerUsdt(listing.cny_per_usdt)}）
-                </p>
-              ) : null}
-            </div>
-            <ul className="space-y-2 text-sm">
-              <li className="flex items-center gap-2">
-                <Zap size={16} className="text-accent" aria-hidden />
-                {terms.instant
-                  ? "即时发货：付款确认后自动发货"
-                  : `卖家 ${formatDays(terms.ship_window)}内发货`}
-              </li>
-              <li className="flex items-center gap-2">
-                <Clock size={16} className="text-accent" aria-hidden />
-                买家确认期 {formatDays(terms.confirm_window)}，期满自动放款
-              </li>
-              <li className="flex items-center gap-2">
-                <ShieldCheck size={16} className="text-accent" aria-hidden />
-                {bond === "0" ? (
-                  "无卖家保证金"
-                ) : (
-                  <span>
-                    卖家保证金 <Amount value={bond} />
-                    ，随订单锁定
-                  </span>
-                )}
-              </li>
-            </ul>
-            {cost ? (
-              <dl className="space-y-1 rounded-lg bg-surface-2 p-3 text-sm">
-                <div className="flex justify-between gap-2">
-                  <dt className="text-fg-muted">手续费</dt>
-                  <dd>{FEE_PAYERS[terms.fee_payer ?? 0]?.label}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-fg-muted">卖家承担的手续费与 gas</dt>
-                  <dd>
-                    <Amount value={cost.sellerFee} />
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-fg-muted">你需支付（含 0.05 代付费）</dt>
-                  <dd className="font-medium">
-                    <Amount value={cost.buyerPays} />
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-fg-muted">本单争议费（发起方预付）</dt>
-                  <dd>
-                    <Amount value={cost.disputeFee} />
-                  </dd>
-                </div>
-              </dl>
-            ) : null}
-            <NetworkBadge />
-          </Card>
-          <h2 className="font-semibold">卖家报价</h2>
+    <ComposerProvider>
+      <AppShell active={forum.slug} className={columns}>
+        <div className="min-w-0 xl:col-start-1 xl:row-start-1">
+          <TopicHeader topic={topicHeaderView(topic, forum)} />
+        </div>
+        <aside
+          aria-label="价格与条款"
+          className="mt-3 space-y-3 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:mt-0"
+        >
+          <TradePanel
+            terms={{
+              price: listing.price,
+              cnyPerUsdt: listing.cny_per_usdt,
+              instant: terms.instant ?? false,
+              shipWindow: terms.ship_window,
+              confirmWindow: terms.confirm_window,
+              bond: terms.bond ?? "0",
+              feeLabel: FEE_PAYERS[terms.fee_payer ?? 0]?.label ?? "卖家承担",
+              buyerPays: cost?.buyerPays,
+            }}
+            actions={
+              <TradeActions
+                listingId={id}
+                sellerId={listing.seller_id}
+                viewerId={me?.id ?? null}
+                offerId={offer?.id}
+                here={here}
+              />
+            }
+          />
           {offers instanceof ApiError ? (
             <Card>
               <ErrorState title="报价加载失败" message={offers.message} />
             </Card>
           ) : offers.length ? (
-            offers.map((o) => <OfferCard key={o.id} offer={o} />)
-          ) : (
-            <Card>
-              <EmptyState
-                title="卖家还没有发布报价"
-                description="成交以卖家在钱包里签名的报价为准；报价发布后这里会出现「担保购买」。"
-              />
-            </Card>
-          )}
+            <section aria-label="卖家报价" className="space-y-3">
+              <h2 className="text-sm font-medium text-fg-muted">卖家报价</h2>
+              {offers.map((o) => (
+                <OfferCard key={o.id} offer={o} canPay={!isSeller} />
+              ))}
+            </section>
+          ) : null}
+          <SellerCard
+            seller={personCard(seller)}
+            avatarBadge={<PresenceDot userId={seller.id} avatarSize={44} />}
+            facts={`本帖发布于 ${formatTime(listing.created_at).slice(0, 10)}`}
+          />
         </aside>
-      </main>
-    </>
+        <div className="mt-4 min-w-0 xl:col-start-1 xl:row-start-2 xl:mt-0">
+          <FloorStream label="说明与讨论">
+            <LiveFloors data={page} me={me} page={1} now={now} />
+          </FloorStream>
+          {page.total_pages > 1 ? (
+            <p className="py-3 text-center text-sm">
+              <Link href={topicHref(topic.id, 2)} className="text-accent hover:underline">
+                查看更多回复（共 {topic.replies} 条）
+              </Link>
+            </p>
+          ) : null}
+          <p className="mt-3 text-xs break-all text-fg-muted">
+            内容快照 <span className="amount">{shortHash(listing.content_hash)}</span> ·
+            报价签名锁定标题、说明、价格与条款，卖家之后编辑帖子不影响已签报价与已成交订单
+          </p>
+        </div>
+      </AppShell>
+      <BottomComposer
+        mode={{ kind: "reply", topicId: topic.id }}
+        viewer={me ? headerViewer(me) : null}
+        mentionable={mentionable}
+        blocked={
+          page.can_reply ? undefined : (
+            <ReplyNotice signedIn={me !== null} locked={topic.flags.locked} here={here} />
+          )
+        }
+        action={
+          offer && !isSeller ? (
+            <Button asChild size="sm" className="xl:hidden">
+              <a href={`${WALLET_ORIGIN}/pay?offer=${offer.id}`}>
+                <ShieldCheck size={16} aria-hidden />
+                担保购买
+              </a>
+            </Button>
+          ) : null
+        }
+      />
+    </ComposerProvider>
   );
 }

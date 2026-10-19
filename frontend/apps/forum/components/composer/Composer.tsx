@@ -9,6 +9,8 @@ import { api, unwrap } from "../../lib/browser-api";
 import { clearDraft, loadDraft, saveDraft, type Draft } from "../../lib/drafts";
 import type { UserCardView } from "../../lib/display";
 import { topicHref } from "../../lib/links";
+import type { QuoteTarget } from "../forum/ComposerContext";
+import { usePreview } from "../forum/preview";
 import { QueryProvider } from "../QueryProvider";
 import { EditorField, useForumEditor } from "./Editor";
 import { draftKey, type ComposeTarget } from "./target";
@@ -22,6 +24,10 @@ export interface ComposerProps {
   /** 提交成功：发主题、回帖给出要跳转的地址，编辑为 null（原地刷新） */
   onDone: (href: string | null) => void;
   onCancel: () => void;
+  /** 引用回复：打开时在开头插入被引用楼层的摘录 */
+  quote?: QuoteTarget | null;
+  /** 打开后把光标放进编辑框（底部编辑器） */
+  autoFocus?: boolean;
 }
 
 const SUBMIT_LABEL: Record<ComposeTarget["kind"], [idle: string, pending: string]> = {
@@ -38,6 +44,34 @@ const PLACEHOLDER: Record<ComposeTarget["kind"], string> = {
 
 function savedAtLabel(t: number): string {
   return new Date(t).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** 引用块：「#3 作者」链接回原楼层，后面是摘录。 */
+function quoteBlock(q: QuoteTarget): JSONContent {
+  return {
+    type: "blockquote",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: `#${q.floor} ${q.author}`,
+            marks: [{ type: "link", attrs: { href: q.href } }],
+          },
+          ...(q.text ? [{ type: "text", text: `：${q.text}` }] : []),
+        ],
+      },
+    ],
+  };
+}
+
+function withQuote(doc: JSONContent | null, q: QuoteTarget): JSONContent {
+  const rest = doc?.content ?? [];
+  return {
+    type: "doc",
+    content: [quoteBlock(q), ...(rest.length ? rest : [{ type: "paragraph" }])],
+  };
 }
 
 async function submit(
@@ -80,6 +114,8 @@ function ComposerForm({
   mentionable,
   onDone,
   onCancel,
+  quote,
+  autoFocus = false,
   initial,
 }: ComposerProps & {
   initial: { title: string; doc: JSONContent | null; savedAt: number | null };
@@ -91,11 +127,16 @@ function ComposerForm({
   const [localError, setLocalError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const titleRef = useRef(title);
+  const preview = usePreview();
 
+  // 引用回复：引用块放在初始内容最前面（BottomComposer 换引用时会重新挂载本组件）
+  const [content] = useState(() => (quote ? withQuote(initial.doc, quote) : initial.doc));
   const ed = useForumEditor({
-    content: initial.doc,
+    content,
     placeholder: PLACEHOLDER[target.kind],
     mentionable,
+    // 有标题栏时光标先放在标题里
+    autofocus: autoFocus && !withTitle,
     onChange: () => scheduleSave(),
   });
   const editor = ed.editor;
@@ -114,6 +155,8 @@ function ComposerForm({
   const mutation = useMutation({
     mutationFn: () => {
       if (!editor) throw new Error("editor not ready");
+      // 设计稿：不提交，直接当作成功
+      if (preview) return Promise.resolve(null);
       return submit(target, {
         title: title.trim(),
         html: editor.getHTML(),
@@ -151,6 +194,7 @@ function ComposerForm({
           <Input
             value={title}
             maxLength={120}
+            autoFocus={autoFocus}
             placeholder="1–120 个字"
             onChange={(e) => {
               setTitle(e.target.value);
@@ -242,7 +286,7 @@ function NewContent(props: ComposerProps) {
   );
 }
 
-/** 发主题 / 回帖 / 编辑的编辑器（按需加载，见 ComposerLauncher）。 */
+/** 发主题 / 回帖 / 编辑的编辑器（按需加载，见 BottomComposer 与 FloorContent）。 */
 export default function Composer(props: ComposerProps) {
   const { target } = props;
   return (

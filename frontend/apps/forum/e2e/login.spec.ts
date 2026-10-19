@@ -9,7 +9,7 @@ test("guest logs in with an emailed code, sees themselves in the nav, then logs 
   await useTestIp(page);
 
   await page.goto("/");
-  await page.getByRole("link", { name: "登录" }).click();
+  await page.getByRole("link", { name: "登录", exact: true }).click();
   await expect(page).toHaveURL(/\/login/);
 
   await page.getByLabel("邮箱").fill(email);
@@ -23,8 +23,10 @@ test("guest logs in with an emailed code, sees themselves in the nav, then logs 
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByTestId("nav-user")).toBeVisible();
 
+  // 头像打开账号菜单
+  await page.getByTestId("nav-user").click();
   await page.getByRole("button", { name: "退出" }).click();
-  await expect(page.getByRole("link", { name: "登录" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "登录", exact: true })).toBeVisible();
 });
 
 test("wrong code and bad email show Chinese errors", async ({ page }, info) => {
@@ -50,5 +52,5 @@ test("a forged session cookie renders the guest page", async ({ page, context, b
   ]);
   const res = await page.goto("/");
   expect(res?.headers()["cloudflare-cdn-cache-control"]).toBe("public, max-age=60");
-  await expect(page.getByRole("link", { name: "登录" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "登录", exact: true })).toBeVisible();
 });

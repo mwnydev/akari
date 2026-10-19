@@ -11,8 +11,10 @@ test("member sets a username in settings, keeps the session, and sees the profil
   const name = uniqueName(`n${info.project.name}`);
 
   await page.getByTestId("nav-user").click();
-  await page.getByRole("link", { name: "设置用户名" }).first().click();
+  await page.getByRole("link", { name: "账号设置" }).click();
   await expect(page).toHaveURL(/\/settings$/);
+  // 菜单里是普通链接（整页跳转）：等页面脚本就绪再填表
+  await page.waitForLoadState();
   const form = page.getByRole("form", { name: "用户名" });
   const field = form.getByRole("textbox", { name: "用户名" });
   const save = form.getByRole("button", { name: "保存" });
@@ -29,9 +31,9 @@ test("member sets a username in settings, keeps the session, and sees the profil
   await field.fill(name);
   await save.click();
   await expect(form.getByRole("status")).toContainText("已保存");
-  await expect(page.getByTestId("nav-user")).toContainText(name);
+  await expect(page.getByTestId("nav-user")).toHaveAccessibleName(new RegExp(name));
   await page.reload();
-  await expect(page.getByTestId("nav-user")).toContainText(name);
+  await expect(page.getByTestId("nav-user")).toHaveAccessibleName(new RegExp(name));
   expect((await page.request.get("/api/v1/me")).status()).toBe(200);
 
   // 30 天内不能再改
@@ -54,6 +56,7 @@ test("member sets a username in settings, keeps the session, and sees the profil
 
   // 个人主页：等级、经验、交易信誉（只认最终确认的订单）、最近发帖
   await page.getByTestId("nav-user").click();
+  await page.getByRole("link", { name: "个人主页" }).click();
   await expect(page).toHaveURL(new RegExp(`/u/${name}$`));
   await expect(page.getByRole("heading", { level: 1 })).toContainText(name);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Lv1");

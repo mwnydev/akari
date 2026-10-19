@@ -12,6 +12,7 @@ import {
   Statements,
   Timeline,
 } from "../../../components/arbitration/CaseSections";
+import { AppShell } from "../../../components/forum/AppShell";
 import { ExecutionDownload } from "../../../components/arbitration/ExecutionDownload";
 import {
   LazyCasePartyActions as CasePartyActions,
@@ -19,7 +20,6 @@ import {
   LazyRulingForm as RulingForm,
 } from "../../../components/arbitration/lazy";
 import { PageError } from "../../../components/PageError";
-import { SiteNav } from "../../../components/SiteNav";
 import { load, serverApi } from "../../../lib/api";
 import { caseStatusLabel, RULING_KIND, SEAT_LABEL } from "../../../lib/arbitration";
 import { formatTime } from "../../../lib/display";
@@ -42,10 +42,9 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   if (c instanceof ApiError) {
     if (c.status === 404) notFound();
     return (
-      <>
-        <SiteNav />
+      <AppShell>
         <PageError error={c} />
-      </>
+      </AppShell>
     );
   }
   const seat = c.actions.seat;
@@ -56,9 +55,8 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
   const blind = seat === "panel" && c.panel_size === 2 && c.status === "reviewing";
 
   return (
-    <>
-      <SiteNav />
-      <main className="mx-auto grid max-w-6xl gap-4 px-4 py-5 lg:grid-cols-[1fr_22rem]">
+    <AppShell>
+      <div className="grid max-w-6xl gap-4 lg:grid-cols-[1fr_22rem]">
         <section className="min-w-0 space-y-4">
           <div className="space-y-1">
             <p className="text-sm text-fg-muted">
@@ -175,7 +173,7 @@ export default async function CasePage({ params }: { params: Promise<{ id: strin
             <Timeline c={c} />
           </Block>
         </aside>
-      </main>
-    </>
+      </div>
+    </AppShell>
   );
 }

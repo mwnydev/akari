@@ -7,8 +7,10 @@ import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import * as z from "zod/mini";
 import { api, unwrap } from "../../lib/browser-api";
+import { usePreview } from "../forum/preview";
 import { QueryProvider } from "../QueryProvider";
-import { ModDialog, ReasonFields, selectClass } from "./ModDialog";
+import { selectClass } from "../forum/styles";
+import { ModDialog, ReasonFields } from "./ModDialog";
 import { composeReason, PRESET_REASONS, reasonComplete, reasonFields } from "./reason";
 import type { TopicActionItem } from "./topic-actions";
 
@@ -31,18 +33,22 @@ function TopicModForm({ topicId, item, targets, onClose, onDone }: Props) {
     resolver: standardSchemaResolver(Schema),
     defaultValues: { preset: PRESET_REASONS[0], note: "", forumId: String(targets[0]?.id ?? "") },
   });
+  const preview = usePreview();
   const moderate = useMutation({
     mutationFn: (v: Input) =>
-      unwrap(
-        api.POST("/api/v1/topics/{id}/moderation", {
-          params: { path: { id: topicId } },
-          body: {
-            action: item.action,
-            reason: composeReason(v),
-            forum_id: item.action === "move" ? Number(v.forumId) : null,
-          },
-        }),
-      ),
+      // 设计稿：不提交
+      preview
+        ? Promise.resolve(undefined)
+        : unwrap(
+            api.POST("/api/v1/topics/{id}/moderation", {
+              params: { path: { id: topicId } },
+              body: {
+                action: item.action,
+                reason: composeReason(v),
+                forum_id: item.action === "move" ? Number(v.forumId) : null,
+              },
+            }),
+          ),
     onSuccess: onDone,
   });
   return (

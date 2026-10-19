@@ -17,7 +17,8 @@ import {
   type SanctionKind,
 } from "../../lib/staff";
 import { QueryProvider } from "../QueryProvider";
-import { ModDialog, ReasonFields, selectClass } from "./ModDialog";
+import { selectClass } from "../forum/styles";
+import { ModDialog, ReasonFields } from "./ModDialog";
 import { composeReason, PRESET_REASONS, reasonComplete, reasonFields } from "./reason";
 
 const KINDS = ["mute", "auction_ban", "ban", "ip_ban", "device_ban"] as const;

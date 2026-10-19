@@ -1,7 +1,7 @@
 import { Card } from "@akari/ui";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { SiteNav } from "../../components/SiteNav";
+import { AppShell } from "../../components/forum/AppShell";
 import { getMe } from "../../lib/session";
 import { LoginForm } from "./LoginForm";
 import { safeNext } from "./safe-next";
@@ -17,9 +17,8 @@ export default async function LoginPage({
   if (await getMe()) redirect(next);
 
   return (
-    <>
-      <SiteNav />
-      <main className="mx-auto mt-8 w-full max-w-md px-4">
+    <AppShell>
+      <div className="mx-auto w-full max-w-md lg:mt-6">
         <Card className="p-6">
           <h1 className="text-2xl font-semibold">登录 / 注册</h1>
           <p className="mt-1 text-sm text-fg-muted">
@@ -27,7 +26,7 @@ export default async function LoginPage({
           </p>
           <LoginForm next={next} />
         </Card>
-      </main>
-    </>
+      </div>
+    </AppShell>
   );
 }

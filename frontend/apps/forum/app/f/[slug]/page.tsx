@@ -1,21 +1,27 @@
 import { ApiError } from "@akari/api-client";
-import { Button, Card, EmptyState } from "@akari/ui";
+import { Button, EmptyState } from "@akari/ui";
 import { BadgeDollarSign } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
-import { ComposerLauncher } from "../../../components/composer/ComposerLauncher";
+import { AppShell } from "../../../components/forum/AppShell";
+import { BoardSquare } from "../../../components/forum/BoardMark";
+import { BottomComposer } from "../../../components/forum/BottomComposer";
+import { ComposerProvider } from "../../../components/forum/ComposerContext";
+import { liveFeedRows } from "../../../components/forum/LiveTopicRows";
+import { NewTopicButton } from "../../../components/forum/NewTopicButton";
+import { TopicFeed } from "../../../components/forum/TopicFeed";
 import { PageError } from "../../../components/PageError";
 import { Pager } from "../../../components/Pager";
-import { SiteNav } from "../../../components/SiteNav";
-import { TopicRow } from "../../../components/TopicRow";
 import { load, serverApi } from "../../../lib/api";
+import { boardColor } from "../../../lib/board-color";
 import { cardLookup } from "../../../lib/display";
 import { boardHref, loginHref } from "../../../lib/links";
 import { parsePositiveInt } from "../../../lib/pagination";
 import { BOARD_MAX_PAGE } from "../../../lib/public-config";
 import { getMe } from "../../../lib/session";
+import { hotOrder } from "../../../lib/topic-views";
 
 type Params = Promise<{ slug: string }>;
 type Search = Promise<Record<string, string | string[] | undefined>>;
@@ -67,84 +73,99 @@ export default async function BoardPage({
   if (data instanceof ApiError) {
     if (data.status === 404) notFound();
     return (
-      <>
-        <SiteNav active={boardHref(slug)} />
+      <AppShell active={slug}>
         <PageError error={data} />
-      </>
+      </AppShell>
     );
   }
   const { forum } = data;
-  const user = cardLookup(data.users);
-  const empty = data.pinned.length + data.topics.length === 0;
+  const topics = [...data.pinned, ...data.topics];
+  const ctx = { user: cardLookup(data.users) };
   const older = data.next_cursor ? (
     <Button asChild size="sm" variant="secondary">
       <Link href={boardHref(forum.slug, 1, data.next_cursor)}>更早的主题</Link>
     </Button>
   ) : null;
+  const pager = q.cursor ? (
+    <nav aria-label="分页" className="flex justify-center gap-2 py-3">
+      <Button asChild size="sm" variant="secondary">
+        <Link href={boardHref(forum.slug)}>回到第 1 页</Link>
+      </Button>
+      {older}
+    </nav>
+  ) : (
+    <div className="py-3">
+      <Pager
+        current={q.page}
+        hasNext={data.next_page != null}
+        href={(p) => boardHref(forum.slug, p)}
+        after={older}
+      />
+    </div>
+  );
+  const deep = q.page > 1 || q.cursor !== undefined;
 
   return (
-    <>
-      <SiteNav active={boardHref(forum.slug)} />
-      <main className="mx-auto max-w-5xl space-y-4 px-4 py-5">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold">{forum.name}</h1>
-            <p className="text-fg-muted">{forum.description}</p>
-          </div>
-          {me ? (
-            <Button asChild variant="secondary">
-              <Link href={`${boardHref(forum.slug)}/listing`}>
-                <BadgeDollarSign size={18} aria-hidden />
-                发起交易帖
-              </Link>
-            </Button>
-          ) : (
-            <Button asChild>
-              <Link href={loginHref(boardHref(forum.slug))}>登录后发帖</Link>
-            </Button>
-          )}
+    <ComposerProvider>
+      <AppShell active={forum.slug}>
+        <header className="mb-4">
+          <h1 className="flex items-center gap-2 text-2xl leading-snug font-semibold">
+            <BoardSquare color={boardColor(forum)} className="size-4" />
+            {forum.name}
+          </h1>
+          <p className="mt-1 text-fg-muted">{forum.description}</p>
         </header>
-        {me ? (
-          <Card>
-            <ComposerLauncher target={{ kind: "topic", forumSlug: forum.slug }} label="发主题" />
-          </Card>
-        ) : null}
-        <Card className="p-0 sm:p-0">
-          {empty && (q.page > 1 || q.cursor) ? (
-            <EmptyState
-              title="这一页没有主题"
-              action={
-                <Button asChild size="sm" variant="secondary">
-                  <Link href={boardHref(forum.slug)}>回到第 1 页</Link>
-                </Button>
-              }
-            />
-          ) : empty ? (
-            <EmptyState title="还没有主题" description="来发第一帖吧" />
-          ) : (
-            <ul className="divide-y divide-border">
-              {[...data.pinned, ...data.topics].map((t) => (
-                <TopicRow key={t.id} topic={t} user={user} />
-              ))}
-            </ul>
-          )}
-        </Card>
-        {q.cursor ? (
-          <nav aria-label="分页" className="flex justify-center gap-2 py-2">
-            <Button asChild size="sm" variant="secondary">
-              <Link href={boardHref(forum.slug)}>回到第 1 页</Link>
-            </Button>
-            {older}
-          </nav>
-        ) : (
-          <Pager
-            current={q.page}
-            hasNext={data.next_page != null}
-            href={(p) => boardHref(forum.slug, p)}
-            after={older}
-          />
-        )}
-      </main>
-    </>
+        <TopicFeed
+          lists={[
+            { value: "latest", label: "最新", rows: liveFeedRows(topics, ctx), footer: pager },
+            // 置顶帖仍在最前，其余按热度排
+            {
+              value: "hot",
+              label: "热门",
+              rows: liveFeedRows([...data.pinned, ...hotOrder(data.topics)], ctx),
+            },
+          ]}
+          filters={forum.allow_trade ? ["trade"] : []}
+          action={
+            me ? (
+              <>
+                {forum.allow_trade ? (
+                  <Button asChild size="sm" variant="secondary">
+                    <Link href={`${boardHref(forum.slug)}/listing`}>
+                      <BadgeDollarSign size={16} aria-hidden />
+                      发交易帖
+                    </Link>
+                  </Button>
+                ) : null}
+                <NewTopicButton />
+              </>
+            ) : (
+              <Button asChild size="sm">
+                <Link href={loginHref(boardHref(forum.slug))}>登录后发帖</Link>
+              </Button>
+            )
+          }
+          empty={
+            deep ? (
+              <EmptyState
+                title="这一页没有主题"
+                action={
+                  <Button asChild size="sm" variant="secondary">
+                    <Link href={boardHref(forum.slug)}>回到第 1 页</Link>
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState title="还没有主题" description="来发第一帖吧" />
+            )
+          }
+        />
+      </AppShell>
+      {me ? (
+        <BottomComposer
+          mode={{ kind: "topic", boards: [{ slug: forum.slug, name: forum.name }] }}
+        />
+      ) : null}
+    </ComposerProvider>
   );
 }

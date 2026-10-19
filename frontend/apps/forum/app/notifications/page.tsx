@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Notifications } from "../../components/notifications/Notifications";
-import { SiteNav } from "../../components/SiteNav";
+import { AppShell } from "../../components/forum/AppShell";
 import { requireMe } from "../../lib/session";
 
 export const metadata: Metadata = { title: "通知", robots: { index: false } };
@@ -8,11 +8,10 @@ export const metadata: Metadata = { title: "通知", robots: { index: false } };
 export default async function NotificationsPage() {
   await requireMe("/notifications");
   return (
-    <>
-      <SiteNav />
-      <main className="mx-auto max-w-3xl px-4 py-5">
+    <AppShell>
+      <div className="max-w-3xl">
         <Notifications />
-      </main>
-    </>
+      </div>
+    </AppShell>
   );
 }

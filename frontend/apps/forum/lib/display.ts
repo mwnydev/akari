@@ -73,3 +73,26 @@ export function formatDays(seconds: number): string {
   const days = seconds / 86_400;
   return Number.isInteger(days) ? `${days} 天` : `${Math.round(seconds / 3600)} 小时`;
 }
+
+/** 浏览量等计数：一万以上显示「1.3万」。 */
+export function formatCount(n: number): string {
+  if (n < 10_000) return String(n);
+  return `${(Math.round(n / 1000) / 10).toString()}万`;
+}
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/**
+ * 列表「活动」列与楼层时间的短写法：「刚刚」「5 分钟」「3 小时」「2 天」，一个月以上显示日期。
+ * 游客页最多缓存 60 秒，按分钟取整的相对时间不会因缓存明显失准。
+ */
+export function formatActivity(iso: string, now: Date = new Date()): string {
+  const ms = now.getTime() - new Date(iso).getTime();
+  if (ms < MINUTE) return "刚刚";
+  if (ms < HOUR) return `${Math.floor(ms / MINUTE)} 分钟`;
+  if (ms < DAY) return `${Math.floor(ms / HOUR)} 小时`;
+  if (ms < 30 * DAY) return `${Math.floor(ms / DAY)} 天`;
+  return formatShortTime(iso, now).slice(0, -6);
+}

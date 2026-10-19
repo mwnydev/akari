@@ -19,7 +19,7 @@ import {
 import { ChatBox } from "@akari/ui/chat";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { SiteNav } from "../../components/SiteNav";
+import { AppShell } from "../../components/forum/AppShell";
 import { Interactive } from "./Interactive";
 
 export const metadata: Metadata = { title: "设计系统" };
@@ -59,15 +59,15 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 export default function DesignPage() {
   return (
-    <>
-      <SiteNav active="/design" />
-      <main className="mx-auto max-w-5xl space-y-4 px-4 py-5">
+    <AppShell>
+      <div className="max-w-5xl space-y-4">
         <h1 className="text-2xl font-semibold">设计系统</h1>
         <Card className="bg-accent-soft">
-          <CardTitle>论坛新版设计稿 v2（待站长确认）</CardTitle>
+          <CardTitle>论坛设计稿 v2（站长已确认，正式页面同一套组件）</CardTitle>
           <p className="mt-1 text-sm text-fg-muted">
             Discourse
-            式扁平观感：白底、细分隔线、小圆角；表格式主题列表、左侧板块栏、楼层时间轴、贴底编辑器；交易帖与拍卖帖；朋友圈式楼层评论。只用模拟数据。
+            式扁平观感：白底、细分隔线、小圆角；表格式主题列表、左侧板块栏、楼层时间轴、贴底编辑器；交易帖与拍卖帖；朋友圈式楼层评论。
+            用正式页面的组件渲染模拟数据，写操作不请求接口。
           </p>
           <ul className="mt-3 flex flex-wrap gap-2">
             {v2Pages.map(([href, label]) => (
@@ -244,7 +244,7 @@ export default function DesignPage() {
             </Button>
           </Toolbar>
         </Section>
-      </main>
-    </>
+      </div>
+    </AppShell>
   );
 }

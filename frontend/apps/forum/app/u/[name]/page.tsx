@@ -1,5 +1,5 @@
 import { ApiError } from "@akari/api-client";
-import { Amount, Avatar, Badge, Button, Card, CardTitle, EmptyState } from "@akari/ui";
+import { Amount, Avatar, Badge, Button, EmptyState } from "@akari/ui";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -7,7 +7,7 @@ import { cache, type ReactNode } from "react";
 import { PresenceDot } from "../../../components/live/PresenceDot";
 import { StartConversation } from "../../../components/messages/StartConversation";
 import { PageError } from "../../../components/PageError";
-import { SiteNav } from "../../../components/SiteNav";
+import { AppShell } from "../../../components/forum/AppShell";
 import { load, serverApi } from "../../../lib/api";
 import { formatTime, profileHref, userName } from "../../../lib/display";
 import { loginHref, topicHref } from "../../../lib/links";
@@ -49,7 +49,7 @@ function percent(bps: number): string {
 
 function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="rounded-lg bg-surface-2 px-3 py-2">
+    <div className="rounded-md bg-surface-2 px-3 py-2">
       <dt className="text-xs text-fg-muted">{label}</dt>
       <dd className="amount text-lg font-semibold">{value}</dd>
     </div>
@@ -66,10 +66,9 @@ export default async function ProfilePage({ params }: { params: Params }) {
   if (profile instanceof ApiError) {
     if (profile.status === 404) notFound();
     return (
-      <>
-        <SiteNav />
+      <AppShell>
         <PageError error={profile} />
-      </>
+      </AppShell>
     );
   }
   // 按 ID 打开的、已有用户名的人换成用户名地址：同一个人只有一个规范地址
@@ -85,18 +84,17 @@ export default async function ProfilePage({ params }: { params: Params }) {
     : "—";
 
   return (
-    <>
-      <SiteNav />
-      <main className="mx-auto max-w-3xl space-y-4 px-4 py-5">
-        <Card className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
+    <AppShell>
+      <div className="max-w-4xl">
+        <header className="flex flex-col items-center gap-4 border-b border-border pb-5 text-center sm:flex-row sm:items-start sm:text-left">
           <Avatar
             name={name}
             src={profile.avatar_url ?? undefined}
-            size={80}
-            badge={<PresenceDot userId={profile.id} avatarSize={80} />}
+            size={96}
+            badge={<PresenceDot userId={profile.id} avatarSize={96} />}
           />
           <div className="min-w-0 flex-1 space-y-1">
-            <h1 className="flex flex-wrap items-center justify-center gap-2 text-2xl font-semibold sm:justify-start">
+            <h1 className="flex flex-wrap items-center justify-center gap-2 text-[1.75rem] leading-snug font-medium sm:justify-start">
               {name}
               <Badge tone="accent">Lv{profile.level}</Badge>
               {self ? <Badge>这是你</Badge> : null}
@@ -127,19 +125,21 @@ export default async function ProfilePage({ params }: { params: Params }) {
               <Link href={loginHref(profileHref(profile))}>登录后发私信</Link>
             </Button>
           )}
-        </Card>
+        </header>
         {self && !me.username ? (
-          <Card className="bg-warning-soft text-sm">
+          <p className="mt-4 rounded-md bg-warning-soft px-3 py-2 text-sm">
             开通交易前需要先{" "}
             <Link href="/settings" className="text-accent underline">
               设置用户名
             </Link>
             ：交易对手和仲裁员都按用户名认人。
-          </Card>
+          </p>
         ) : null}
 
-        <Card>
-          <CardTitle>交易信誉</CardTitle>
+        <section aria-labelledby="trade-heading" className="mt-6">
+          <h2 id="trade-heading" className="text-lg font-medium">
+            交易信誉
+          </h2>
           <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Stat
               label="成功率"
@@ -164,26 +164,28 @@ export default async function ProfilePage({ params }: { params: Params }) {
             只统计链上已最终确认（finalized）的订单，刚成交的订单要等最终确认后才计入。成功率 = 成功
             ÷（成功 + 本人责任失败），不满 10 笔不显示。
           </p>
-        </Card>
+        </section>
 
-        <Card className="p-0 sm:p-0">
-          <CardTitle className="px-4 pt-4">最近发帖</CardTitle>
+        <section aria-labelledby="posts-heading" className="mt-6">
+          <h2 id="posts-heading" className="border-b border-border pb-2 text-lg font-medium">
+            最近发帖
+          </h2>
           {posts instanceof ApiError ? (
-            <p className="px-4 py-6 text-sm text-fg-muted">帖子加载失败：{posts.message}</p>
+            <p className="py-6 text-sm text-fg-muted">帖子加载失败：{posts.message}</p>
           ) : posts.posts.length ? (
-            <ul className="divide-y divide-border">
+            <ul>
               {posts.posts.map((p) => (
-                <li key={p.id} className="px-4 py-3">
+                <li key={p.id} className="border-b border-border py-3">
                   <Link
                     href={topicHref(p.topic_id, p.page, p.floor)}
-                    className="font-medium hover:text-accent"
+                    className="text-[17px] leading-snug hover:text-accent"
                   >
                     {p.floor === 1 ? (
-                      <Badge tone="accent" className="mr-2">
+                      <Badge tone="accent" className="mr-2 align-[2px]">
                         主题
                       </Badge>
                     ) : (
-                      <Badge className="mr-2">#{p.floor}</Badge>
+                      <Badge className="amount mr-2 align-[2px]">#{p.floor}</Badge>
                     )}
                     {p.topic_title}
                   </Link>
@@ -199,8 +201,8 @@ export default async function ProfilePage({ params }: { params: Params }) {
           ) : (
             <EmptyState title="还没有发过帖子" />
           )}
-        </Card>
-      </main>
-    </>
+        </section>
+      </div>
+    </AppShell>
   );
 }

@@ -7,7 +7,7 @@ import { OrderCasePanel } from "../../../components/arbitration/OrderCasePanel";
 import { PresenceDot } from "../../../components/live/PresenceDot";
 import { OrderChat } from "../../../components/orders/OrderChat";
 import { PageError } from "../../../components/PageError";
-import { SiteNav } from "../../../components/SiteNav";
+import { AppShell } from "../../../components/forum/AppShell";
 import { load, serverApi } from "../../../lib/api";
 import {
   cardLookup,
@@ -75,10 +75,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   if (order instanceof ApiError) {
     if (order.status === 404) notFound();
     return (
-      <>
-        <SiteNav />
+      <AppShell>
         <PageError error={order} />
-      </>
+      </AppShell>
     );
   }
   const ids = [order.buyer.user_id, order.seller.user_id].filter((u): u is number => u != null);
@@ -94,9 +93,8 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const d = order.deadlines;
 
   return (
-    <>
-      <SiteNav />
-      <main className="mx-auto grid max-w-5xl gap-4 px-4 py-5 lg:grid-cols-[1fr_24rem]">
+    <AppShell>
+      <div className="grid max-w-6xl gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <section className="min-w-0 space-y-4">
           <div>
             <p className="text-sm text-fg-muted">
@@ -163,7 +161,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           ) : null}
         </section>
         <OrderChat orderId={order.id} me={me.id} names={names} />
-      </main>
-    </>
+      </div>
+    </AppShell>
   );
 }

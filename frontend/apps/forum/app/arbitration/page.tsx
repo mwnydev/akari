@@ -2,9 +2,9 @@ import { ApiError, type Schemas } from "@akari/api-client";
 import { Badge, Card, EmptyState } from "@akari/ui";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AppShell } from "../../components/forum/AppShell";
 import { RulingPasskeyCard } from "../../components/arbitration/RulingPasskeyCard";
 import { PageError } from "../../components/PageError";
-import { SiteNav } from "../../components/SiteNav";
 import { load, serverApi } from "../../lib/api";
 import { CASE_STATUS } from "../../lib/arbitration";
 import { formatTime } from "../../lib/display";
@@ -50,28 +50,25 @@ export default async function ArbitrationQueuePage() {
   const me = await requireMe("/arbitration");
   if (!isArbitrator(me.staff)) {
     return (
-      <>
-        <SiteNav />
+      <AppShell>
         <PageError
           title="没有权限"
           error={new ApiError("FORBIDDEN", "仲裁页面只对管理员和站长开放", 403)}
         />
-      </>
+      </AppShell>
     );
   }
   const queue = await load((await serverApi()).GET("/api/v1/arbitration/queue"));
   if (queue instanceof ApiError) {
     return (
-      <>
-        <SiteNav />
+      <AppShell>
         <PageError error={queue} />
-      </>
+      </AppShell>
     );
   }
   return (
-    <>
-      <SiteNav />
-      <main className="mx-auto max-w-4xl space-y-4 px-4 py-5">
+    <AppShell>
+      <div className="max-w-4xl space-y-4">
         <h1 className="text-2xl font-semibold">仲裁待办</h1>
         <RulingPasskeyCard />
         <Card className="space-y-2">
@@ -98,7 +95,7 @@ export default async function ArbitrationQueuePage() {
         <p className="text-xs text-fg-muted">
           与当事人有关联或 90 天内有交易的案件会自动回避；计酬只按工作量与按时率，与裁决方向无关。
         </p>
-      </main>
-    </>
+      </div>
+    </AppShell>
   );
 }

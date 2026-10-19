@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { SiteNav } from "../../../components/SiteNav";
+import { AppShell } from "../../../components/forum/AppShell";
 import { Inbox } from "../../../components/messages/Inbox";
 import { requireMe } from "../../../lib/session";
 
@@ -11,12 +11,11 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
   if (!/^\d{1,15}$/.test(raw)) notFound();
   const me = await requireMe(`/messages/${raw}`);
   return (
-    <>
-      <SiteNav />
-      <main className="mx-auto max-w-5xl px-4 py-5">
+    <AppShell>
+      <div className="max-w-6xl">
         <h1 className="sr-only">私信</h1>
         <Inbox me={me.id} conversationId={Number(raw)} />
-      </main>
-    </>
+      </div>
+    </AppShell>
   );
 }

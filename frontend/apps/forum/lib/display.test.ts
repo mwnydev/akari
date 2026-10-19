@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   NO_REPUTATION,
   cardLookup,
+  formatActivity,
+  formatCount,
   formatDays,
   formatShortTime,
   formatTime,
@@ -51,5 +53,17 @@ describe("display helpers", () => {
       deals: 0,
       disputesLost: 0,
     });
+  });
+
+  it("abbreviates counts and recent activity", () => {
+    expect(formatCount(9_999)).toBe("9999");
+    expect(formatCount(12_840)).toBe("1.3万");
+    const now = new Date("2026-10-20T08:00:00Z");
+    expect(formatActivity("2026-10-20T07:59:30Z", now)).toBe("刚刚");
+    expect(formatActivity("2026-10-20T07:55:00Z", now)).toBe("5 分钟");
+    expect(formatActivity("2026-10-20T05:00:00Z", now)).toBe("3 小时");
+    expect(formatActivity("2026-10-18T08:00:00Z", now)).toBe("2 天");
+    expect(formatActivity("2026-08-01T00:00:00Z", now)).toBe("08-01");
+    expect(formatActivity("2025-08-01T00:00:00Z", now)).toBe("2025-08-01");
   });
 });

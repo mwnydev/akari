@@ -60,6 +60,8 @@ export interface ForumEditorOptions {
   placeholder: string;
   /** 本页出现过的人：输入 @ 后最先列出 */
   mentionable: UserCardView[];
+  /** 创建后把光标放进编辑框 */
+  autofocus?: boolean;
   onChange?: () => void;
 }
 
@@ -82,6 +84,7 @@ export function useForumEditor({
   content,
   placeholder,
   mentionable,
+  autofocus = false,
   onChange,
 }: ForumEditorOptions) {
   const [menu, setMenu] = useState<MentionMenu | null>(null);
@@ -97,6 +100,7 @@ export function useForumEditor({
   const editor = useEditor({
     // 组件只在浏览器里渲染（next/dynamic ssr: false），可以立即创建
     immediatelyRender: true,
+    autofocus: autofocus ? "end" : false,
     content,
     extensions: [
       StarterKit.configure({

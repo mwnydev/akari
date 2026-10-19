@@ -5,9 +5,8 @@ import { Button, Field, Textarea } from "@akari/ui";
 import { Dialog, DialogContent } from "@akari/ui/dialog";
 import type { ReactNode } from "react";
 import type { FieldErrors, UseFormRegister, UseFormReturn } from "react-hook-form";
+import { selectClass } from "../forum/styles";
 import { PRESET_REASONS, type ReasonValues } from "./reason";
-
-export const selectClass = "h-10 w-full rounded-md border border-border bg-surface px-3 text-fg";
 
 /** 理由两项（预设 + 补充说明），放进各个管理弹窗自己的表单里（表单值须含 `preset`、`note`）。 */
 export function ReasonFields<T extends ReasonValues>({ form }: { form: UseFormReturn<T> }) {

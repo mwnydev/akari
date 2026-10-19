@@ -42,7 +42,7 @@ test("composer: @mention autocomplete from user search, mention links and live n
     await mentioned.page.goto("/");
     const page = author.page;
     await page.goto("/f/general");
-    await page.getByRole("button", { name: "发主题" }).click();
+    await page.getByRole("button", { name: "发新帖" }).click();
     await page.getByRole("textbox", { name: "标题" }).fill(`提及与图片 ${Date.now()}`);
     const body = page.getByRole("textbox", { name: "正文" });
 

@@ -1,15 +1,17 @@
 import { Button } from "@akari/ui";
 import { Gavel } from "lucide-react";
 import type { Metadata } from "next";
-import { auctionFloors, bids, topics, user, VIEWER_ID } from "../_mock/data";
+import { BottomComposer } from "../../../../components/forum/BottomComposer";
+import { ComposerProvider } from "../../../../components/forum/ComposerContext";
+import { FloorStream } from "../../../../components/forum/Floor";
+import { SellerCard } from "../../../../components/forum/SellerCard";
+import { TopicHeader } from "../../../../components/forum/TopicHeader";
 import { AuctionPanel, type AuctionTerms } from "../_components/AuctionPanel";
 import { AuctionRules } from "../_components/AuctionRules";
-import { BottomComposer } from "../_components/BottomComposer";
-import { ComposerProvider } from "../_components/ComposerContext";
-import { Floor, FloorStream } from "../_components/Floor";
-import { ForumShell } from "../_components/ForumShell";
-import { SellerCard } from "../_components/SellerCard";
-import { TopicHeader } from "../_components/TopicHeader";
+import { MockFloor } from "../_components/MockFloor";
+import { MockShell } from "../_components/MockShell";
+import { auctionFloors, bids, topics, user, VIEWER_ID } from "../_mock/data";
+import { mockHeader, mockPerson } from "../_mock/views";
 
 export const metadata: Metadata = { title: "拍卖帖" };
 
@@ -41,12 +43,11 @@ function mask(name: string): string {
 export default function DesignAuctionPage() {
   const topic = topics.find((t) => t.id === 103);
   if (!topic) throw new Error("mock topic 103 missing");
-  const seller = user(topic.authorId);
   return (
     <ComposerProvider>
-      <ForumShell page="/design/v2/auction" active={topic.board} className={columns}>
+      <MockShell page="/design/v2/auction" active={topic.board} className={columns}>
         <div className="min-w-0 xl:col-start-1 xl:row-start-1">
-          <TopicHeader topic={topic} />
+          <TopicHeader topic={mockHeader(topic)} />
         </div>
         <aside
           aria-label="出价"
@@ -54,18 +55,27 @@ export default function DesignAuctionPage() {
         >
           <AuctionPanel terms={terms} bids={bids} viewer={mask(user(VIEWER_ID).name)} />
           <AuctionRules terms={terms} />
-          <SellerCard seller={seller} onSale={3} />
+          <SellerCard
+            seller={mockPerson(topic.authorId)}
+            facts={`在售 3 件 · 加入于 ${user(topic.authorId).joined}`}
+          />
         </aside>
         <div className="mt-4 min-w-0 xl:col-start-1 xl:row-start-2 xl:mt-0">
           <FloorStream label="拍品说明与讨论">
             {auctionFloors.map((f) => (
-              <Floor key={f.floor} data={f} opAuthorId={topic.authorId} />
+              <MockFloor
+                key={f.floor}
+                page="/design/v2/auction"
+                data={f}
+                opAuthorId={topic.authorId}
+              />
             ))}
           </FloorStream>
         </div>
-      </ForumShell>
+      </MockShell>
       <BottomComposer
-        viewer={user(VIEWER_ID).name}
+        mode={{ kind: "reply", topicId: topic.id }}
+        viewer={{ name: user(VIEWER_ID).name }}
         action={
           <Button asChild size="sm" className="xl:hidden">
             <a href="#bid-amount">

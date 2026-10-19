@@ -6,7 +6,6 @@ export const metadata: Metadata = {
   robots: { index: false },
 };
 
-/** 仲裁页面用论坛扁平主题（globals.css 的 data-forum-theme）。 */
 export default function ArbitrationLayout({ children }: { children: ReactNode }) {
-  return <div data-forum-theme="flat">{children}</div>;
+  return children;
 }

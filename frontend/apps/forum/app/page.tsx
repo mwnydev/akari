@@ -1,107 +1,115 @@
 import { ApiError } from "@akari/api-client";
-import { Card, CardTitle, EmptyState, ErrorState } from "@akari/ui";
-import { ShieldCheck } from "lucide-react";
+import { Button, EmptyState, ErrorState } from "@akari/ui";
 import Link from "next/link";
+import { AppShell } from "../components/forum/AppShell";
+import { BoardDirectory } from "../components/forum/BoardDirectory";
+import { BottomComposer } from "../components/forum/BottomComposer";
+import { ComposerProvider } from "../components/forum/ComposerContext";
+import { liveFeedRows } from "../components/forum/LiveTopicRows";
+import { NewTopicButton } from "../components/forum/NewTopicButton";
+import { TopicFeed, type FeedList } from "../components/forum/TopicFeed";
 import { PageError } from "../components/PageError";
-import { SiteNav } from "../components/SiteNav";
-import { TopicRow } from "../components/TopicRow";
 import { load, serverApi } from "../lib/api";
+import { boardColor } from "../lib/board-color";
 import { cardLookup } from "../lib/display";
-import { forumTree, listForums } from "../lib/forums";
+import { forumTree, listForums, type ForumView } from "../lib/forums";
+import { boardHref, loginHref } from "../lib/links";
+import { getMe } from "../lib/session";
+import { hotOrder } from "../lib/topic-views";
 
 type Search = Promise<Record<string, string | string[] | undefined>>;
 
-/** 首页：跨板块最新主题（后端按最后回复时间，只含访问者看得到的板块）+ 板块目录。`?cursor=` 翻到更早的。 */
+const TABS = ["latest", "hot", "boards"];
+
+/** 发新帖的板块候选：发帖门槛低的排前面（默认选中第一个）。 */
+function postableBoards(forums: ForumView[]) {
+  return [...forums]
+    .sort((a, b) => a.post_min_level - b.post_min_level || a.position - b.position)
+    .map((f) => ({ slug: f.slug, name: f.name }));
+}
+
+/**
+ * 首页：跨板块最新主题（后端按最后回复时间，只含访问者看得到的板块）、热门、板块目录三个标签页。
+ * `?cursor=` 翻到更早的；`?tab=hot` / `?tab=boards` 直接打开对应标签页（侧栏「热门」）。
+ */
 export default async function Home({ searchParams }: { searchParams: Search }) {
-  const raw = (await searchParams).cursor;
-  const cursor = typeof raw === "string" && raw ? raw : undefined;
+  const sp = await searchParams;
+  const cursor = typeof sp.cursor === "string" && sp.cursor ? sp.cursor : undefined;
+  const tab = typeof sp.tab === "string" && TABS.includes(sp.tab) ? sp.tab : "latest";
   const api = await serverApi();
-  const [forums, latest] = await Promise.all([
+  const [forums, latest, me] = await Promise.all([
     listForums(),
     load(api.GET("/api/v1/topics/latest", { params: { query: cursor ? { cursor } : {} } })),
+    getMe(),
   ]);
   if (forums instanceof ApiError) {
     return (
-      <>
-        <SiteNav active="/" />
+      <AppShell active="home">
         <PageError error={forums} />
-      </>
+      </AppShell>
     );
   }
-  const tree = forumTree(forums);
-  const user = latest instanceof ApiError ? null : cardLookup(latest.users);
+  const byId = new Map(forums.map((f) => [f.id, f]));
+  const directory = forumTree(forums).map((b) => ({
+    slug: b.slug,
+    name: b.name,
+    color: boardColor(b),
+    href: boardHref(b.slug),
+    description: b.description,
+    children: b.children.map((c) => ({ slug: c.slug, name: c.name, href: boardHref(c.slug) })),
+  }));
+
+  let lists: FeedList[] | null = null;
+  if (!(latest instanceof ApiError)) {
+    const ctx = { user: cardLookup(latest.users), forum: (id: number) => byId.get(id) };
+    lists = [
+      {
+        value: "latest",
+        label: "最新",
+        rows: liveFeedRows(latest.topics, ctx),
+        footer: latest.next_cursor ? (
+          <p className="py-3 text-center text-sm">
+            <Link
+              href={`/?cursor=${encodeURIComponent(latest.next_cursor)}`}
+              className="text-accent hover:underline"
+            >
+              更早的主题
+            </Link>
+          </p>
+        ) : null,
+      },
+      { value: "hot", label: "热门", rows: liveFeedRows(hotOrder(latest.topics), ctx) },
+    ];
+  }
+
   return (
-    <>
-      <SiteNav active="/" />
-      <main className="mx-auto grid max-w-5xl gap-4 px-4 py-5 lg:grid-cols-[1fr_18rem]">
-        <section className="min-w-0 space-y-4">
-          <Card className="flex items-start gap-3 bg-accent-soft">
-            <ShieldCheck className="mt-0.5 shrink-0 text-accent" aria-hidden />
-            <div>
-              <p className="font-medium">链上担保，平台转不走你的钱</p>
-              <p className="text-sm text-fg-muted">
-                USDT 托管在 Arbitrum One 合约里，确认收货才放款；gas 平台代付，钱包无需 ETH。
-              </p>
-            </div>
-          </Card>
-          <Card className="p-0 sm:p-0">
-            <CardTitle className="px-4 pt-4">最新主题</CardTitle>
-            {latest instanceof ApiError || !user ? (
-              <ErrorState message="最新主题加载失败，请稍后刷新" />
-            ) : latest.topics.length ? (
-              <>
-                <ul className="divide-y divide-border" aria-label="最新主题">
-                  {latest.topics.map((t) => (
-                    <TopicRow key={t.id} topic={t} user={user} />
-                  ))}
-                </ul>
-                {latest.next_cursor ? (
-                  <p className="px-4 py-3 text-center text-sm">
-                    <Link
-                      href={`/?cursor=${encodeURIComponent(latest.next_cursor)}`}
-                      className="text-accent hover:underline"
-                    >
-                      更早的主题
-                    </Link>
-                  </p>
-                ) : null}
-              </>
-            ) : (
-              <EmptyState title="还没有主题" description="去板块里发第一帖吧" />
-            )}
-          </Card>
-        </section>
-        <aside className="min-w-0">
-          <Card className="p-0 sm:p-0">
-            <CardTitle className="px-4 pt-4">板块</CardTitle>
-            {tree.length ? (
-              <ul className="divide-y divide-border">
-                {tree.map((b) => (
-                  <li key={b.id} className="px-4 py-3">
-                    <Link href={`/f/${b.slug}`} className="block hover:text-accent">
-                      <span className="font-medium">{b.name}</span>
-                      <span className="block text-sm text-fg-muted">{b.description}</span>
-                    </Link>
-                    {b.children.length ? (
-                      <ul className="mt-1 flex flex-wrap gap-x-3 text-sm">
-                        {b.children.map((c) => (
-                          <li key={c.id}>
-                            <Link href={`/f/${c.slug}`} className="text-accent hover:underline">
-                              {c.name}
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <EmptyState title="暂无可访问的板块" />
-            )}
-          </Card>
-        </aside>
-      </main>
-    </>
+    <ComposerProvider>
+      <AppShell active={tab === "hot" ? "hot" : "home"}>
+        <h1 className="sr-only">Akari 论坛</h1>
+        {lists ? (
+          <TopicFeed
+            lists={lists}
+            extra={{ value: "boards", label: "板块", node: <BoardDirectory boards={directory} /> }}
+            defaultTab={tab}
+            action={
+              me ? (
+                <NewTopicButton />
+              ) : (
+                <Button asChild size="sm">
+                  <Link href={loginHref("/")}>登录后发帖</Link>
+                </Button>
+              )
+            }
+            empty={<EmptyState title="还没有主题" description="去板块里发第一帖吧" />}
+          />
+        ) : (
+          <>
+            <ErrorState message="最新主题加载失败，请稍后刷新" />
+            <BoardDirectory boards={directory} />
+          </>
+        )}
+      </AppShell>
+      {me ? <BottomComposer mode={{ kind: "topic", boards: postableBoards(forums) }} /> : null}
+    </ComposerProvider>
   );
 }

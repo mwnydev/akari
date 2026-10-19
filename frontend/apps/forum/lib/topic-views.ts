@@ -1,0 +1,112 @@
+// 接口数据 → 论坛共享组件的显示模型（主题列表行、标题区、名片）。纯函数，单元测试直接测。
+import type { Schemas } from "@akari/api-client";
+import type { PersonCard } from "../components/forum/UserPopover";
+import type { TopicHeaderView } from "../components/forum/TopicHeader";
+import type { TopicKind, TopicRowView } from "../components/forum/TopicTable";
+import type { TradeFacts } from "../components/forum/TradeLine";
+import {
+  formatActivity,
+  profileHref,
+  tradeReputation,
+  userName,
+  type UserCardView,
+} from "./display";
+import { topicHref } from "./links";
+import { boardRef } from "./nav";
+
+/** TopicSummary.kind：0 普通、1 交易、2 争议。 */
+const TOPIC_KIND_TRADE = 1;
+
+type Lookup = (id: number) => UserCardView;
+
+export function topicKind(t: Pick<Schemas["TopicSummary"], "kind">): TopicKind {
+  return t.kind === TOPIC_KIND_TRADE ? "trade" : "normal";
+}
+
+/** 有过交易记录才在名片上显示信誉（否则人人都是「新卖家 · 已成交 0 笔」）。 */
+function hasTraded(r: Schemas["ReputationView"]): boolean {
+  return r.success + r.failed + r.settled > 0;
+}
+
+export function personCard(u: UserCardView): PersonCard {
+  return {
+    id: u.id,
+    name: userName(u),
+    href: profileHref(u),
+    level: u.level,
+    avatarUrl: u.avatar_url,
+    reputation: hasTraded(u.reputation) ? tradeReputation(u.reputation) : undefined,
+  };
+}
+
+/** 交易帖进 /trade/{listing}（价格面板）；其余进主题页。 */
+export function topicLink(t: Schemas["TopicSummary"]): string {
+  return topicKind(t) === "trade" && t.trade ? `/trade/${t.trade.listing_id}` : topicHref(t.id);
+}
+
+export function topicRowView(
+  t: Schemas["TopicSummary"],
+  user: Lookup,
+  opts: { forum?: Schemas["ForumView"] | undefined; now?: Date } = {},
+): TopicRowView {
+  return {
+    id: t.id,
+    title: t.title,
+    href: topicLink(t),
+    kind: topicKind(t),
+    board: opts.forum ? boardRef(opts.forum) : undefined,
+    author: personCard(user(t.author_id)),
+    participants: t.participants.map((id) => {
+      const u = user(id);
+      return { name: userName(u), avatarUrl: u.avatar_url };
+    }),
+    replies: t.replies,
+    views: t.views,
+    activityIso: t.last_post_at,
+    activity: formatActivity(t.last_post_at, opts.now),
+    pinned: t.flags.pinned,
+    featured: t.flags.featured,
+    locked: t.flags.locked,
+    hidden: t.flags.hidden,
+  };
+}
+
+/** 列表行里交易帖的摘要（卖家就是楼主，成功率取楼主名片上的信誉）；不是交易帖时返回 null。 */
+export function tradeFacts(t: Schemas["TopicSummary"], user: Lookup): TradeFacts | null {
+  const trade = t.trade;
+  if (topicKind(t) !== "trade" || !trade) return null;
+  const seller = user(t.author_id).reputation;
+  return {
+    price: trade.price,
+    cnyPerUsdt: trade.cny_per_usdt,
+    instant: trade.instant,
+    stock: trade.stock,
+    seller: hasTraded(seller) ? tradeReputation(seller) : undefined,
+  };
+}
+
+export function topicHeaderView(
+  t: Schemas["TopicSummary"],
+  forum: Schemas["ForumView"],
+): TopicHeaderView {
+  return {
+    title: t.title,
+    kind: topicKind(t),
+    board: boardRef(forum),
+    pinned: t.flags.pinned,
+    locked: t.flags.locked,
+    featured: t.flags.featured,
+    hidden: t.flags.hidden,
+    replies: t.replies,
+    views: t.views,
+  };
+}
+
+/**
+ * 「热门」排序：后端没有 `sort=hot`，把已取到的这一页按回复数、浏览量排一遍（只是当页内的近似）。
+ */
+export function hotOrder<T extends Pick<Schemas["TopicSummary"], "replies" | "views" | "id">>(
+  topics: T[],
+): T[] {
+  return [...topics].sort((a, b) => b.replies - a.replies || b.views - a.views || b.id - a.id);
+}

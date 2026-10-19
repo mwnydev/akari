@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { PageError } from "../../../../components/PageError";
-import { SiteNav } from "../../../../components/SiteNav";
+import { AppShell } from "../../../../components/forum/AppShell";
 import { ListingFormLoader } from "../../../../components/trade/ListingFormLoader";
 import { load, serverApi } from "../../../../lib/api";
 import { listForums } from "../../../../lib/forums";
@@ -27,19 +27,17 @@ export default async function NewListingPage({ params }: { params: Promise<{ slu
   ]);
   if (forums instanceof ApiError || wallet instanceof ApiError || tradeParams instanceof ApiError) {
     return (
-      <>
-        <SiteNav active={boardHref(slug)} />
+      <AppShell active={slug}>
         <PageError error={[forums, wallet, tradeParams].find((r) => r instanceof ApiError)} />
-      </>
+      </AppShell>
     );
   }
   const forum = forums.find((f) => f.slug === slug);
   if (!forum) notFound();
 
   return (
-    <>
-      <SiteNav active={boardHref(slug)} />
-      <main className="mx-auto max-w-3xl space-y-4 px-4 py-5">
+    <AppShell active={slug}>
+      <div className="max-w-3xl space-y-4">
         <nav aria-label="位置" className="text-sm text-fg-muted">
           <Link href={boardHref(slug)} className="hover:text-fg">
             {forum.name}
@@ -62,7 +60,7 @@ export default async function NewListingPage({ params }: { params: Promise<{ slu
             />
           )}
         </Card>
-      </main>
-    </>
+      </div>
+    </AppShell>
   );
 }

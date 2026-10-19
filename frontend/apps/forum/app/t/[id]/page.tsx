@@ -1,26 +1,38 @@
 import { ApiError } from "@akari/api-client";
-import { Button, Card, Input } from "@akari/ui";
+import { Button, Input } from "@akari/ui";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
-import { ComposerLauncher } from "../../../components/composer/ComposerLauncher";
+import { AppShell } from "../../../components/forum/AppShell";
+import { BottomComposer } from "../../../components/forum/BottomComposer";
+import { ComposerProvider } from "../../../components/forum/ComposerContext";
+import { FloorStream } from "../../../components/forum/Floor";
+import { LiveFloors } from "../../../components/forum/LiveFloor";
+import { ReplyNotice } from "../../../components/forum/ReplyNotice";
+import { Timeline } from "../../../components/forum/Timeline";
+import { TopicHeader } from "../../../components/forum/TopicHeader";
 import { PageError } from "../../../components/PageError";
 import { Pager } from "../../../components/Pager";
-import { SiteNav } from "../../../components/SiteNav";
-import { TopicBadges } from "../../../components/TopicBadges";
-import { Floor } from "../../../components/topic/Floor";
-import { PostModMenu } from "../../../components/moderation/PostModMenu";
 import { TopicModMenu } from "../../../components/moderation/TopicModMenu";
 import { load, serverApi } from "../../../lib/api";
-import { cardLookup, userName } from "../../../lib/display";
+import { formatActivity } from "../../../lib/display";
 import { listForums } from "../../../lib/forums";
-import { boardHref, loginHref, topicHref } from "../../../lib/links";
+import { topicHref } from "../../../lib/links";
+import { headerViewer } from "../../../lib/nav";
 import { floorPage, parsePositiveInt } from "../../../lib/pagination";
 import { getMe } from "../../../lib/session";
+import { topicHeaderView } from "../../../lib/topic-views";
 
 type Params = Promise<{ id: string }>;
 type Search = Promise<Record<string, string | string[] | undefined>>;
+
+/** 右侧时间轴的采样点；取不到时退回本页楼层。 */
+async function loadTimeline(id: number) {
+  return load(
+    (await serverApi()).GET("/api/v1/topics/{id}/timeline", { params: { path: { id } } }),
+  );
+}
 
 const loadTopic = cache(async (id: number, page: number) =>
   load(
@@ -62,135 +74,116 @@ export default async function TopicPage({
     redirect(topicHref(id, floorPage(floor), floor));
   }
   const page = parsePositiveInt(sp.page);
-  const [data, me] = await Promise.all([loadTopic(id, page), getMe()]);
+  const [data, me, timeline] = await Promise.all([loadTopic(id, page), getMe(), loadTimeline(id)]);
   if (data instanceof ApiError) {
     if (data.status === 404) notFound();
     return (
-      <>
-        <SiteNav />
+      <AppShell>
         <PageError error={data} />
-      </>
+      </AppShell>
     );
   }
   if (page > data.total_pages) redirect(topicHref(id, data.total_pages));
 
   const { topic, forum, posts, users } = data;
-  const user = cardLookup(users);
   const mentionable = users.filter((u) => u.id !== me?.id);
   const forums = data.can_moderate ? await listForums() : [];
+  const now = new Date();
+  const points =
+    timeline instanceof ApiError
+      ? posts.map((p) => ({ floor: p.floor, time: formatActivity(p.created_at, now) }))
+      : timeline.points.map((p) => ({ floor: p.floor, time: formatActivity(p.at, now) }));
+  const last = page === data.total_pages;
 
   return (
-    <>
-      <SiteNav active={boardHref(forum.slug)} />
-      <main className="mx-auto max-w-3xl space-y-3 px-4 py-5">
-        <nav aria-label="位置" className="text-sm text-fg-muted">
-          <Link href="/" className="hover:text-fg">
-            首页
-          </Link>{" "}
-          /{" "}
-          <Link href={boardHref(forum.slug)} className="hover:text-fg">
-            {forum.name}
-          </Link>
-        </nav>
-        <div className="flex items-start justify-between gap-3">
-          <h1 className="text-2xl leading-snug font-semibold">
-            <TopicBadges topic={topic} />
-            {topic.title}
-          </h1>
-          {data.can_moderate ? (
-            <TopicModMenu
-              topicId={topic.id}
-              forumId={forum.id}
-              flags={topic.flags}
-              forums={forums instanceof ApiError ? [] : forums}
-              staff={me?.staff}
-            />
+    <ComposerProvider>
+      <AppShell
+        active={forum.slug}
+        className="xl:grid xl:grid-cols-[minmax(0,48rem)_9rem] xl:gap-10"
+      >
+        <div className="min-w-0">
+          <TopicHeader
+            topic={topicHeaderView(topic, forum)}
+            actions={
+              data.can_moderate ? (
+                <TopicModMenu
+                  topicId={topic.id}
+                  forumId={forum.id}
+                  flags={topic.flags}
+                  forums={forums instanceof ApiError ? [] : forums}
+                  staff={me?.staff}
+                />
+              ) : null
+            }
+            extra={data.total_pages > 1 ? ` · 第 ${page} / ${data.total_pages} 页` : null}
+          />
+          {topic.trade ? (
+            <p className="mb-3 text-sm">
+              <Link
+                href={`/trade/${topic.trade.listing_id}`}
+                className="text-accent hover:underline"
+              >
+                查看价格与交易条款
+              </Link>
+            </p>
+          ) : null}
+          <FloorStream label="楼层">
+            <LiveFloors data={data} me={me} page={page} now={now} />
+          </FloorStream>
+          <Pager current={page} total={data.total_pages} href={(p) => topicHref(id, p)} />
+          {data.total_pages > 1 ? (
+            <form
+              action={`/t/${id}`}
+              method="get"
+              className="flex items-center justify-center gap-2 text-sm whitespace-nowrap"
+              aria-label="按楼层跳转"
+            >
+              <label htmlFor="jump-floor">跳到</label>
+              <span className="w-28">
+                <Input
+                  id="jump-floor"
+                  name="floor"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={topic.last_floor}
+                  required
+                  className="h-8"
+                  placeholder={`1–${topic.last_floor}`}
+                />
+              </span>
+              <span>楼</span>
+              <Button type="submit" size="sm" variant="secondary">
+                跳转
+              </Button>
+            </form>
+          ) : null}
+          {last ? (
+            <p className="py-6 text-center text-sm text-fg-muted">
+              已经到底了 · 共 {topic.last_floor} 层
+            </p>
           ) : null}
         </div>
-        <p className="amount text-sm text-fg-muted">
-          {topic.views.toLocaleString("zh-CN")} 浏览 · {topic.replies} 回复 · 第 {page} /{" "}
-          {data.total_pages} 页
-        </p>
-        {posts.map((p) => {
-          const own = me?.id === p.author_id;
-          return (
-            <Floor
-              key={p.id}
-              post={p}
-              author={user(p.author_id)}
-              title={p.floor === 1 ? topic.title : undefined}
-              mentionable={mentionable}
-              mod={
-                data.can_moderate ? (
-                  <PostModMenu
-                    postId={p.id}
-                    floor={p.floor}
-                    forumId={forum.id}
-                    deleted={p.deleted}
-                    author={{ id: p.author_id, name: userName(user(p.author_id)) }}
-                    staff={me?.staff}
-                    isOwn={own}
-                  />
-                ) : null
-              }
-              perms={{
-                canEdit: !p.deleted && (data.can_moderate || (own && !topic.flags.locked)),
-                asModerator: data.can_moderate && !own,
-                hasHistory: p.edited_at != null && (!p.deleted || data.can_moderate),
-              }}
+        <aside className="hidden xl:block">
+          <div className="sticky top-24">
+            <Timeline points={points} start={posts[0]?.floor} topicId={id} />
+          </div>
+        </aside>
+      </AppShell>
+      <BottomComposer
+        mode={{ kind: "reply", topicId: id }}
+        viewer={me ? headerViewer(me) : null}
+        mentionable={mentionable}
+        blocked={
+          data.can_reply ? undefined : (
+            <ReplyNotice
+              signedIn={me !== null}
+              locked={topic.flags.locked}
+              here={topicHref(id, page)}
             />
-          );
-        })}
-        <Pager current={page} total={data.total_pages} href={(p) => topicHref(id, p)} />
-        {data.total_pages > 1 ? (
-          <form
-            action={`/t/${id}`}
-            method="get"
-            className="flex items-center justify-center gap-2 text-sm whitespace-nowrap"
-            aria-label="按楼层跳转"
-          >
-            <label htmlFor="jump-floor">跳到</label>
-            <span className="w-28">
-              <Input
-                id="jump-floor"
-                name="floor"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={topic.last_floor}
-                required
-                className="h-8"
-                placeholder={`1–${topic.last_floor}`}
-              />
-            </span>
-            <span>楼</span>
-            <Button type="submit" size="sm" variant="secondary">
-              跳转
-            </Button>
-          </form>
-        ) : null}
-        <Card id="reply">
-          <h2 className="mb-2 font-medium">回复</h2>
-          {data.can_reply ? (
-            <ComposerLauncher
-              target={{ kind: "reply", topicId: id }}
-              label="写回复"
-              mentionable={mentionable}
-            />
-          ) : me === null ? (
-            <p className="text-sm text-fg-muted">
-              <Link href={loginHref(topicHref(id, page))} className="text-accent hover:underline">
-                登录
-              </Link>{" "}
-              后参与回复
-            </p>
-          ) : (
-            <p className="text-sm text-fg-muted">
-              {topic.flags.locked ? "主题已锁定，不能回复" : "你的等级暂时不能在本板块回复"}
-            </p>
-          )}
-        </Card>
-      </main>
-    </>
+          )
+        }
+      />
+    </ComposerProvider>
   );
 }

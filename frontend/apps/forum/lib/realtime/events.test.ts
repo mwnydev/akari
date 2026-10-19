@@ -1,0 +1,48 @@
+import { describe, expect, it } from "vitest";
+import { eventTopic, parseEvent, topicKey, topicOf } from "./events";
+
+describe("topic page events", () => {
+  it("round-trips the topic subscription key", () => {
+    expect(topicKey({ topic_id: 12 })).toBe("t:12");
+    expect(topicOf("t:12")).toEqual({ topic_id: 12 });
+    expect(topicOf("x:12")).toBeNull();
+  });
+
+  it("parses comment, removal and like pushes and files them under the topic", () => {
+    const comment = parseEvent(
+      JSON.stringify({
+        type: "comment",
+        topic_id: 3,
+        comments: 2,
+        comment: { id: 5, post_id: 9, author_id: 1, body: "hi", created_at: "t" },
+      }),
+    );
+    expect(comment && eventTopic(comment)).toBe("t:3");
+    const removed = parseEvent({
+      type: "comment_removed",
+      topic_id: 3,
+      post_id: 9,
+      comment_id: 5,
+      comments: 1,
+    });
+    expect(removed?.type).toBe("comment_removed");
+    const likes = parseEvent({
+      type: "likes",
+      topic_id: 3,
+      post_id: 9,
+      user_id: 1,
+      liked: true,
+      likes: 4,
+    });
+    expect(likes?.type).toBe("likes");
+    expect(
+      parseEvent({ type: "comment", topic_id: 3, comments: 1, comment: { id: 5 } }),
+    ).toBeNull();
+    expect(parseEvent({ type: "likes", topic_id: 3, post_id: 9, user_id: 1, likes: 4 })).toBeNull();
+  });
+
+  it("files a topic subscription reply under the topic", () => {
+    const e = parseEvent({ type: "subscribed", topic_id: 4, presence: [] });
+    expect(e && eventTopic(e)).toBe("t:4");
+  });
+});

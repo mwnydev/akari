@@ -4,8 +4,8 @@ import type { Schemas } from "@akari/api-client";
 
 export type Presence = Schemas["Presence"];
 
-/** 订阅目标：私信会话或订单。 */
-export type Topic = { conversation_id: number } | { order_id: number };
+/** 订阅目标：私信会话、订单或主题页（楼层评论与点赞）。 */
+export type Topic = { conversation_id: number } | { order_id: number } | { topic_id: number };
 
 /** 服务端推送，以及页面之间转发的本地事件。 */
 export type RealtimeEvent =
@@ -21,7 +21,26 @@ export type RealtimeEvent =
       type: "subscribed";
       conversation_id?: number | null;
       order_id?: number | null;
+      topic_id?: number | null;
       presence: Presence[];
+    }
+  /** 订阅的主题页：楼层下新增（或恢复）一条评论；`comments` 是该楼现在的评论数 */
+  | { type: "comment"; topic_id: number; comment: Schemas["FloorComment"]; comments: number }
+  | {
+      type: "comment_removed";
+      topic_id: number;
+      post_id: number;
+      comment_id: number;
+      comments: number;
+    }
+  /** 订阅的主题页：`user_id` 赞了或取消赞，`likes` 是该楼现在的点赞数 */
+  | {
+      type: "likes";
+      topic_id: number;
+      post_id: number;
+      user_id: number;
+      liked: boolean;
+      likes: number;
     }
   /** 推送可能漏了（服务端广播断过，或本页刚重连）：按 REST 补拉。 */
   | { type: "resync" }
@@ -29,14 +48,17 @@ export type RealtimeEvent =
   | { type: "notifications_read"; last_read_id: number; count: number };
 
 export function topicKey(t: Topic): string {
-  return "conversation_id" in t ? `c:${t.conversation_id}` : `o:${t.order_id}`;
+  if ("conversation_id" in t) return `c:${t.conversation_id}`;
+  if ("order_id" in t) return `o:${t.order_id}`;
+  return `t:${t.topic_id}`;
 }
 
 export function topicOf(key: string): Topic | null {
-  const m = /^([co]):(\d{1,18})$/.exec(key);
+  const m = /^([cot]):(\d{1,18})$/.exec(key);
   if (!m) return null;
   const id = Number(m[2]);
-  return m[1] === "c" ? { conversation_id: id } : { order_id: id };
+  if (m[1] === "c") return { conversation_id: id };
+  return m[1] === "o" ? { order_id: id } : { topic_id: id };
 }
 
 /** 事件属于哪个会话 / 订单（用于按订阅过滤）；与具体会话无关的事件返回 null。 */
@@ -56,7 +78,13 @@ export function eventTopic(e: RealtimeEvent): string | null {
       if (typeof e.conversation_id === "number")
         return topicKey({ conversation_id: e.conversation_id });
       if (typeof e.order_id === "number") return topicKey({ order_id: e.order_id });
+      if (e.type === "subscribed" && typeof e.topic_id === "number")
+        return topicKey({ topic_id: e.topic_id });
       return null;
+    case "comment":
+    case "comment_removed":
+    case "likes":
+      return topicKey({ topic_id: e.topic_id });
     default:
       return null;
   }
@@ -104,6 +132,28 @@ export function parseEvent(raw: unknown): RealtimeEvent | null {
       return isInt(v.user_id) ? (v as RealtimeEvent) : null;
     case "subscribed":
       return Array.isArray(v.presence) ? (v as RealtimeEvent) : null;
+    case "comment":
+      return isInt(v.topic_id) &&
+        isInt(v.comments) &&
+        isObject(v.comment) &&
+        isInt(v.comment.id) &&
+        isInt(v.comment.post_id) &&
+        isInt(v.comment.author_id) &&
+        typeof v.comment.body === "string"
+        ? (v as RealtimeEvent)
+        : null;
+    case "comment_removed":
+      return isInt(v.topic_id) && isInt(v.post_id) && isInt(v.comment_id) && isInt(v.comments)
+        ? (v as RealtimeEvent)
+        : null;
+    case "likes":
+      return isInt(v.topic_id) &&
+        isInt(v.post_id) &&
+        isInt(v.user_id) &&
+        typeof v.liked === "boolean" &&
+        isInt(v.likes)
+        ? (v as RealtimeEvent)
+        : null;
     case "resync":
       return { type: "resync" };
     case "notifications_read":

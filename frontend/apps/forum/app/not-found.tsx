@@ -1,12 +1,11 @@
 import { Button, Card, EmptyState } from "@akari/ui";
 import Link from "next/link";
-import { SiteNav } from "../components/SiteNav";
+import { AppShell } from "../components/forum/AppShell";
 
 export default function NotFound() {
   return (
-    <>
-      <SiteNav />
-      <main className="mx-auto max-w-3xl px-4 py-5">
+    <AppShell>
+      <div className="max-w-3xl">
         <Card>
           <EmptyState
             title="内容不存在或已被删除"
@@ -18,7 +17,7 @@ export default function NotFound() {
             }
           />
         </Card>
-      </main>
-    </>
+      </div>
+    </AppShell>
   );
 }

@@ -1,5 +1,8 @@
-// 设计稿 v2 的模拟数据：只供 /design/v2/* 展示，不调接口。字段按页面需要取舍，不代表最终接口形状。
+// 设计稿 v2 的模拟数据：只供 /design/v2/* 展示，不调接口。字段按页面需要取舍，不代表最终接口形状；
+// 页面经 views.tsx 换算成正式组件的显示模型。
 import type { TradeReputation } from "@akari/ui";
+import type { TradeFacts } from "../../../../components/forum/TradeLine";
+import type { BoardColor } from "../../../../lib/board-color";
 
 export interface MockUser {
   id: number;
@@ -127,9 +130,6 @@ export function user(id: number): MockUser {
   return u;
 }
 
-/** 板块色块，对应 globals.css 里的 --color-board-* 令牌。 */
-export type BoardColor = "red" | "blue" | "green" | "orange" | "purple" | "teal";
-
 export interface Board {
   slug: string;
   name: string;
@@ -194,17 +194,6 @@ export function board(slug: string): Board {
   const b = boards.find((x) => x.slug === slug);
   if (!b) throw new Error(`mock board ${slug} missing`);
   return b;
-}
-
-export interface TradeFacts {
-  /** USDT 最小单位 */
-  price: string;
-  /** 卖家参考汇率（4 位小数定点数），不填只显示 USDT */
-  cnyPerUsdt?: number;
-  instant: boolean;
-  stock?: number;
-  /** 卖家信誉，与用户名片同一份 */
-  seller: TradeReputation;
 }
 
 export interface AuctionFacts {
