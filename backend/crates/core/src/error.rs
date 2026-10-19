@@ -112,6 +112,18 @@ pub enum ErrorCode {
     ChainUnavailable,
     #[error("blocked")]
     UserBlocked,
+    #[error("management permissions suspended")]
+    StaffSuspended,
+    #[error("muted")]
+    Muted,
+    #[error("account banned")]
+    AccountBanned,
+    #[error("ip or device banned")]
+    AccessBanned,
+    #[error("sanction duration exceeds the limit")]
+    SanctionTooLong,
+    #[error("admin passkey re-verification required")]
+    AdminReverifyRequired,
     #[error("internal error")]
     Internal,
 }
@@ -176,6 +188,12 @@ impl ErrorCode {
             }
             Self::ChainUnavailable => "暂时无法读取链上数据，请稍后再试",
             Self::UserBlocked => "你已屏蔽对方或被对方屏蔽，无法发送私信",
+            Self::StaffSuspended => "你的管理权限已被暂停，请联系站长",
+            Self::Muted => "你已被禁言",
+            Self::AccountBanned => "账号已被封禁",
+            Self::AccessBanned => "当前网络或设备已被禁止登录",
+            Self::SanctionTooLong => "处罚时长超出你的权限范围",
+            Self::AdminReverifyRequired => "请先用后台 Passkey 再次验证",
             Self::Internal => "服务暂时不可用，请稍后再试",
         }
     }

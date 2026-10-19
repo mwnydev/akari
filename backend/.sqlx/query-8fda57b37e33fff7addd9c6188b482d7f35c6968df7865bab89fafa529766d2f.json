@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 某账号最近一段时间内指定操作的次数；被站长恢复过管理权限的，只算恢复之后的。$1 actor_id, $2 actions, $3 窗口秒数\nSELECT count(*) AS \"count!\" FROM admin_audit_logs\nWHERE actor_id = $1 AND action = ANY($2::text[])\n  AND created_at > greatest(\n        now() - make_interval(secs => $3),\n        (SELECT max(reinstated_at) FROM staff_suspensions WHERE user_id = $1)\n      )\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "TextArray",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8fda57b37e33fff7addd9c6188b482d7f35c6968df7865bab89fafa529766d2f"
+}

@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM staff_roles s USING users u\n           WHERE s.id = $1 AND s.role <> 1 AND u.id = s.user_id\n           RETURNING s.id, s.user_id, u.username, s.role, s.forum_id, s.granted_by, s.created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "staff_roles",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "staff_roles",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "role",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "staff_roles",
+            "name": "role"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "forum_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "staff_roles",
+            "name": "forum_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "granted_by",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "staff_roles",
+            "name": "granted_by"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "staff_roles",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "97d6e125898143907d6e4681f59d38e23dc06c3c27923d059b755c2033bc8869"
+}

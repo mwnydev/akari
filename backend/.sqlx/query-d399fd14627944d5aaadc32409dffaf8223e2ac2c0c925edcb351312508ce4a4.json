@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 编辑前把当前版本存入历史；已删除的楼层不处理。$1 post_id, $2 editor_id, $3 old_title\nINSERT INTO post_edits (post_id, editor_id, title, html, source)\nSELECT p.id, $2, $3, p.html, s.source\nFROM posts p JOIN post_sources s ON s.post_id = p.id\nWHERE p.id = $1 AND p.status = 0\nFOR UPDATE OF p\nRETURNING id\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "post_edits",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d399fd14627944d5aaadc32409dffaf8223e2ac2c0c925edcb351312508ce4a4"
+}

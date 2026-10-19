@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sanctions SET revoked_at = NULL, revoked_by = NULL\n         WHERE id = $1 AND revoked_at IS NOT NULL AND (ends_at IS NULL OR ends_at > now())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e54e997bceabde4d42eca3f9c268233bcb2d8cea80140cec1d1f60cecf4480ee"
+}

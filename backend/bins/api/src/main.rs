@@ -4,12 +4,13 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum_extra::extract::cookie::Key;
+use forum_api::admin::AdminState;
 use forum_api::config::Config;
 use forum_api::realtime::Hub;
 use forum_api::routes::aa::SponsorProxy;
 use forum_api::wallet::{AddressVerifier, ChainAddressVerifier, NoChainVerifier, WalletState};
 use forum_api::{AppState, app};
-use forum_auth::passkey::{UserHandles, wallet_webauthn, webauthn::Url};
+use forum_auth::passkey::{UserHandles, admin_webauthn, wallet_webauthn, webauthn::Url};
 use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha, Turnstile};
 use forum_kv::Realtime;
 
@@ -74,6 +75,15 @@ async fn main() -> anyhow::Result<()> {
             None
         }
     };
+    let admin = AdminState {
+        webauthn: admin_webauthn(
+            &cfg.admin_rp_id,
+            &cfg.brand_name,
+            &Url::parse(&cfg.admin_origin)?,
+        )?,
+        origin: cfg.admin_origin.clone(),
+        handles: UserHandles::admin(&cfg.auth_secret)?,
+    };
     let state = AppState {
         db,
         kv: kv.clone(),
@@ -86,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
         cache: forum_kv::ForumCache::new(kv.clone(), cfg.kv_namespace.as_str()),
         internal_hosts: Arc::from(cfg.internal_hosts.clone()),
         wallet: Arc::new(wallet),
+        admin: Arc::new(admin),
         hub: Hub::new(
             Realtime::new(kv.clone(), cfg.kv_namespace.as_str()),
             cfg.valkey_url.clone(),

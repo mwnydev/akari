@@ -940,3 +940,111 @@ async fn withdraw_credit_usage_uses_indexes(db: PgPool) {
         }
     }
 }
+
+/// 管理与处罚（ADR 0013）：2 万用户、3000 条任命与暂停记录、2 万条处罚、5 万条审计日志。
+/// 每个管理请求查角色、每次发帖查禁言、每次登录查 IP / 设备封禁、每次删帖 / 处罚做异常计数，都按索引走。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn staff_queries_use_indexes(db: PgPool) {
+    sqlx::raw_sql(
+        r"
+        INSERT INTO forums (slug, name) SELECT 'f' || g, 'forum ' || g FROM generate_series(1, 20) g;
+        INSERT INTO users (email) SELECT 'u' || g || '@example.com' FROM generate_series(1, 20000) g;
+        INSERT INTO staff_roles (user_id, role, forum_id)
+        SELECT g, CASE WHEN g % 10 = 0 THEN 3 ELSE 4 END, CASE WHEN g % 10 = 0 THEN NULL ELSE 1 + g % 20 END
+        FROM generate_series(1, 3000) g;
+        INSERT INTO staff_suspensions (user_id, reason, reinstated_at, reinstated_by)
+        SELECT g, 'anomaly', CASE WHEN g % 3 > 0 THEN now() END, CASE WHEN g % 3 > 0 THEN 1 END
+        FROM generate_series(1, 3000) g;
+        INSERT INTO sanctions (kind, user_id, forum_id, ip, device_hash, ends_at, reason, created_by, created_at, revoked_at,
+                               revoked_by)
+        SELECT 1 + g % 5,
+               CASE WHEN g % 5 <> 3 THEN 1 + g % 20000 END,
+               CASE WHEN g % 5 IN (0, 1) AND g % 2 = 0 THEN 1 + g % 20 END,
+               CASE WHEN g % 5 = 3 THEN ('10.' || (g % 250) || '.' || (g / 250 % 250) || '.0/24')::cidr END,
+               CASE WHEN g % 5 = 4 THEN sha256(int4send(g)) END,
+               now() + ((g % 40 - 10) || ' days')::interval, 'x', 1, now() - interval '20 days',
+               CASE WHEN g % 4 = 0 THEN now() END, CASE WHEN g % 4 = 0 THEN 1 END
+        FROM generate_series(1, 20000) g;
+        INSERT INTO admin_audit_logs (actor_id, action, target, created_at)
+        SELECT 1 + g % 300, CASE WHEN g % 2 = 0 THEN 'post.delete' ELSE 'topic.pin' END, 'post:' || g,
+               now() - (g || ' minutes')::interval
+        FROM generate_series(1, 50000) g;
+        INSERT INTO admin_audit_logs (actor_id, action, reverts) SELECT 1, 'post.delete.revert', g * 7
+        FROM generate_series(1, 2000) g;
+        ANALYZE;
+        ",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+    let kinds: Vec<i16> = vec![1, 3];
+    let actions: Vec<String> = vec!["post.delete".into(), "topic.hide".into()];
+    let now = time::OffsetDateTime::now_utc();
+    let cases: [(&str, Query<'_, Postgres, PgArguments>, &[&str]); 5] = [
+        (
+            "staff_roles_of",
+            sqlx::query(q!("staff_roles_of.sql")).bind(77_i64),
+            &["staff_roles_unique"],
+        ),
+        (
+            "sanctions_active_kind",
+            sqlx::query(q!("sanctions_active_kind.sql"))
+                .bind(77_i64)
+                .bind(kinds)
+                .bind(Some(3_i32)),
+            &["sanctions_user_active", "sanctions_user"],
+        ),
+        (
+            "sanctions_access",
+            sqlx::query(q!("sanctions_access.sql"))
+                .bind("10.7.3.9")
+                .bind(Some(vec![0xab_u8; 32])),
+            &["sanctions_ip_active"],
+        ),
+        (
+            "audit_count_recent",
+            sqlx::query(q!("audit_count_recent.sql"))
+                .bind(77_i64)
+                .bind(actions)
+                .bind(3600.0_f64),
+            &["admin_audit_logs_actor"],
+        ),
+        (
+            "audit_by_actor",
+            sqlx::query(q!("audit_by_actor.sql"))
+                .bind(77_i64)
+                .bind(now - time::Duration::days(7))
+                .bind(now)
+                .bind(501_i64),
+            &["admin_audit_logs_actor"],
+        ),
+    ];
+    for (name, q, expect) in cases {
+        let (info, plan) = explain(&db, q).await;
+        let bad: Vec<&String> = info
+            .seq_scans
+            .iter()
+            .filter(|t| {
+                [
+                    "sanctions",
+                    "admin_audit_logs",
+                    "users",
+                    "staff_suspensions",
+                ]
+                .contains(&t.as_str())
+            })
+            .collect();
+        assert!(bad.is_empty(), "{name}: seq scan on {bad:?}\n{plan:#}");
+        assert!(
+            info.indexes.iter().any(|i| expect.contains(&i.as_str())),
+            "{name}: expected one of {expect:?}, used {:?}\n{plan:#}",
+            info.indexes
+        );
+        if name == "sanctions_access" {
+            assert!(
+                info.indexes.iter().any(|i| i == "sanctions_device_active"),
+                "{name}: {plan:#}"
+            );
+        }
+    }
+}

@@ -1,4 +1,4 @@
-//! 发件箱投递（邮件、站内通知与实时推送）、浏览数回写、报价卡片过期、通知分区维护、
+//! 发件箱投递（邮件、站内通知与实时推送、管理员群 Telegram 告警）、浏览数回写、报价卡片过期、通知分区维护、
 //! 发帖经验、每日信誉校对、图片转换。
 //!
 //! 现在是最小实现：轮询 `outbox`，`FOR UPDATE SKIP LOCKED` 锁一批、投递、标记，失败按指数退避重试。
@@ -7,6 +7,7 @@
 pub mod exp;
 pub mod images;
 pub mod stats;
+pub mod telegram;
 
 use forum_core::chat::Event;
 use forum_db::notifications::{self, NewNotification};
@@ -16,6 +17,8 @@ use forum_kv::{ForumCache, Realtime};
 use forum_mail::{Email, Mailer, templates};
 use serde::Deserialize;
 use serde_json::{Value, json};
+
+use crate::telegram::Telegram;
 
 /// 每批最多处理条数。投递期间持有行锁，批不宜大。
 pub const BATCH: usize = 10;
@@ -48,10 +51,18 @@ struct WithdrawAddressAdded {
     immediate: bool,
 }
 
+#[derive(Deserialize)]
+struct StaffAlert {
+    event: String,
+    text: String,
+}
+
 /// 一条发件箱消息的投递方式。
 #[derive(Debug)]
 pub enum Delivery {
     Email(Email),
+    /// 管理员 Telegram 群（纯文本）。
+    Telegram(String),
     /// 站内：写通知（并推送）和 / 或推送新数据。
     InSite(InSite),
 }
@@ -177,6 +188,10 @@ pub fn render(msg: &outbox::Message) -> Result<Delivery, RenderError> {
             )),
             ..InSite::default()
         },
+        outbox::KIND_STAFF_ALERT => {
+            let a: StaffAlert = serde_json::from_value(p.clone())?;
+            return Ok(Delivery::Telegram(format!("[{}] {}", a.event, a.text)));
+        }
         k if let Some(event) = k.strip_prefix("notify.") => {
             notice(notifications::KIND_SYSTEM, p, Some(("event", event)))?
         }
@@ -195,6 +210,10 @@ fn render_email(msg: &outbox::Message) -> Result<Email, RenderError> {
         "email.wallet_code" => {
             let p: LoginCode = serde_json::from_value(msg.payload.clone())?;
             (p.to, templates::wallet_code(&p.code))
+        }
+        "email.admin_code" => {
+            let p: LoginCode = serde_json::from_value(msg.payload.clone())?;
+            (p.to, templates::admin_code(&p.code))
         }
         "email.new_device" => {
             let p: NewDevice = serde_json::from_value(msg.payload.clone())?;
@@ -220,9 +239,11 @@ fn render_email(msg: &outbox::Message) -> Result<Email, RenderError> {
 
 /// 处理一批到期消息，返回本批条数（0 表示暂时没有可发的）。
 /// 站内通知与投递标记在同一事务里写入；推送在事务提交之后发布（`push` 为空时不推送，如测试）。
+/// `telegram` 为空（未配置）时管理员群告警直接标记为已处理，不重试。
 pub async fn drain_once<M: Mailer>(
     db: &PgPool,
     mailer: &M,
+    telegram: Option<&Telegram>,
     push: Option<&Realtime>,
 ) -> Result<usize, sqlx::Error> {
     let mut tx = db.begin().await?;
@@ -231,6 +252,10 @@ pub async fn drain_once<M: Mailer>(
     for msg in &batch {
         let result = match render(msg) {
             Ok(Delivery::Email(email)) => mailer.send(&email).await.map_err(|e| e.to_string()),
+            Ok(Delivery::Telegram(text)) => match telegram {
+                Some(t) => t.send(&text).await,
+                None => Ok(()),
+            },
             Ok(Delivery::InSite(site)) => {
                 deliver(&mut tx, site, &mut publish).await?;
                 Ok(())

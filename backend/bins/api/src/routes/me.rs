@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::extract::State;
 use forum_core::ErrorCode;
+use forum_core::staff::{DurationLimit, Permission, Role, Scope, StaffRoles};
 use forum_db::uploads::UploadStatus;
 use forum_db::users::SetUsername;
 use serde::{Deserialize, Serialize};
@@ -17,14 +18,61 @@ pub struct Me {
     pub id: i64,
     pub email: String,
     pub username: Option<String>,
+    /// 管理角色与权限；普通用户为空。论坛界面据此显示管理功能（服务端每个管理接口仍会再校验）。
+    pub staff: Option<StaffView>,
 }
 
-impl From<forum_db::users::User> for Me {
-    fn from(u: forum_db::users::User) -> Self {
+impl Me {
+    pub fn new(u: forum_db::users::User, roles: &StaffRoles) -> Self {
         Self {
             id: u.id,
             email: u.email,
             username: u.username,
+            staff: roles.is_staff().then(|| StaffView::from(roles)),
+        }
+    }
+}
+
+/// 管理角色（ADR 0013）：站长、管理员、版主。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct StaffView {
+    pub roles: Vec<Role>,
+    /// 作为版主负责的板块。
+    pub boards: Vec<i32>,
+    /// 管理权限被自动暂停（异常检测），待站长恢复；此时下面两个权限列表为空。
+    pub suspended: bool,
+    /// 全站范围可用的论坛管理权限（管理员、站长）。
+    pub site_permissions: Vec<Permission>,
+    /// 只在 `boards` 内可用的权限（版主）。
+    pub board_permissions: Vec<Permission>,
+    /// 禁言最长秒数；为空表示不限（可永久）。没有禁言权限时看权限列表。
+    pub max_mute_secs: Option<i64>,
+    /// 禁拍最长秒数；为空表示不限。
+    pub max_auction_ban_secs: Option<i64>,
+    /// 能进后台（只有站长，`administrator` 子域名，需后台 Passkey）。
+    pub admin_backend: bool,
+}
+
+impl From<&StaffRoles> for StaffView {
+    fn from(r: &StaffRoles) -> Self {
+        // 管理员与站长全站不限；版主在自己板块内有上限（各板块相同）。
+        let scope = match r.boards.first() {
+            Some(b) if !r.owner && !r.admin => Scope::Board(*b),
+            _ => Scope::Site,
+        };
+        let cap = |p| match r.duration_limit(p, scope) {
+            Some(DurationLimit::Upto(s)) => Some(s),
+            _ => None,
+        };
+        Self {
+            roles: r.roles(),
+            boards: r.boards.clone(),
+            suspended: r.suspended,
+            site_permissions: r.site_permissions(),
+            board_permissions: r.board_permissions(),
+            max_mute_secs: cap(Permission::Mute),
+            max_auction_ban_secs: cap(Permission::AuctionBan),
+            admin_backend: r.owner,
         }
     }
 }
@@ -37,7 +85,7 @@ pub async fn current_user_id(session: &Session) -> ApiResult<i64> {
         .ok_or(ApiError(ErrorCode::Unauthorized))
 }
 
-/// 当前登录用户。
+/// 当前登录用户，含管理角色与权限。
 #[utoipa::path(
     get, path = "/api/v1/me", tag = "auth",
     responses((status = 200, body = Me), (status = 401, body = ErrorBody))
@@ -46,7 +94,10 @@ pub async fn me(State(state): State<AppState>, session: Session) -> ApiResult<Js
     let id = current_user_id(&session).await?;
     let user = forum_db::users::find_by_id(&state.db, id).await?;
     match user {
-        Some(u) => Ok(Json(u.into())),
+        Some(u) => {
+            let roles = forum_db::staff::roles(&state.db, id).await?;
+            Ok(Json(Me::new(u, &roles)))
+        }
         // 账号被删除但会话还在：清掉会话按未登录处理。
         None => {
             session.flush().await?;

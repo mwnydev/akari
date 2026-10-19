@@ -212,6 +212,7 @@ pub async fn open(
     if db::blocked_between(&state.db, me, req.user_id).await? {
         return Err(ApiError(ErrorCode::UserBlocked));
     }
+    crate::posting::check_not_banned(&state, me).await?;
     // 只有新开会话计入限流，重复打开已有会话不算。
     let (c, created) = match db::between(&state.db, me, req.user_id).await? {
         Some(c) => (c, false),
@@ -331,6 +332,7 @@ pub async fn send(
     if db::blocked_between(&state.db, me, peer).await? {
         return Err(ApiError(ErrorCode::UserBlocked));
     }
+    crate::posting::check_not_banned(&state, me).await?;
     limit(&state, &MESSAGE_RATE, me).await?;
 
     let mut tx = state.db.begin().await?;

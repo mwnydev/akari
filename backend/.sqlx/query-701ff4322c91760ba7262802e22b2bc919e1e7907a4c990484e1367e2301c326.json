@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 登录前检查 IP / 设备封禁。$1 客户端 IP（文本），$2 设备 Cookie 的 SHA-256（可空）\nSELECT EXISTS (\n         SELECT 1 FROM sanctions\n         WHERE kind = 4 AND revoked_at IS NULL AND ip >>= $1::text::inet AND (ends_at IS NULL OR ends_at > now())\n       )\n    OR EXISTS (\n         SELECT 1 FROM sanctions\n         WHERE kind = 5 AND revoked_at IS NULL AND device_hash = $2 AND (ends_at IS NULL OR ends_at > now())\n       ) AS \"banned!\"\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "banned!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "701ff4322c91760ba7262802e22b2bc919e1e7907a4c990484e1367e2301c326"
+}

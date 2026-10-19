@@ -4,3 +4,4 @@ SELECT p.id, $2, $3, p.html, s.source
 FROM posts p JOIN post_sources s ON s.post_id = p.id
 WHERE p.id = $1 AND p.status = 0
 FOR UPDATE OF p
+RETURNING id

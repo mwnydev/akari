@@ -74,6 +74,12 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
     "免费代付提币次数已用完：完成一笔担保交易后可再获得 1 次；也可在「紧急取回」页自付 ETH 提取",
   CHAIN_UNAVAILABLE: "暂时无法读取链上数据，请稍后再试",
   USER_BLOCKED: "你已屏蔽对方或被对方屏蔽，无法发送私信",
+  STAFF_SUSPENDED: "你的管理权限已被暂停，请联系站长",
+  MUTED: "你已被禁言",
+  ACCOUNT_BANNED: "账号已被封禁",
+  ACCESS_BANNED: "当前网络或设备已被禁止登录",
+  SANCTION_TOO_LONG: "处罚时长超出你的权限范围",
+  ADMIN_REVERIFY_REQUIRED: "请先用后台 Passkey 再次验证",
   INTERNAL: "服务暂时不可用，请稍后再试",
 };
 

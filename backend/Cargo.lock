@@ -2614,6 +2614,7 @@ name = "forum-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "forum-core",
  "forum-db",
  "forum-kv",

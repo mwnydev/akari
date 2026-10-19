@@ -55,11 +55,12 @@ fn reverify_subject(email: &str) -> String {
     format!("wallet-reverify\0{email}")
 }
 
+/// `kind` 带用途前缀（`wallet:reg`、`admin:login` 等），钱包与后台的 challenge 互不覆盖。
 fn challenge_key(state: &AppState, kind: &str, user_id: i64) -> String {
-    format!("{}wallet:{kind}:{user_id}", state.cache.ns())
+    format!("{}{kind}:{user_id}", state.cache.ns())
 }
 
-async fn save_challenge<T: Serialize>(
+pub(crate) async fn save_challenge<T: Serialize>(
     state: &AppState,
     kind: &str,
     user_id: i64,
@@ -77,7 +78,7 @@ async fn save_challenge<T: Serialize>(
 }
 
 /// 取出并作废 challenge 状态；过期或已用过返回 `PASSKEY_FAILED`。
-async fn take_challenge<T: DeserializeOwned>(
+pub(crate) async fn take_challenge<T: DeserializeOwned>(
     state: &AppState,
     kind: &str,
     user_id: i64,
@@ -223,7 +224,7 @@ pub async fn register_start(
     let (options, reg) =
         start_registration(&w.webauthn, w.handles.of(user.id), &name, &name, exclude)
             .map_err(ApiError::internal)?;
-    save_challenge(&state, "reg", user.id, &reg).await?;
+    save_challenge(&state, "wallet:reg", user.id, &reg).await?;
     Ok(Json(RegistrationOptions { options }))
 }
 
@@ -264,7 +265,7 @@ impl From<&db::Passkey> for PasskeyView {
 }
 
 /// 与 WebAuthn JSON 相同的 base64url 编码（借用 webauthn-rs 的序列化，避免再引一个编码库）。
-fn base64url(b: &[u8]) -> String {
+pub(crate) fn base64url(b: &[u8]) -> String {
     serde_json::to_value(CredentialID::from(b.to_vec()))
         .ok()
         .and_then(|v| v.as_str().map(str::to_owned))
@@ -288,7 +289,7 @@ pub async fn register_finish(
     Json(req): Json<RegisterFinish>,
 ) -> ApiResult<(StatusCode, Json<PasskeyView>)> {
     let user_id = current_user_id(&session).await?;
-    let reg: PasskeyRegistration = take_challenge(&state, "reg", user_id).await?;
+    let reg: PasskeyRegistration = take_challenge(&state, "wallet:reg", user_id).await?;
     let passkey = state
         .wallet
         .webauthn
@@ -369,7 +370,7 @@ pub async fn assert_start(
         .webauthn
         .start_passkey_authentication(&creds)
         .map_err(ApiError::internal)?;
-    save_challenge(&state, "auth", user_id, &auth).await?;
+    save_challenge(&state, "wallet:auth", user_id, &auth).await?;
     Ok(Json(AssertionOptions { options }))
 }
 
@@ -403,7 +404,7 @@ pub async fn assert_finish(
     Json(req): Json<AssertFinish>,
 ) -> ApiResult<Json<Verified>> {
     let user_id = current_user_id(&session).await?;
-    let auth: PasskeyAuthentication = take_challenge(&state, "auth", user_id).await?;
+    let auth: PasskeyAuthentication = take_challenge(&state, "wallet:auth", user_id).await?;
     let result = state
         .wallet
         .webauthn

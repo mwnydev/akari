@@ -48,13 +48,13 @@ async fn delivers_login_code_first_and_marks_sent(pool: PgPool) {
 
     let mailer = Recorder::default();
     assert_eq!(
-        forum_worker::drain_once(&pool, &mailer, None)
+        forum_worker::drain_once(&pool, &mailer, None, None)
             .await
             .unwrap(),
         2
     );
     assert_eq!(
-        forum_worker::drain_once(&pool, &mailer, None)
+        forum_worker::drain_once(&pool, &mailer, None, None)
             .await
             .unwrap(),
         0,
@@ -86,7 +86,7 @@ async fn failures_are_retried_later(pool: PgPool) {
         ..Default::default()
     };
     assert_eq!(
-        forum_worker::drain_once(&pool, &mailer, None)
+        forum_worker::drain_once(&pool, &mailer, None, None)
             .await
             .unwrap(),
         2
@@ -102,7 +102,7 @@ async fn failures_are_retried_later(pool: PgPool) {
     assert_eq!(rows[1].2.as_deref(), Some("unknown outbox kind"));
     // 退避期内不再取出
     assert_eq!(
-        forum_worker::drain_once(&pool, &mailer, None)
+        forum_worker::drain_once(&pool, &mailer, None, None)
             .await
             .unwrap(),
         0
@@ -150,7 +150,7 @@ async fn in_site_notifications_are_stored_not_emailed(pool: PgPool) {
     .unwrap();
     let mailer = Recorder::default();
     assert_eq!(
-        forum_worker::drain_once(&pool, &mailer, None)
+        forum_worker::drain_once(&pool, &mailer, None, None)
             .await
             .unwrap(),
         3
@@ -187,7 +187,7 @@ async fn in_site_notifications_are_stored_not_emailed(pool: PgPool) {
     let bad = outbox::enqueue(&pool, "notify.mention", &json!({"from": 2}), 0)
         .await
         .unwrap();
-    forum_worker::drain_once(&pool, &mailer, None)
+    forum_worker::drain_once(&pool, &mailer, None, None)
         .await
         .unwrap();
     let attempts: i32 = sqlx::query_scalar("SELECT attempts FROM outbox WHERE id = $1")
@@ -266,7 +266,7 @@ async fn order_updates_notify_parties_and_push(pool: PgPool) {
         ready.await.unwrap();
     }
     let mailer = Recorder::default();
-    forum_worker::drain_once(&pool, &mailer, rt.as_ref().map(|(_, r)| r))
+    forum_worker::drain_once(&pool, &mailer, None, rt.as_ref().map(|(_, r)| r))
         .await
         .unwrap();
     for user in [10, 11] {
@@ -375,7 +375,7 @@ async fn wallet_code_is_rendered(pool: PgPool) {
     .unwrap();
     let mailer = Recorder::default();
     assert_eq!(
-        forum_worker::drain_once(&pool, &mailer, None)
+        forum_worker::drain_once(&pool, &mailer, None, None)
             .await
             .unwrap(),
         1

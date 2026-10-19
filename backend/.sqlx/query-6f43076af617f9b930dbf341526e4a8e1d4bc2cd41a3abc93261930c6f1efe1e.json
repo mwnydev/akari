@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 一个账号的管理角色与是否被暂停；不是管理人员时只有一行（role 为空）。$1 user_id\nSELECT r.role AS \"role?\", r.forum_id AS \"forum_id?\",\n       EXISTS (SELECT 1 FROM staff_suspensions s WHERE s.user_id = $1 AND s.reinstated_at IS NULL) AS \"suspended!\"\nFROM (SELECT 1) one\nLEFT JOIN staff_roles r ON r.user_id = $1\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "role?",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "staff_roles",
+            "name": "role"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "forum_id?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "staff_roles",
+            "name": "forum_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "suspended!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "6f43076af617f9b930dbf341526e4a8e1d4bc2cd41a3abc93261930c6f1efe1e"
+}

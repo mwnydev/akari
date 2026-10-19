@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE staff_suspensions SET reinstated_at = now(), reinstated_by = $2\n         WHERE id = $1 AND reinstated_at IS NULL RETURNING user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "staff_suspensions",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "99873b510c6e505a61dc5771874fd2125bb34e80df44c2fb35913944c8e975c5"
+}

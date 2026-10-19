@@ -34,6 +34,25 @@ pub async fn enqueue(
     Ok(row.id)
 }
 
+/// 推送到管理员 Telegram 群的告警（ADR 0013 第 6 条）。
+pub const KIND_STAFF_ALERT: &str = "staff_alert";
+
+/// 管理员群告警：管理人员新设备登录、异常管理操作、仲裁裁决等都经这里入队，由 worker 推送。
+/// `event` 是简短的类型标识（如 `staff.new_device`），`text` 是给人看的正文（纯文本，不解析 Markdown）。
+pub async fn staff_alert(
+    db: impl PgExecutor<'_>,
+    event: &str,
+    text: &str,
+) -> Result<i64, sqlx::Error> {
+    enqueue(
+        db,
+        KIND_STAFF_ALERT,
+        &serde_json::json!({ "event": event, "text": text }),
+        PRIORITY_HIGH,
+    )
+    .await
+}
+
 /// 在事务内锁定一批到期的待发消息；其他 worker 会跳过这些行。
 pub async fn lock_due(
     tx: &mut Transaction<'_, Postgres>,

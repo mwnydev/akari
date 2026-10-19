@@ -339,7 +339,7 @@ async fn order_chat_hash_chain_and_access(db: PgPool) {
     );
     let r = call(&app, "POST", &path, Some(json!({"body": "x"})), &cc).await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
-    forum_db::staff::grant(&db, c, forum_db::staff::ROLE_ARBITER, None, None)
+    forum_db::staff::grant(&db, c, forum_db::staff::ROLE_ADMIN, None, None)
         .await
         .unwrap();
 
@@ -819,7 +819,7 @@ async fn order_chat_push_reaches_parties_and_subscribed_arbiters(db: PgPool) {
     let (c, cc) = user(&r1, &db).await;
     let (_, cs) = user(&r1, &db).await;
     let order = seed_order(&db, a, b).await;
-    forum_db::staff::grant(&db, c, forum_db::staff::ROLE_ARBITER, None, None)
+    forum_db::staff::grant(&db, c, forum_db::staff::ROLE_ADMIN, None, None)
         .await
         .unwrap();
 

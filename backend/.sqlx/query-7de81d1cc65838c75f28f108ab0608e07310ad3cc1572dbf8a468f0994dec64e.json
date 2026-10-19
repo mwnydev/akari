@@ -1,0 +1,122 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 某账号在 [from, to) 内的管理操作（不含撤销记录），新的在前。$1 actor_id, $2 from, $3 to, $4 limit\nSELECT a.id, a.actor_id, a.action, a.target, a.reason, a.detail, a.created_at, a.reverts,\n       EXISTS (SELECT 1 FROM admin_audit_logs r WHERE r.reverts = a.id) AS \"reverted!\"\nFROM admin_audit_logs a\nWHERE a.actor_id = $1 AND a.created_at >= $2 AND a.created_at < $3 AND a.reverts IS NULL\nORDER BY a.created_at DESC, a.id DESC\nLIMIT $4\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "admin_audit_logs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "actor_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "admin_audit_logs",
+            "name": "actor_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "action",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "admin_audit_logs",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "target",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "admin_audit_logs",
+            "name": "target"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "admin_audit_logs",
+            "name": "reason"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "detail",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "admin_audit_logs",
+            "name": "detail"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "admin_audit_logs",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "reverts",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "admin_audit_logs",
+            "name": "reverts"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "reverted!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "7de81d1cc65838c75f28f108ab0608e07310ad3cc1572dbf8a468f0994dec64e"
+}

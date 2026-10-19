@@ -7,6 +7,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use forum_core::ErrorCode;
+use forum_core::staff::{Permission, Scope};
 use forum_db::forums::Forum;
 use forum_db::posts::{self, PAGE_SIZE};
 use forum_db::topics::Topic;
@@ -14,7 +15,7 @@ use forum_db::topics::{self, FLAG_FEATURED, FLAG_HIDDEN, FLAG_LOCKED, FLAG_PINNE
 use forum_kv::BoardPage;
 use forum_kv::forum_cache::{self, BOARD_CAP};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use time::OffsetDateTime;
 use tower_sessions::Session;
 use utoipa::{IntoParams, ToSchema};
@@ -22,6 +23,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::access::{Viewer, visible_forums};
 use crate::cards;
 use crate::error::{ApiError, ApiResult, ErrorBody};
+use crate::moderation::{self, Class, Moderator, TopicChange};
 use crate::posting::{self, REPLY_RATE, after_commit, micros};
 use crate::routes::forums::{TOPICS_PER_PAGE, cursor_of, parse_cursor, topic_user_ids};
 use crate::state::AppState;
@@ -302,6 +304,7 @@ pub async fn reply(
             return Err(ApiError(ErrorCode::Forbidden));
         }
     }
+    posting::check_sanctions(&state, actor.id, Some(forum.id)).await?;
     let cleaned = posting::clean(&state, &actor, &req.html, &req.source)?;
     posting::limit_new_content(&state, &actor, &REPLY_RATE).await?;
 
@@ -379,6 +382,15 @@ impl ModerationAction {
         }
     }
 
+    /// 需要的权限与限速类别：隐藏算删除类（计入异常检测），其余算内容类。
+    fn permission(self) -> (Permission, Class) {
+        match self {
+            Self::Hide => (Permission::TopicHide, Class::Delete),
+            Self::Unhide => (Permission::TopicHide, Class::Content),
+            _ => (Permission::TopicModerate, Class::Content),
+        }
+    }
+
     /// `(要设置的位, 要清除的位)`。
     fn bits(self) -> (i16, i16) {
         match self {
@@ -404,7 +416,8 @@ pub struct ModerationRequest {
     pub forum_id: Option<i32>,
 }
 
-/// 主题管理。只有该板块的版主和全站管理人员可操作；每次操作写只增审计日志。
+/// 主题管理。需要该板块的管理权限（版主只管自己的板块，移动时目标板块也要有权限）；
+/// 限速、异常检测，每次操作写只增审计日志（ADR 0013）。
 #[utoipa::path(
     post, path = "/api/v1/topics/{id}/moderation", tag = "forum",
     params(("id" = i64, Path)),
@@ -412,7 +425,7 @@ pub struct ModerationRequest {
     responses(
         (status = 200, body = ModerationResult),
         (status = 400, body = ErrorBody), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody),
-        (status = 404, body = ErrorBody)
+        (status = 404, body = ErrorBody), (status = 429, body = ErrorBody)
     )
 )]
 pub async fn moderate(
@@ -423,113 +436,53 @@ pub async fn moderate(
 ) -> ApiResult<Json<ModerationResult>> {
     let viewer = Viewer::load(&state, &session).await?;
     let actor = viewer.require()?;
-    let reason = req.reason.trim();
-    if reason.is_empty() || reason.chars().count() > 500 {
-        return Err(ApiError(ErrorCode::InvalidParameter));
-    }
+    let reason = moderation::reason(&req.reason)?;
     let topic = topics::by_id(&state.db, id)
         .await?
         .ok_or(ApiError(ErrorCode::NotFound))?;
-    if !viewer.is_staff(&state, topic.forum_id).await? {
-        return Err(ApiError(ErrorCode::Forbidden));
-    }
-    let target_forum = match (req.action, req.forum_id) {
+    let (permission, class) = req.action.permission();
+    let m = Moderator::authorize(
+        &state,
+        actor.id,
+        permission,
+        Scope::Board(topic.forum_id),
+        class,
+    )
+    .await?;
+    let change = match (req.action, req.forum_id) {
         (ModerationAction::Move, Some(to)) if to != topic.forum_id => {
             forum_db::forums::by_id(&state.db, to)
                 .await?
                 .ok_or(ApiError(ErrorCode::NotFound))?;
-            if !viewer.is_staff(&state, to).await? {
-                return Err(ApiError(ErrorCode::Forbidden));
-            }
-            Some(to)
+            m.require(Permission::TopicModerate, Scope::Board(to))?;
+            TopicChange::Move(to)
         }
         (ModerationAction::Move, _) => return Err(ApiError(ErrorCode::InvalidParameter)),
-        _ => None,
+        (a, _) => {
+            let (set, clear) = a.bits();
+            TopicChange::Flags { set, clear }
+        }
     };
 
     let mut tx = state.db.begin().await?;
-    let (old_forum, new_forum, old_flags, new_flags, detail) = if let Some(to) = target_forum {
-        let from = topics::move_to(&mut *tx, id, to)
-            .await?
-            .ok_or(ApiError(ErrorCode::NotFound))?;
-        (
-            from,
-            to,
-            topic.flags,
-            topic.flags,
-            json!({ "from": from, "to": to }),
-        )
-    } else {
-        let (set, clear) = req.action.bits();
-        let (old, new, forum) = topics::update_flags(&mut *tx, id, set, clear)
-            .await?
-            .ok_or(ApiError(ErrorCode::NotFound))?;
-        (
-            forum,
-            forum,
-            old,
-            new,
-            json!({ "old_flags": old, "new_flags": new }),
-        )
-    };
-    // 精华经验（plan 第 7 节）：设精华 +50、撤销扣回，与标志位同一事务。
-    let featured_now = new_flags & FLAG_FEATURED != 0;
-    let level_changed = if featured_now != (old_flags & FLAG_FEATURED != 0) {
-        let day = OffsetDateTime::now_utc().date();
-        forum_db::exp::set_featured(&mut tx, topic.author_id, id, featured_now, day).await?
-            == Some(true)
-    } else {
-        false
-    };
+    m.guard(&state, &mut tx).await?;
+    let effect = moderation::change_topic(&mut tx, &topic, change)
+        .await?
+        .ok_or(ApiError(ErrorCode::NotFound))?;
     forum_db::audit::append(
         &mut *tx,
         actor.id,
         req.action.name(),
         Some(&format!("topic:{id}")),
         Some(reason),
-        &detail,
+        &effect.detail(),
     )
     .await?;
     tx.commit().await?;
-    if level_changed {
-        cards::invalidate(&state, &[topic.author_id]).await;
-    }
-
-    // 缓存：有序集合成员关系、置顶列表、第 1 页
-    let was_listed = old_flags & topics::FLAGS_NOT_LISTED == 0;
-    let is_listed = new_flags & topics::FLAGS_NOT_LISTED == 0;
-    if was_listed && (!is_listed || old_forum != new_forum) {
-        after_commit("board_remove", state.cache.board_remove(old_forum, id)).await;
-    }
-    if is_listed && (!was_listed || old_forum != new_forum) {
-        after_commit(
-            "board_touch",
-            state
-                .cache
-                .board_touch(new_forum, id, micros(topic.last_post_at)),
-        )
-        .await;
-    }
-    after_commit(
-        "bump pinned",
-        state.cache.bump(&forum_cache::pinned(old_forum)),
-    )
-    .await;
-    if new_forum != old_forum {
-        after_commit(
-            "bump pinned",
-            state.cache.bump(&forum_cache::pinned(new_forum)),
-        )
-        .await;
-    }
-    after_commit(
-        "bump page1",
-        state.cache.bump(&forum_cache::topic_page1(id)),
-    )
-    .await;
+    effect.apply(&state).await;
 
     Ok(Json(ModerationResult {
-        forum_id: new_forum,
-        flags: new_flags.into(),
+        forum_id: effect.new_forum,
+        flags: effect.new_flags.into(),
     }))
 }

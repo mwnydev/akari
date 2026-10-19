@@ -1,10 +1,12 @@
 //! forum-api：论坛 HTTP API 与 WebSocket（`GET /api/v1/ws`，协议见 [`routes::ws`]）。
 
 pub mod access;
+pub mod admin;
 pub mod cards;
 pub mod config;
 pub mod error;
 pub mod middleware;
+pub mod moderation;
 pub mod posting;
 pub mod realtime;
 pub mod routes;
@@ -65,6 +67,13 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::posts::edit, routes::posts::delete))
         .routes(routes!(routes::posts::history))
         .routes(routes!(routes::posts::source))
+        .routes(routes!(routes::posts::restore))
+        .routes(routes!(
+            routes::moderation::user_sanctions,
+            routes::moderation::sanction_user
+        ))
+        .routes(routes!(routes::moderation::ban_ip))
+        .routes(routes!(routes::moderation::lift))
         .routes(routes!(routes::wallet::overview))
         .routes(routes!(routes::wallet::reverify_start))
         .routes(routes!(routes::wallet::reverify_verify))
@@ -108,46 +117,87 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::notifications::read))
         .routes(routes!(routes::notifications::unread))
         .routes(routes!(routes::ws::connect))
+        .routes(routes!(routes::admin_auth::admin_enroll_code))
+        .routes(routes!(routes::admin_auth::admin_enroll_verify))
+        .routes(routes!(routes::admin_auth::admin_register_start))
+        .routes(routes!(routes::admin_auth::admin_register_finish))
+        .routes(routes!(routes::admin_auth::admin_passkeys))
+        .routes(routes!(routes::admin_auth::admin_login_start))
+        .routes(routes!(routes::admin_auth::admin_login_finish))
+        .routes(routes!(routes::admin_auth::admin_current))
+        .routes(routes!(routes::admin_auth::admin_reverify_start))
+        .routes(routes!(routes::admin_auth::admin_reverify_finish))
+        .routes(routes!(routes::admin_auth::admin_logout))
+        .routes(routes!(routes::admin::list_staff, routes::admin::appoint))
+        .routes(routes!(routes::admin::remove_staff))
+        .routes(routes!(
+            routes::admin::get_settings,
+            routes::admin::put_settings
+        ))
+        .routes(routes!(routes::admin::list_suspensions))
+        .routes(routes!(routes::admin::reinstate))
+        .routes(routes!(routes::admin::revoke))
+        .routes(routes!(routes::admin::audit_log))
         .split_for_parts()
 }
 
-/// 跨源只放行钱包页面（plan 第 11 节「Web 安全基线」）：钱包子域名带 Cookie 调论坛主机上的 API。
+/// 跨源只放行钱包页面与后台页面（plan 第 11 节「Web 安全基线」）：钱包子域名带 Cookie 调论坛主机上的 API，
+/// 后台页面只调 `/api/v1/admin/`（后台来源的 CORS 只在后台接口上生效，钱包来源反之）。
 /// 论坛页面与 API 同源，不需要 CORS；其他来源的请求不经过 CORS 层，拿不到任何 `Access-Control-*` 头
 /// （`CorsLayer` 对不放行的来源仍会回 allow-methods 等头，所以先按来源分流）。
-/// 会话 Cookie 的域与 SameSite 不变：钱包与论坛同属一个可注册域名，跨子域名请求仍是同站（SameSite=Lax 照发）。
+/// 会话 Cookie 的域与 SameSite 不变：钱包、后台与论坛同属一个可注册域名，跨子域名请求仍是同站。
 #[derive(Clone)]
-struct WalletCors {
-    origins: Arc<[HeaderValue]>,
-    layer: CorsLayer,
+struct ApiCors {
+    wallet_origins: Arc<[HeaderValue]>,
+    wallet: CorsLayer,
+    admin_origin: Option<HeaderValue>,
+    admin: CorsLayer,
 }
 
-impl WalletCors {
-    fn new(wallet_origins: &[String]) -> Self {
-        // 钱包来源在启动时已按 URL 校验过，必然是合法的请求头值。
-        let origins: Arc<[HeaderValue]> = wallet_origins
+impl ApiCors {
+    fn new(wallet_origins: &[String], admin_origin: &str) -> Self {
+        // 来源在启动时已按 URL 校验过，必然是合法的请求头值。
+        let wallet_origins: Arc<[HeaderValue]> = wallet_origins
             .iter()
             .filter_map(|o| HeaderValue::from_str(o).ok())
             .collect();
-        let layer = CorsLayer::new()
-            .allow_origin(AllowOrigin::list(origins.iter().cloned()))
+        let wallet = CorsLayer::new()
+            .allow_origin(AllowOrigin::list(wallet_origins.iter().cloned()))
             .allow_credentials(true)
             .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
             .allow_headers([header::CONTENT_TYPE]);
-        Self { origins, layer }
+        let admin_origin = HeaderValue::from_str(admin_origin).ok();
+        let admin = CorsLayer::new()
+            .allow_origin(AllowOrigin::list(admin_origin.iter().cloned()))
+            .allow_credentials(true)
+            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+            .allow_headers([header::CONTENT_TYPE]);
+        Self {
+            wallet_origins,
+            wallet,
+            admin_origin,
+            admin,
+        }
     }
 }
 
-async fn wallet_cors(State(cors): State<WalletCors>, req: Request, next: Next) -> Response {
-    let from_wallet = req
-        .headers()
-        .get(header::ORIGIN)
-        .is_some_and(|o| cors.origins.contains(o));
-    if !from_wallet {
-        return next.run(req).await;
-    }
-    match cors.layer.layer(next).oneshot(req).await {
-        Ok(res) => res,
-        Err(never) => match never {},
+async fn api_cors(State(cors): State<ApiCors>, req: Request, next: Next) -> Response {
+    let origin = req.headers().get(header::ORIGIN);
+    let layer = if admin::is_admin_path(req.uri().path()) {
+        origin
+            .is_some_and(|o| cors.admin_origin.as_ref() == Some(o))
+            .then_some(&cors.admin)
+    } else {
+        origin
+            .is_some_and(|o| cors.wallet_origins.contains(o))
+            .then_some(&cors.wallet)
+    };
+    match layer {
+        None => next.run(req).await,
+        Some(layer) => match layer.clone().layer(next).oneshot(req).await {
+            Ok(res) => res,
+            Err(never) => match never {},
+        },
     }
 }
 
@@ -173,8 +223,8 @@ pub fn app(state: AppState, session_key: &[u8]) -> Router {
     ))
     .layer(sessions)
     .layer(from_fn_with_state(
-        WalletCors::new(&state.wallet.origins),
-        wallet_cors,
+        ApiCors::new(&state.wallet.origins, &state.admin.origin),
+        api_cors,
     ))
     .layer(TraceLayer::new_for_http())
     .layer(TimeoutLayer::with_status_code(

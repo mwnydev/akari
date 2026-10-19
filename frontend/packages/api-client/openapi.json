@@ -49,6 +49,644 @@
         }
       }
     },
+    "/api/v1/admin/audit": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "只增审计日志，新的在前。",
+        "operationId": "audit_log",
+        "parameters": [
+          {
+            "name": "actor_id",
+            "in": "query",
+            "description": "只看这个账号的操作。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int64" }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "游标：上一页的 `next_cursor`。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuditPage" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/enroll/code": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "绑定第一个后台 Passkey 前：向站长账号邮箱发一封专用验证码。已有后台 Passkey 时返回 `CONFLICT`。",
+        "operationId": "admin_enroll_code",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AdminCodeSent" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/enroll/verify": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "校验验证码；成功后 10 分钟内可绑定第一个后台 Passkey。",
+        "operationId": "admin_enroll_verify",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AdminCodeRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/login/finish": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "完成登录：发放后台会话 Cookie。",
+        "operationId": "admin_login_finish",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AdminAssertFinish" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AdminSessionView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/login/start": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "开始登录后台：论坛会话里的账号必须是站长且已绑定后台 Passkey（未绑定返回 `REVERIFY_REQUIRED`，先走邮箱验证绑定）。",
+        "operationId": "admin_login_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AdminAssertionOptions" }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/logout": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "退出后台。",
+        "operationId": "admin_logout",
+        "responses": {
+          "204": {},
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/passkeys": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "我的后台 Passkey。",
+        "operationId": "admin_passkeys",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AdminPasskeyList" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/passkeys/register/finish": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "完成绑定。绑定第一个时消耗邮箱验证标记并直接登录后台。",
+        "operationId": "admin_register_finish",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AdminRegisterFinish" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AdminPasskeyView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/passkeys/register/start": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "开始绑定后台 Passkey（RP ID 为后台中心域名）。",
+        "operationId": "admin_register_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AdminRegistrationOptions" }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reverify/finish": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "完成再验证：5 分钟内可做敏感操作。",
+        "operationId": "admin_reverify_finish",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AdminAssertFinish" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AdminSessionView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reverify/start": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "开始再验证（敏感操作前）。",
+        "operationId": "admin_reverify_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AdminAssertionOptions" }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/revoke": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "一键撤销某账号在某时间段内的全部管理操作（ADR 0013 第 6 条）：先预览，再执行。\n只还原仍是该操作结果的状态，之后又被改过的跳过；执行本身写审计日志并推送管理员群。",
+        "operationId": "revoke",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RevokeRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/RevokeResult" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/session": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "当前后台会话。",
+        "operationId": "admin_current",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AdminSessionView" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings/moderation": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "管理操作限速与异常检测阈值。",
+        "operationId": "get_settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ModerationSettingsView" }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["admin"],
+        "summary": "修改阈值（必须在上下限内）。",
+        "operationId": "put_settings",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ModerationSettings" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ModerationSettingsView" }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/staff": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "全部管理人员任命。",
+        "operationId": "list_staff",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/StaffList" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["admin"],
+        "summary": "任命管理员或版主。",
+        "operationId": "appoint",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AppointRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/StaffAssignment" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/staff/{id}": {
+      "delete": {
+        "tags": ["admin"],
+        "summary": "撤销一条任命（免去管理员或版主）。",
+        "operationId": "remove_staff",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "description": "写入审计日志。",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/suspensions": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "管理权限被暂停中的账号。",
+        "operationId": "list_suspensions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/SuspensionList" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/suspensions/{id}/reinstate": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "恢复被暂停的管理权限（站长确认后）。",
+        "operationId": "reinstate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "description": "写入审计日志。",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/email/start": {
       "post": {
         "tags": ["auth"],
@@ -102,6 +740,11 @@
             }
           },
           "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
@@ -653,7 +1296,7 @@
     "/api/v1/me": {
       "get": {
         "tags": ["auth"],
-        "summary": "当前登录用户。",
+        "summary": "当前登录用户，含管理角色与权限。",
         "operationId": "me",
         "responses": {
           "200": {
@@ -730,6 +1373,179 @@
             }
           },
           "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/moderation/ip-bans": {
+      "post": {
+        "tags": ["moderation"],
+        "summary": "封禁 IP 或网段：之后从这里发起的登录（发验证码、校验验证码）一律拒绝。",
+        "operationId": "ban_ip",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/IpBanRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/SanctionsCreated" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/moderation/sanctions/{id}": {
+      "delete": {
+        "tags": ["moderation"],
+        "summary": "解除处罚。需要该类处罚在其范围内的权限，且角色高于被处罚人（版主解不了站长对管理员的禁言）。",
+        "operationId": "lift",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "description": "写入审计日志。",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/moderation/users/{id}/sanctions": {
+      "get": {
+        "tags": ["moderation"],
+        "summary": "用户的处罚记录（含已解除、已到期的）。任何未被暂停的管理人员可看。",
+        "operationId": "user_sanctions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/SanctionList" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["moderation"],
+        "summary": "处罚用户：禁言、禁拍、封号、封禁其登录过的全部设备。",
+        "operationId": "sanction_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/SanctionRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/SanctionsCreated" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
@@ -1343,7 +2159,7 @@
     "/api/v1/posts/{id}": {
       "delete": {
         "tags": ["forum"],
-        "summary": "删除楼层：只改状态，楼层号保留（plan 第 4 节）。",
+        "summary": "删除楼层：只改状态，楼层号保留（plan 第 4 节）。删除他人楼层需要板块管理权限，计入删帖限速与异常检测。",
         "operationId": "delete",
         "parameters": [
           {
@@ -1381,12 +2197,17 @@
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
           }
         }
       },
       "patch": {
         "tags": ["forum"],
-        "summary": "编辑楼层。编辑前的版本存入编辑历史；管理人员编辑他人楼层写审计日志。",
+        "summary": "编辑楼层。编辑前的版本存入编辑历史；编辑他人楼层需要管理员权限（版主不能改他人内容），并写审计日志。",
         "operationId": "edit",
         "parameters": [
           {
@@ -1466,10 +2287,59 @@
         }
       }
     },
+    "/api/v1/posts/{id}/restore": {
+      "post": {
+        "tags": ["forum"],
+        "summary": "恢复被管理人员删除的楼层（删帖的反向操作）。需要板块管理权限。",
+        "operationId": "restore",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RestoreRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/posts/{id}/source": {
       "get": {
         "tags": ["forum"],
-        "summary": "编辑器原稿：作者本人或管理人员重新编辑时加载。",
+        "summary": "编辑器原稿：作者本人或能编辑他人楼层的管理人员重新编辑时加载。",
         "operationId": "source",
         "parameters": [
           {
@@ -1573,7 +2443,7 @@
     "/api/v1/topics/{id}/moderation": {
       "post": {
         "tags": ["forum"],
-        "summary": "主题管理。只有该板块的版主和全站管理人员可操作；每次操作写只增审计日志。",
+        "summary": "主题管理。需要该板块的管理权限（版主只管自己的板块，移动时目标板块也要有权限）；\n限速、异常检测，每次操作写只增审计日志（ADR 0013）。",
         "operationId": "moderate",
         "parameters": [
           {
@@ -1611,6 +2481,11 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
@@ -2423,6 +3298,104 @@
   },
   "components": {
     "schemas": {
+      "AdminAssertFinish": {
+        "type": "object",
+        "required": ["credential"],
+        "properties": { "credential": { "type": "object" } }
+      },
+      "AdminAssertionOptions": {
+        "type": "object",
+        "required": ["options"],
+        "properties": {
+          "options": { "type": "object", "description": "原样传给 `navigator.credentials.get()`。" }
+        }
+      },
+      "AdminCodeRequest": {
+        "type": "object",
+        "required": ["code"],
+        "properties": { "code": { "type": "string" } }
+      },
+      "AdminCodeSent": {
+        "type": "object",
+        "required": ["expires_in", "resend_in"],
+        "properties": {
+          "expires_in": { "type": "integer", "format": "int64", "minimum": 0 },
+          "resend_in": { "type": "integer", "format": "int64", "minimum": 0 }
+        }
+      },
+      "AdminPasskeyList": {
+        "type": "object",
+        "required": ["passkeys"],
+        "properties": {
+          "passkeys": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AdminPasskeyView" }
+          }
+        }
+      },
+      "AdminPasskeyView": {
+        "type": "object",
+        "required": ["id", "credential_id", "created_at"],
+        "properties": {
+          "created_at": { "type": "string", "format": "date-time" },
+          "credential_id": { "type": "string", "description": "base64url 凭证 ID。" },
+          "id": { "type": "integer", "format": "int64" },
+          "last_used_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "AdminRegisterFinish": {
+        "type": "object",
+        "required": ["credential"],
+        "properties": { "credential": { "type": "object" } }
+      },
+      "AdminRegistrationOptions": {
+        "type": "object",
+        "required": ["options"],
+        "properties": {
+          "options": {
+            "type": "object",
+            "description": "原样传给 `navigator.credentials.create()`。"
+          }
+        }
+      },
+      "AdminSessionView": {
+        "type": "object",
+        "required": ["user_id", "expires_at", "absolute_expires_at"],
+        "properties": {
+          "absolute_expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "最长时长到期（Unix 秒）。"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "会话到期时间（Unix 秒，闲置与最长时长取先到者）。"
+          },
+          "reverified_until": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "敏感操作再验证有效至（Unix 秒）；为空表示需要再验证。"
+          },
+          "user_id": { "type": "integer", "format": "int64" }
+        }
+      },
+      "AppointRequest": {
+        "type": "object",
+        "required": ["user_id", "role"],
+        "properties": {
+          "forum_id": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "版主必填（负责的板块），管理员不填。"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "`admin` 或 `moderator`（站长不能经接口任命）。"
+          },
+          "user_id": { "type": "integer", "format": "int64" }
+        }
+      },
       "AssertFinish": {
         "type": "object",
         "required": ["credential"],
@@ -2456,6 +3429,36 @@
             "type": "string",
             "description": "成交价，拍卖币种的最小单位：USDT 6 位小数或人民币分（十进制字符串）。"
           }
+        }
+      },
+      "AuditEntryView": {
+        "type": "object",
+        "required": ["id", "actor_id", "action", "detail", "created_at", "reverted"],
+        "properties": {
+          "action": { "type": "string" },
+          "actor_id": { "type": "integer", "format": "int64" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "detail": { "type": "object" },
+          "id": { "type": "integer", "format": "int64" },
+          "reason": { "type": ["string", "null"] },
+          "reverted": { "type": "boolean" },
+          "reverts": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "撤销记录指向被撤销的日志。"
+          },
+          "target": { "type": ["string", "null"] }
+        }
+      },
+      "AuditPage": {
+        "type": "object",
+        "required": ["entries"],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AuditEntryView" }
+          },
+          "next_cursor": { "type": ["integer", "null"], "format": "int64" }
         }
       },
       "AvatarRequest": {
@@ -2751,6 +3754,12 @@
           "WITHDRAW_CREDIT_REQUIRED",
           "CHAIN_UNAVAILABLE",
           "USER_BLOCKED",
+          "STAFF_SUSPENDED",
+          "MUTED",
+          "ACCOUNT_BANNED",
+          "ACCESS_BANNED",
+          "SANCTION_TOO_LONG",
+          "ADMIN_REVERIFY_REQUIRED",
           "INTERNAL"
         ]
       },
@@ -2796,6 +3805,22 @@
           "height": { "type": "integer", "format": "int32", "minimum": 0 },
           "url": { "type": "string" },
           "width": { "type": "integer", "format": "int32", "minimum": 0 }
+        }
+      },
+      "IpBanRequest": {
+        "type": "object",
+        "required": ["ip", "reason"],
+        "properties": {
+          "duration_secs": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "时长（秒）；为空表示永久。"
+          },
+          "ip": {
+            "type": "string",
+            "description": "单个 IP（如 `203.0.113.7`）或网段（如 `203.0.113.0/24`，IPv4 最大 /16、IPv6 最大 /32）。"
+          },
+          "reason": { "type": "string" }
         }
       },
       "LatestResponse": {
@@ -2872,6 +3897,15 @@
         "properties": {
           "email": { "type": "string" },
           "id": { "type": "integer", "format": "int64" },
+          "staff": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StaffView",
+                "description": "管理角色与权限；普通用户为空。论坛界面据此显示管理功能（服务端每个管理接口仍会再校验）。"
+              },
+              { "type": "null" }
+            ]
+          },
           "username": { "type": ["string", "null"] }
         }
       },
@@ -2956,6 +3990,74 @@
         "properties": {
           "flags": { "$ref": "#/components/schemas/TopicFlags" },
           "forum_id": { "type": "integer", "format": "int32" }
+        }
+      },
+      "ModerationSettings": {
+        "type": "object",
+        "description": "站长在后台调整的限速与异常检测阈值（ADR 0013 第 6 条），带默认值与硬上下限。",
+        "properties": {
+          "anomaly_deletes": {
+            "type": "integer",
+            "format": "int32",
+            "description": "窗口内删帖 + 隐藏超过这个数即暂停管理权限并告警。",
+            "default": 50,
+            "minimum": 0
+          },
+          "anomaly_sanctions": {
+            "type": "integer",
+            "format": "int32",
+            "description": "窗口内处罚超过这个数即暂停管理权限并告警。",
+            "default": 20,
+            "minimum": 0
+          },
+          "anomaly_window_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "异常检测窗口（秒）。",
+            "default": 3600,
+            "minimum": 0
+          },
+          "rate_content": {
+            "type": "integer",
+            "format": "int32",
+            "description": "每个窗口内最多：置顶 / 精华 / 锁定 / 移动 / 编辑 / 恢复。",
+            "default": 60,
+            "minimum": 0
+          },
+          "rate_delete": {
+            "type": "integer",
+            "format": "int32",
+            "description": "每个窗口内最多：删帖、隐藏主题。",
+            "default": 30,
+            "minimum": 0
+          },
+          "rate_sanction": {
+            "type": "integer",
+            "format": "int32",
+            "description": "每个窗口内最多：禁言、禁拍、封号、IP / 设备封禁及解除。",
+            "default": 20,
+            "minimum": 0
+          },
+          "rate_window_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "限速窗口（秒）。",
+            "default": 600,
+            "minimum": 0
+          }
+        }
+      },
+      "ModerationSettingsView": {
+        "type": "object",
+        "required": ["settings", "min", "max", "defaults"],
+        "properties": {
+          "defaults": { "$ref": "#/components/schemas/ModerationSettings" },
+          "max": { "$ref": "#/components/schemas/ModerationSettings" },
+          "min": {
+            "$ref": "#/components/schemas/ModerationSettings",
+            "description": "每项允许的最小值与最大值。"
+          },
+          "settings": { "$ref": "#/components/schemas/ModerationSettings" }
         }
       },
       "NegotiationRef": {
@@ -3460,6 +4562,27 @@
           "signature": { "type": "string" }
         }
       },
+      "Permission": {
+        "type": "string",
+        "description": "管理操作的权限。",
+        "enum": [
+          "board_access",
+          "topic_moderate",
+          "topic_hide",
+          "post_delete",
+          "post_edit",
+          "mute",
+          "auction_ban",
+          "ban",
+          "ip_ban",
+          "device_ban",
+          "view_sanctions",
+          "manage_staff",
+          "manage_settings",
+          "revoke_actions",
+          "reinstate"
+        ]
+      },
       "PostSource": {
         "type": "object",
         "required": ["source"],
@@ -3630,6 +4753,11 @@
           }
         }
       },
+      "RestoreRequest": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": { "reason": { "type": "string", "description": "写入审计日志。" } }
+      },
       "ReverifyRequest": {
         "type": "object",
         "required": ["code"],
@@ -3643,11 +4771,150 @@
           "resend_in": { "type": "integer", "format": "int64", "minimum": 0 }
         }
       },
+      "RevertStatus": {
+        "type": "string",
+        "description": "撤销一条管理操作的结果。",
+        "enum": ["reverted", "already_reverted", "superseded", "not_revertible"]
+      },
+      "RevokeItem": {
+        "type": "object",
+        "required": ["log_id", "action", "created_at", "status"],
+        "properties": {
+          "action": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "log_id": { "type": "integer", "format": "int64" },
+          "status": {
+            "$ref": "#/components/schemas/RevertStatus",
+            "description": "预览时 `reverted` 表示可以撤销。"
+          },
+          "target": { "type": ["string", "null"] }
+        }
+      },
+      "RevokeRequest": {
+        "type": "object",
+        "required": ["actor_id", "from", "to", "reason", "execute"],
+        "properties": {
+          "actor_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "要撤销其管理操作的账号。"
+          },
+          "execute": {
+            "type": "boolean",
+            "description": "`false`：只预览（在回滚的事务里试做一遍）；`true`：执行（需 5 分钟内再验证）。"
+          },
+          "from": { "type": "string", "format": "date-time" },
+          "reason": { "type": "string", "description": "写入审计日志。" },
+          "to": {
+            "type": "string",
+            "format": "date-time",
+            "description": "不含；与 `from` 最多相隔 31 天。"
+          }
+        }
+      },
+      "RevokeResult": {
+        "type": "object",
+        "required": ["executed", "items", "reverted", "truncated"],
+        "properties": {
+          "executed": { "type": "boolean" },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RevokeItem" },
+            "description": "新的在前（撤销也按这个顺序做）。"
+          },
+          "reverted": { "type": "integer", "minimum": 0 },
+          "truncated": {
+            "type": "boolean",
+            "description": "超过 500 条只处理最新的 500 条，需要缩小时间段再做一次。"
+          }
+        }
+      },
+      "Role": {
+        "type": "string",
+        "description": "`staff_roles.role` 的编号（与数据库一致，仲裁资格按 `role IN (1, 3)` 判断）。",
+        "enum": ["moderator", "admin", "owner"]
+      },
       "RulingView": {
         "type": "object",
         "properties": {
           "bond_to_buyer_bps": { "type": ["integer", "null"], "format": "int32" },
           "to_buyer_bps": { "type": ["integer", "null"], "format": "int32" }
+        }
+      },
+      "SanctionKind": {
+        "type": "string",
+        "enum": ["mute", "auction_ban", "ban", "ip_ban", "device_ban"]
+      },
+      "SanctionList": {
+        "type": "object",
+        "required": ["sanctions"],
+        "properties": {
+          "sanctions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SanctionView" },
+            "description": "新的在前，最多 100 条。"
+          }
+        }
+      },
+      "SanctionRequest": {
+        "type": "object",
+        "required": ["kind", "reason"],
+        "properties": {
+          "duration_secs": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "时长（秒，60 秒到 10 年）；为空表示永久。版主禁言最长 7 天、禁拍最长 30 天，且不能永久。"
+          },
+          "forum_id": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "禁言、禁拍只限这个板块；为空表示全站（版主必须填自己负责的板块）。"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/SanctionKind",
+            "description": "`mute` / `auction_ban` / `ban` / `device_ban`（IP 封禁用 `POST /api/v1/moderation/ip-bans`）。"
+          },
+          "reason": {
+            "type": "string",
+            "description": "预设理由或补充说明，写入审计日志并通知对方。"
+          }
+        }
+      },
+      "SanctionView": {
+        "type": "object",
+        "required": ["id", "kind", "reason", "created_by", "created_at", "active"],
+        "properties": {
+          "active": { "type": "boolean", "description": "仍在生效（未解除、未到期）。" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "created_by": { "type": "integer", "format": "int64" },
+          "ends_at": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "为空表示永久。"
+          },
+          "forum_id": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "只限这个板块；为空表示全站。"
+          },
+          "id": { "type": "integer", "format": "int64" },
+          "ip": { "type": ["string", "null"], "description": "IP 封禁的网段。" },
+          "kind": { "$ref": "#/components/schemas/SanctionKind" },
+          "reason": { "type": "string" },
+          "revoked_at": { "type": ["string", "null"], "format": "date-time" },
+          "user_id": { "type": ["integer", "null"], "format": "int64" }
+        }
+      },
+      "SanctionsCreated": {
+        "type": "object",
+        "required": ["ids"],
+        "properties": {
+          "ends_at": { "type": ["string", "null"], "format": "date-time" },
+          "ids": {
+            "type": "array",
+            "items": { "type": "integer", "format": "int64" },
+            "description": "新处罚的 ID（设备封禁按设备各一条）。"
+          }
         }
       },
       "SendMessage": {
@@ -3667,6 +4934,78 @@
           "to_buyer": { "type": ["string", "null"] },
           "to_fee_recipient": { "type": ["string", "null"] },
           "to_seller": { "type": ["string", "null"] }
+        }
+      },
+      "StaffAssignment": {
+        "type": "object",
+        "required": ["id", "user_id", "role", "created_at"],
+        "properties": {
+          "created_at": { "type": "string", "format": "date-time" },
+          "forum_id": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "版主负责的板块。"
+          },
+          "granted_by": { "type": ["integer", "null"], "format": "int64" },
+          "id": { "type": "integer", "format": "int64", "description": "任命 ID（撤销时用）。" },
+          "role": { "$ref": "#/components/schemas/Role" },
+          "user_id": { "type": "integer", "format": "int64" },
+          "username": { "type": ["string", "null"] }
+        }
+      },
+      "StaffList": {
+        "type": "object",
+        "required": ["staff"],
+        "properties": {
+          "staff": { "type": "array", "items": { "$ref": "#/components/schemas/StaffAssignment" } }
+        }
+      },
+      "StaffView": {
+        "type": "object",
+        "description": "管理角色（ADR 0013）：站长、管理员、版主。",
+        "required": [
+          "roles",
+          "boards",
+          "suspended",
+          "site_permissions",
+          "board_permissions",
+          "admin_backend"
+        ],
+        "properties": {
+          "admin_backend": {
+            "type": "boolean",
+            "description": "能进后台（只有站长，`administrator` 子域名，需后台 Passkey）。"
+          },
+          "board_permissions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Permission" },
+            "description": "只在 `boards` 内可用的权限（版主）。"
+          },
+          "boards": {
+            "type": "array",
+            "items": { "type": "integer", "format": "int32" },
+            "description": "作为版主负责的板块。"
+          },
+          "max_auction_ban_secs": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "禁拍最长秒数；为空表示不限。"
+          },
+          "max_mute_secs": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "禁言最长秒数；为空表示不限（可永久）。没有禁言权限时看权限列表。"
+          },
+          "roles": { "type": "array", "items": { "$ref": "#/components/schemas/Role" } },
+          "site_permissions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Permission" },
+            "description": "全站范围可用的论坛管理权限（管理员、站长）。"
+          },
+          "suspended": {
+            "type": "boolean",
+            "description": "管理权限被自动暂停（异常检测），待站长恢复；此时下面两个权限列表为空。"
+          }
         }
       },
       "StartRequest": {
@@ -3712,6 +5051,28 @@
           "interval_secs": { "type": "integer", "format": "int32" },
           "periods": { "type": "integer", "format": "int32" },
           "started_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "SuspensionList": {
+        "type": "object",
+        "required": ["suspensions"],
+        "properties": {
+          "suspensions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SuspensionView" }
+          }
+        }
+      },
+      "SuspensionView": {
+        "type": "object",
+        "required": ["id", "user_id", "reason", "detail", "created_at"],
+        "properties": {
+          "created_at": { "type": "string", "format": "date-time" },
+          "detail": { "type": "object" },
+          "id": { "type": "integer", "format": "int64" },
+          "reason": { "type": "string", "description": "`anomaly`：异常检测自动暂停。" },
+          "user_id": { "type": "integer", "format": "int64" },
+          "username": { "type": ["string", "null"] }
         }
       },
       "TopicFlags": {

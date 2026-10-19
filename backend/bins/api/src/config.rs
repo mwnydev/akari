@@ -31,6 +31,11 @@ pub struct Config {
     /// 钱包页面的 Origin，逗号分隔；第一个必须在 `WALLET_RP_ID` 之下，其余为关联来源。
     /// 钱包接口只接受这些来源，这些来源也自动加入写操作白名单。
     pub wallet_origins: Vec<String>,
+    /// 站长后台 Passkey 的 RP ID = 后台中心域名（ADR 0012：生产 `administrator.akari.cc`）。
+    /// 与钱包一样绝不能是论坛主域名或其父域名，否则论坛页面就能请求这个 Passkey。
+    pub admin_rp_id: String,
+    /// 后台页面的 Origin（生产 `https://administrator.akari.cc`）。后台接口只接受这个来源，CORS 也只对它开放。
+    pub admin_origin: String,
     /// 品牌名：Passkey 显示名称「品牌名 钱包签名（勿删）· 用户名」。
     pub brand_name: String,
     pub chain: ChainConfig,
@@ -74,6 +79,7 @@ pub mod domains {
     pub const WALLET_ORIGIN: &str = "https://wallet.akari.cc";
     /// 后台 Passkey 的 RP ID（ADR 0013，仅站长）。
     pub const ADMIN_RP_ID: &str = "administrator.akari.cc";
+    pub const ADMIN_ORIGIN: &str = "https://administrator.akari.cc";
 }
 
 /// 页面来源与 Passkey 域名。
@@ -83,13 +89,17 @@ struct Sites {
     internal_hosts: Vec<String>,
     wallet_rp_id: String,
     wallet_origins: Vec<String>,
+    admin_rp_id: String,
+    admin_origin: String,
 }
 
-const SITE_VARS: [&str; 4] = [
+const SITE_VARS: [&str; 6] = [
     "ALLOWED_ORIGINS",
     "INTERNAL_HOSTS",
     "WALLET_RP_ID",
     "WALLET_ORIGINS",
+    "ADMIN_RP_ID",
+    "ADMIN_ORIGIN",
 ];
 
 fn sites(deployment: Deployment) -> anyhow::Result<Sites> {
@@ -103,16 +113,13 @@ fn sites(deployment: Deployment) -> anyhow::Result<Sites> {
         }
         return Ok(production_sites());
     }
-    let wallet_origins = list(&var("WALLET_ORIGINS")?);
-    ensure!(
-        !wallet_origins.is_empty(),
-        "WALLET_ORIGINS must not be empty"
-    );
     Ok(Sites {
         allowed_origins: list(&var("ALLOWED_ORIGINS")?),
         internal_hosts: list(&std::env::var("INTERNAL_HOSTS").unwrap_or_default()),
         wallet_rp_id: var("WALLET_RP_ID")?,
-        wallet_origins,
+        wallet_origins: list(&var("WALLET_ORIGINS")?),
+        admin_rp_id: var("ADMIN_RP_ID")?,
+        admin_origin: var("ADMIN_ORIGIN")?,
     })
 }
 
@@ -122,6 +129,8 @@ fn production_sites() -> Sites {
         internal_hosts: vec![domains::FORUM_HOST.to_owned()],
         wallet_rp_id: domains::WALLET_RP_ID.to_owned(),
         wallet_origins: vec![domains::WALLET_ORIGIN.to_owned()],
+        admin_rp_id: domains::ADMIN_RP_ID.to_owned(),
+        admin_origin: domains::ADMIN_ORIGIN.to_owned(),
     }
 }
 
@@ -156,36 +165,71 @@ fn origin_host(origin: &str, deployment: Deployment) -> anyhow::Result<String> {
 }
 
 /// 启动检查（ADR 0012）：
-/// - 所有来源都是 https（开发环境可用本机 http）；钱包来源不在论坛来源里；
-/// - 钱包与后台 Passkey 的 RP ID 不能是论坛主站或其父域名，否则论坛页面（含被 XSS 时）能直接请求这些 Passkey。
-///   开发环境 RP ID 为 localhost 时论坛与钱包只差端口，不检查这一项。
-fn check_sites(
-    sites: &Sites,
-    passkey_rp_ids: &[&str],
-    deployment: Deployment,
-) -> anyhow::Result<()> {
+/// - 所有来源都是 https（开发环境可用本机 http）且互不重叠：钱包、后台来源都不是论坛来源，后台来源也不是钱包来源；
+/// - 钱包与后台 Passkey 的 RP ID 必须覆盖自己的页面（钱包看第一个来源，其余为关联来源），两者不同，
+///   且不能是论坛主站、其父域名或任何别的站点来源（论坛页面被 XSS 时也请求不到这些 Passkey）。
+///   开发环境 RP ID 为 localhost 时各站只差端口，不检查隔离。
+fn check_sites(sites: &Sites, deployment: Deployment) -> anyhow::Result<()> {
     ensure!(
         !sites.allowed_origins.is_empty(),
         "ALLOWED_ORIGINS must not be empty"
+    );
+    ensure!(
+        !sites.wallet_origins.is_empty(),
+        "WALLET_ORIGINS must not be empty"
     );
     let mut forum_hosts = vec![domains::FORUM_HOST.to_owned()];
     for o in &sites.allowed_origins {
         forum_hosts.push(origin_host(o, deployment)?);
     }
+    let mut wallet_hosts = Vec::new();
     for o in &sites.wallet_origins {
-        origin_host(o, deployment)?;
+        wallet_hosts.push(origin_host(o, deployment)?);
         ensure!(
             !sites.allowed_origins.contains(o),
             "wallet origin {o} must not also be a forum origin"
         );
     }
-    for rp in passkey_rp_ids {
-        ensure!(!rp.is_empty(), "passkey RP ID must not be empty");
-        if deployment == Deployment::Development && is_loopback(rp) {
+    let admin_host = origin_host(&sites.admin_origin, deployment)?;
+    ensure!(
+        !sites.allowed_origins.contains(&sites.admin_origin)
+            && !sites.wallet_origins.contains(&sites.admin_origin),
+        "ADMIN_ORIGIN must not be a forum or wallet origin"
+    );
+    let dev_loopback = |rp: &str| deployment == Deployment::Development && is_loopback(rp);
+    ensure!(
+        sites.admin_rp_id != sites.wallet_rp_id || dev_loopback(&sites.admin_rp_id),
+        "ADMIN_RP_ID must differ from WALLET_RP_ID"
+    );
+    let admin_hosts = [admin_host];
+    let realms = [
+        (
+            "WALLET_RP_ID",
+            &sites.wallet_rp_id,
+            &wallet_hosts[0],
+            &admin_hosts[..],
+        ),
+        (
+            "ADMIN_RP_ID",
+            &sites.admin_rp_id,
+            &admin_hosts[0],
+            &wallet_hosts[..],
+        ),
+    ];
+    for (name, rp, own_host, other_hosts) in realms {
+        ensure!(!rp.is_empty(), "{name} must not be empty");
+        ensure!(
+            within(own_host, rp),
+            "{name} {rp} does not cover its origin host {own_host}"
+        );
+        if dev_loopback(rp) {
             continue;
         }
         if let Some(h) = forum_hosts.iter().find(|h| within(h, rp)) {
-            bail!("passkey RP ID {rp} must not be the forum host {h} or its parent domain");
+            bail!("{name} {rp} must not be the forum host {h} or its parent domain");
+        }
+        if let Some(h) = other_hosts.iter().find(|h| within(h, rp)) {
+            bail!("{name} {rp} must not cover the other site {h}");
         }
     }
     Ok(())
@@ -342,11 +386,7 @@ impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         let deployment = Deployment::parse(std::env::var("AKARI_ENV").ok().as_deref())?;
         let sites = sites(deployment)?;
-        let mut passkey_rp_ids = vec![sites.wallet_rp_id.as_str()];
-        if deployment == Deployment::Production {
-            passkey_rp_ids.push(domains::ADMIN_RP_ID);
-        }
-        check_sites(&sites, &passkey_rp_ids, deployment)?;
+        check_sites(&sites, deployment)?;
         let (chain, chain_file) = chain()?;
         Ok(Self {
             listen: std::env::var("API_LISTEN").unwrap_or_else(|_| "127.0.0.1:8080".to_owned()),
@@ -366,6 +406,8 @@ impl Config {
             internal_hosts: sites.internal_hosts,
             wallet_rp_id: sites.wallet_rp_id,
             wallet_origins: sites.wallet_origins,
+            admin_rp_id: sites.admin_rp_id,
+            admin_origin: sites.admin_origin,
             brand_name: std::env::var("BRAND_NAME")
                 .ok()
                 .filter(|s| !s.is_empty())
@@ -385,7 +427,7 @@ impl Config {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::{Deployment, Sites, check_sites, cookie_secure, domains, production_sites};
+    use super::{Deployment, Sites, check_sites, cookie_secure, production_sites};
 
     fn sites(forum: &[&str], rp: &str, wallet: &[&str]) -> Sites {
         Sites {
@@ -393,11 +435,13 @@ mod tests {
             internal_hosts: Vec::new(),
             wallet_rp_id: rp.to_owned(),
             wallet_origins: wallet.iter().map(|&s| s.to_owned()).collect(),
+            admin_rp_id: "admin.test".to_owned(),
+            admin_origin: "https://admin.test".to_owned(),
         }
     }
 
     fn check(s: &Sites, d: Deployment) -> Result<(), String> {
-        check_sites(s, &[&s.wallet_rp_id], d).map_err(|e| e.to_string())
+        check_sites(s, d).map_err(|e| e.to_string())
     }
 
     #[test]
@@ -422,32 +466,84 @@ mod tests {
         assert_eq!(s.allowed_origins, ["https://akari.cc"]);
         assert_eq!(s.wallet_origins, ["https://wallet.akari.cc"]);
         assert_eq!(s.wallet_rp_id, "wallet.akari.cc");
-        check_sites(
-            &s,
-            &[domains::WALLET_RP_ID, domains::ADMIN_RP_ID],
-            Deployment::Production,
-        )
-        .unwrap();
-        // 主站能请求的 RP ID 一律拒绝，包括后台
+        assert_eq!(s.admin_rp_id, "administrator.akari.cc");
+        assert_eq!(s.admin_origin, "https://administrator.akari.cc");
+        check_sites(&s, Deployment::Production).unwrap();
+        // 主站能请求的 RP ID 一律拒绝，钱包与后台都一样
         for rp in ["akari.cc", "cc"] {
-            let err = check_sites(&s, &[domains::WALLET_RP_ID, rp], Deployment::Production)
-                .unwrap_err()
-                .to_string();
-            assert!(err.contains("must not be the forum host"), "{err}");
+            for admin in [false, true] {
+                let mut bad = s.clone();
+                if admin {
+                    bad.admin_rp_id = rp.to_owned();
+                } else {
+                    bad.wallet_rp_id = rp.to_owned();
+                }
+                let err = check(&bad, Deployment::Production).unwrap_err();
+                assert!(err.contains("must not be the forum host"), "{err}");
+            }
         }
     }
 
     #[test]
+    fn admin_passkey_is_isolated_from_forum_and_wallet() {
+        let base = production_sites();
+        let with = |f: &dyn Fn(&mut Sites)| {
+            let mut s = base.clone();
+            f(&mut s);
+            check(&s, Deployment::Staging)
+        };
+        // 后台 RP ID 必须覆盖后台页面
+        let err = with(&|s| s.admin_rp_id = "other.akari.cc".to_owned()).unwrap_err();
+        assert!(err.contains("does not cover"), "{err}");
+        // 与钱包共用 RP ID、或覆盖钱包页面
+        assert!(with(&|s| s.admin_rp_id = s.wallet_rp_id.clone()).is_err());
+        assert!(
+            with(&|s| {
+                s.admin_rp_id = "x.akari.cc".to_owned();
+                s.admin_origin = "https://x.akari.cc".to_owned();
+                s.wallet_origins = vec!["https://w.x.akari.cc".to_owned()];
+                s.wallet_rp_id = "w.x.akari.cc".to_owned();
+            })
+            .unwrap_err()
+            .contains("must not cover the other site")
+        );
+        // 后台页面不能同时是论坛或钱包页面
+        assert!(with(&|s| s.admin_origin = "https://akari.cc".to_owned()).is_err());
+        assert!(with(&|s| s.admin_origin = "https://wallet.akari.cc".to_owned()).is_err());
+        assert!(with(&|s| s.admin_origin = "http://administrator.akari.cc".to_owned()).is_err());
+        // 本地开发三站都在 localhost，只差端口
+        let mut local = sites(
+            &["http://localhost:3000"],
+            "localhost",
+            &["http://localhost:3001"],
+        );
+        local.admin_rp_id = "localhost".to_owned();
+        local.admin_origin = "http://localhost:3002".to_owned();
+        check(&local, Deployment::Development).unwrap();
+        assert!(check(&local, Deployment::Staging).is_err());
+    }
+
+    #[test]
     fn passkey_rp_id_must_not_cover_the_forum() {
-        let w = &["https://wallet.akari.cc"];
+        let c = |forum: &str, rp: &str, d| {
+            let wallet = format!("https://{rp}");
+            check(&sites(&[forum], rp, &[&wallet]), d)
+        };
         for d in [Deployment::Staging, Deployment::Development] {
             // 即使论坛来源配成别的域名，akari.cc 也不能作钱包 RP ID
-            assert!(check(&sites(&["https://forum.test"], "akari.cc", w), d).is_err());
-            assert!(check(&sites(&["https://staging.example"], "example", w), d).is_err());
-            assert!(check(&sites(&["https://a.example"], "a.example", w), d).is_err());
-            check(&sites(&["https://a.example"], "wallet.a.example", w), d).unwrap();
+            assert!(c("https://forum.test", "akari.cc", d).is_err());
+            assert!(c("https://staging.example", "example", d).is_err());
+            assert!(c("https://a.example", "a.example", d).is_err());
+            c("https://a.example", "wallet.a.example", d).unwrap();
             // 后缀相同但不是子域名
-            check(&sites(&["https://notexample"], "example", w), d).unwrap();
+            c("https://notexample", "example", d).unwrap();
+            // RP ID 必须覆盖钱包页面
+            let off = sites(
+                &["https://a.example"],
+                "wallet.a.example",
+                &["https://w.test"],
+            );
+            assert!(check(&off, d).unwrap_err().contains("does not cover"));
         }
     }
 

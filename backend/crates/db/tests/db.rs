@@ -135,3 +135,43 @@ async fn post_search_uses_pgroonga(pool: PgPool) {
         .unwrap();
     assert_eq!(hits, vec![1]);
 }
+
+/// ADR 0013 的角色迁移：超级管理员 → 站长、仲裁员 → 管理员，同一用户的重复角色合并；之后只允许 1、3、4。
+#[sqlx::test(migrations = false)]
+async fn staff_role_migration_merges_retired_roles(pool: PgPool) {
+    const STAFF_MIGRATION: i64 = 20261124000001;
+    let (before, after): (Vec<_>, Vec<_>) = forum_db::MIGRATOR
+        .iter()
+        .partition(|m| m.version < STAFF_MIGRATION);
+    for m in before {
+        sqlx::raw_sql(m.sql.clone()).execute(&pool).await.unwrap();
+    }
+    sqlx::raw_sql(
+        "INSERT INTO forums (slug, name) VALUES ('f', 'f');
+         INSERT INTO users (email) SELECT 'u' || g || '@example.com' FROM generate_series(1, 4) g;
+         -- 1：超级管理员；2：站长 + 超级管理员；3：仲裁员 + 管理员；4：仲裁员 + 版主
+         INSERT INTO staff_roles (user_id, role, forum_id) VALUES
+           (1, 2, NULL), (2, 1, NULL), (2, 2, NULL), (3, 5, NULL), (3, 3, NULL), (4, 5, NULL), (4, 4, 1);",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    for m in after {
+        sqlx::raw_sql(m.sql.clone()).execute(&pool).await.unwrap();
+    }
+    let rows: Vec<(i64, i16)> =
+        sqlx::query_as("SELECT user_id, role FROM staff_roles ORDER BY user_id, role")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rows, [(1, 1), (2, 1), (3, 3), (4, 3), (4, 4)]);
+    for role in [2_i16, 5] {
+        assert!(
+            sqlx::query("INSERT INTO staff_roles (user_id, role) VALUES (1, $1)")
+                .bind(role)
+                .execute(&pool)
+                .await
+                .is_err()
+        );
+    }
+}

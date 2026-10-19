@@ -74,6 +74,11 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::WithdrawAddressNotActive
         | ErrorCode::WithdrawCreditRequired
         | ErrorCode::UserBlocked
+        | ErrorCode::StaffSuspended
+        | ErrorCode::Muted
+        | ErrorCode::AccountBanned
+        | ErrorCode::AccessBanned
+        | ErrorCode::AdminReverifyRequired
         | ErrorCode::TradeNotAllowed => StatusCode::FORBIDDEN,
         ErrorCode::OfferUnavailable
         | ErrorCode::Conflict
@@ -113,7 +118,8 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::SimulationFailed
         | ErrorCode::WithdrawAddressInvalid
         | ErrorCode::WithdrawAddressForbidden
-        | ErrorCode::WithdrawAddressLimit => StatusCode::BAD_REQUEST,
+        | ErrorCode::WithdrawAddressLimit
+        | ErrorCode::SanctionTooLong => StatusCode::BAD_REQUEST,
     }
 }
 

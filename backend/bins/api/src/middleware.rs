@@ -9,6 +9,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use forum_core::ErrorCode;
 
+use crate::admin::is_admin_path;
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -27,9 +28,19 @@ pub fn origin_allowed(state: &AppState, headers: &HeaderMap) -> bool {
 }
 
 /// 非安全方法必须带白名单内的 `Origin`（含钱包页面来源）；缺失也拒绝。
+/// 后台接口另算：每个请求（含 GET）都必须来自后台页面（[`crate::admin`]），论坛与钱包来源一律拒绝。
 pub async fn require_origin(State(state): State<AppState>, req: Request, next: Next) -> Response {
-    let safe = matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
-    if !safe && !origin_allowed(&state, req.headers()) {
+    let ok = if is_admin_path(req.uri().path()) {
+        *req.method() == Method::OPTIONS
+            || req
+                .headers()
+                .get(header::ORIGIN)
+                .is_some_and(|o| o.as_bytes() == state.admin.origin.as_bytes())
+    } else {
+        matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS)
+            || origin_allowed(&state, req.headers())
+    };
+    if !ok {
         return ApiError(ErrorCode::OriginRejected).into_response();
     }
     next.run(req).await

@@ -58,6 +58,22 @@ pub fn wallet_code(code: &str) -> Rendered {
     (subject, html, text)
 }
 
+/// 站长绑定第一个后台 Passkey 前的邮箱验证码（ADR 0013）。正文写明用途，被盗号者触发时站长能察觉。
+pub fn admin_code(code: &str) -> Rendered {
+    let subject = format!("绑定后台 Passkey 验证码：{code}");
+    let html = layout(
+        "绑定后台 Passkey",
+        &format!(
+            "<p>你正在为站长后台绑定第一个 Passkey。验证码是：</p><p style=\"font-size:32px;letter-spacing:6px;font-weight:600;font-variant-numeric:tabular-nums\">{code}</p>\
+             <p>10 分钟内有效。如果不是你本人操作，说明有人登录了你的论坛账号：请勿把验证码告诉任何人，立即踢出其他设备并检查邮箱安全。</p>"
+        ),
+    );
+    let text = format!(
+        "你正在为站长后台绑定第一个 Passkey。验证码是：{code}\n10 分钟内有效。如果不是你本人操作，说明有人登录了你的论坛账号：请勿把验证码告诉任何人，立即踢出其他设备并检查邮箱安全。"
+    );
+    (subject, html, text)
+}
+
 /// 添加了提币地址（plan 第 5 节「提币地址冷却」）。`address` 是完整地址，`active_at` 是已格式化的生效时间；
 /// 第一个地址 `immediate` 为真。冷却期内本人可以撤销，正文写明不是本人操作时怎么办。
 pub fn withdraw_address_added(address: &str, active_at: &str, immediate: bool) -> Rendered {

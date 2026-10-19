@@ -310,6 +310,7 @@ pub async fn prepare_topic(
             return Err(ApiError(ErrorCode::Forbidden));
         }
     }
+    posting::check_sanctions(state, actor.id, Some(forum.id)).await?;
     if kind == topics::KIND_TRADE && !forum.allow_trade {
         return Err(ApiError(ErrorCode::TradeNotAllowed));
     }

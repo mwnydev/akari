@@ -225,7 +225,7 @@ async fn order_detail_for_parties_and_arbiters_only(db: PgPool) {
     let r = call(&app, "GET", "/api/v1/orders/999999", None, &ca).await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
     // 仲裁员可以
-    forum_db::staff::grant(&db, c, forum_db::staff::ROLE_ARBITER, None, None)
+    forum_db::staff::grant(&db, c, forum_db::staff::ROLE_ADMIN, None, None)
         .await
         .unwrap();
     let r = call(&app, "GET", &path, None, &cc).await;

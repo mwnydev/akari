@@ -1,9 +1,10 @@
-//! 发帖、回帖、编辑共用的写入前检查：限流、新用户限制、内容过滤；以及写入后的缓存维护。
+//! 发帖、回帖、编辑共用的写入前检查：处罚、限流、新用户限制、内容过滤；以及写入后的缓存维护。
 
 use std::time::Duration;
 
 use forum_content::Cleaned;
 use forum_core::ErrorCode;
+use forum_db::sanctions;
 use forum_db::users::Actor;
 use forum_kv::SlidingWindow;
 use serde_json::Value;
@@ -34,6 +35,28 @@ pub async fn limit(state: &AppState, rule: &SlidingWindow, user_id: i64) -> ApiR
         Ok(())
     } else {
         Err(ApiError(ErrorCode::RateLimited))
+    }
+}
+
+/// 发帖、回帖、编辑前：被封号，或在该板块（及全站）被禁言时拒绝（ADR 0013）。
+pub async fn check_sanctions(
+    state: &AppState,
+    user_id: i64,
+    forum_id: Option<i32>,
+) -> ApiResult<()> {
+    let kinds = [sanctions::KIND_MUTE, sanctions::KIND_BAN];
+    match sanctions::active_kind(&state.db, user_id, &kinds, forum_id).await? {
+        Some(sanctions::KIND_BAN) => Err(ApiError(ErrorCode::AccountBanned)),
+        Some(_) => Err(ApiError(ErrorCode::Muted)),
+        None => Ok(()),
+    }
+}
+
+/// 发私信前：被封号时拒绝（禁言只限论坛发帖）。
+pub async fn check_not_banned(state: &AppState, user_id: i64) -> ApiResult<()> {
+    match sanctions::active_kind(&state.db, user_id, &[sanctions::KIND_BAN], None).await? {
+        Some(_) => Err(ApiError(ErrorCode::AccountBanned)),
+        None => Ok(()),
     }
 }
 

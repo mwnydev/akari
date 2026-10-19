@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sanctions SET revoked_at = now(), revoked_by = $2\n         WHERE id = ANY($1::bigint[]) AND revoked_at IS NULL AND (ends_at IS NULL OR ends_at > now())\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "sanctions",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f94e59412159daf8b256d4b1b25788ca13a1cc0d80da564b6b983d72faed423f"
+}

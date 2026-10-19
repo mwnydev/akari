@@ -1,10 +1,13 @@
 pub mod aa;
+pub mod admin;
+pub mod admin_auth;
 pub mod auth;
 pub mod chain;
 pub mod forums;
 pub mod health;
 pub mod me;
 pub mod messages;
+pub mod moderation;
 pub mod notifications;
 pub mod order_chat;
 pub mod orders;

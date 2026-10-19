@@ -13,6 +13,8 @@ pub mod orders;
 pub mod outbox;
 pub mod posts;
 pub mod reputation;
+pub mod sanctions;
+pub mod settings;
 pub mod sponsor;
 pub mod staff;
 pub mod topics;

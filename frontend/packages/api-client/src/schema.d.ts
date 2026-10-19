@@ -21,6 +21,317 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/admin/audit": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 只增审计日志，新的在前。 */
+    get: operations["audit_log"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/enroll/code": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 绑定第一个后台 Passkey 前：向站长账号邮箱发一封专用验证码。已有后台 Passkey 时返回 `CONFLICT`。 */
+    post: operations["admin_enroll_code"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/enroll/verify": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 校验验证码；成功后 10 分钟内可绑定第一个后台 Passkey。 */
+    post: operations["admin_enroll_verify"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/login/finish": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 完成登录：发放后台会话 Cookie。 */
+    post: operations["admin_login_finish"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/login/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 开始登录后台：论坛会话里的账号必须是站长且已绑定后台 Passkey（未绑定返回 `REVERIFY_REQUIRED`，先走邮箱验证绑定）。 */
+    post: operations["admin_login_start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/logout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 退出后台。 */
+    post: operations["admin_logout"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/passkeys": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 我的后台 Passkey。 */
+    get: operations["admin_passkeys"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/passkeys/register/finish": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 完成绑定。绑定第一个时消耗邮箱验证标记并直接登录后台。 */
+    post: operations["admin_register_finish"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/passkeys/register/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 开始绑定后台 Passkey（RP ID 为后台中心域名）。 */
+    post: operations["admin_register_start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/reverify/finish": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 完成再验证：5 分钟内可做敏感操作。 */
+    post: operations["admin_reverify_finish"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/reverify/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 开始再验证（敏感操作前）。 */
+    post: operations["admin_reverify_start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * 一键撤销某账号在某时间段内的全部管理操作（ADR 0013 第 6 条）：先预览，再执行。
+     *     只还原仍是该操作结果的状态，之后又被改过的跳过；执行本身写审计日志并推送管理员群。
+     */
+    post: operations["revoke"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/session": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 当前后台会话。 */
+    get: operations["admin_current"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/settings/moderation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 管理操作限速与异常检测阈值。 */
+    get: operations["get_settings"];
+    /** 修改阈值（必须在上下限内）。 */
+    put: operations["put_settings"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/staff": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 全部管理人员任命。 */
+    get: operations["list_staff"];
+    put?: never;
+    /** 任命管理员或版主。 */
+    post: operations["appoint"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/staff/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** 撤销一条任命（免去管理员或版主）。 */
+    delete: operations["remove_staff"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/suspensions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 管理权限被暂停中的账号。 */
+    get: operations["list_suspensions"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/suspensions/{id}/reinstate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 恢复被暂停的管理权限（站长确认后）。 */
+    post: operations["reinstate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/auth/email/start": {
     parameters: {
       query?: never;
@@ -288,7 +599,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** 当前登录用户。 */
+    /** 当前登录用户，含管理角色与权限。 */
     get: operations["me"];
     put?: never;
     post?: never;
@@ -326,6 +637,58 @@ export interface paths {
     /** 设置或修改用户名：2–20 个字（汉字、字母、数字、下划线），不区分大小写唯一，首次设置后 30 天才能再改。 */
     put: operations["set_username"];
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/moderation/ip-bans": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 封禁 IP 或网段：之后从这里发起的登录（发验证码、校验验证码）一律拒绝。 */
+    post: operations["ban_ip"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/moderation/sanctions/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** 解除处罚。需要该类处罚在其范围内的权限，且角色高于被处罚人（版主解不了站长对管理员的禁言）。 */
+    delete: operations["lift"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/moderation/users/{id}/sanctions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 用户的处罚记录（含已解除、已到期的）。任何未被暂停的管理人员可看。 */
+    get: operations["user_sanctions"];
+    put?: never;
+    /** 处罚用户：禁言、禁拍、封号、封禁其登录过的全部设备。 */
+    post: operations["sanction_user"];
     delete?: never;
     options?: never;
     head?: never;
@@ -605,11 +968,11 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** 删除楼层：只改状态，楼层号保留（plan 第 4 节）。 */
+    /** 删除楼层：只改状态，楼层号保留（plan 第 4 节）。删除他人楼层需要板块管理权限，计入删帖限速与异常检测。 */
     delete: operations["delete"];
     options?: never;
     head?: never;
-    /** 编辑楼层。编辑前的版本存入编辑历史；管理人员编辑他人楼层写审计日志。 */
+    /** 编辑楼层。编辑前的版本存入编辑历史；编辑他人楼层需要管理员权限（版主不能改他人内容），并写审计日志。 */
     patch: operations["edit"];
     trace?: never;
   };
@@ -630,6 +993,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/posts/{id}/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 恢复被管理人员删除的楼层（删帖的反向操作）。需要板块管理权限。 */
+    post: operations["restore"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/posts/{id}/source": {
     parameters: {
       query?: never;
@@ -637,7 +1017,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** 编辑器原稿：作者本人或管理人员重新编辑时加载。 */
+    /** 编辑器原稿：作者本人或能编辑他人楼层的管理人员重新编辑时加载。 */
     get: operations["source"];
     put?: never;
     post?: never;
@@ -693,7 +1073,10 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** 主题管理。只有该板块的版主和全站管理人员可操作；每次操作写只增审计日志。 */
+    /**
+     * 主题管理。需要该板块的管理权限（版主只管自己的板块，移动时目标板块也要有权限）；
+     *     限速、异常检测，每次操作写只增审计日志（ADR 0013）。
+     */
     post: operations["moderate"];
     delete?: never;
     options?: never;
@@ -1100,6 +1483,72 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    AdminAssertFinish: {
+      credential: Record<string, unknown>;
+    };
+    AdminAssertionOptions: {
+      /** @description 原样传给 `navigator.credentials.get()`。 */
+      options: Record<string, unknown>;
+    };
+    AdminCodeRequest: {
+      code: string;
+    };
+    AdminCodeSent: {
+      /** Format: int64 */
+      expires_in: number;
+      /** Format: int64 */
+      resend_in: number;
+    };
+    AdminPasskeyList: {
+      passkeys: components["schemas"]["AdminPasskeyView"][];
+    };
+    AdminPasskeyView: {
+      /** Format: date-time */
+      created_at: string;
+      /** @description base64url 凭证 ID。 */
+      credential_id: string;
+      /** Format: int64 */
+      id: number;
+      /** Format: date-time */
+      last_used_at?: string | null;
+    };
+    AdminRegisterFinish: {
+      credential: Record<string, unknown>;
+    };
+    AdminRegistrationOptions: {
+      /** @description 原样传给 `navigator.credentials.create()`。 */
+      options: Record<string, unknown>;
+    };
+    AdminSessionView: {
+      /**
+       * Format: int64
+       * @description 最长时长到期（Unix 秒）。
+       */
+      absolute_expires_at: number;
+      /**
+       * Format: int64
+       * @description 会话到期时间（Unix 秒，闲置与最长时长取先到者）。
+       */
+      expires_at: number;
+      /**
+       * Format: int64
+       * @description 敏感操作再验证有效至（Unix 秒）；为空表示需要再验证。
+       */
+      reverified_until?: number | null;
+      /** Format: int64 */
+      user_id: number;
+    };
+    AppointRequest: {
+      /**
+       * Format: int32
+       * @description 版主必填（负责的板块），管理员不填。
+       */
+      forum_id?: number | null;
+      /** @description `admin` 或 `moderator`（站长不能经接口任命）。 */
+      role: components["schemas"]["Role"];
+      /** Format: int64 */
+      user_id: number;
+    };
     AssertFinish: {
       /** @description `navigator.credentials.get()` 的结果。 */
       credential: Record<string, unknown>;
@@ -1120,6 +1569,29 @@ export interface components {
       currency: string;
       /** @description 成交价，拍卖币种的最小单位：USDT 6 位小数或人民币分（十进制字符串）。 */
       price: string;
+    };
+    AuditEntryView: {
+      action: string;
+      /** Format: int64 */
+      actor_id: number;
+      /** Format: date-time */
+      created_at: string;
+      detail: Record<string, unknown>;
+      /** Format: int64 */
+      id: number;
+      reason?: string | null;
+      reverted: boolean;
+      /**
+       * Format: int64
+       * @description 撤销记录指向被撤销的日志。
+       */
+      reverts?: number | null;
+      target?: string | null;
+    };
+    AuditPage: {
+      entries: components["schemas"]["AuditEntryView"][];
+      /** Format: int64 */
+      next_cursor?: number | null;
     };
     AvatarRequest: {
       /**
@@ -1346,6 +1818,12 @@ export interface components {
       | "WITHDRAW_CREDIT_REQUIRED"
       | "CHAIN_UNAVAILABLE"
       | "USER_BLOCKED"
+      | "STAFF_SUSPENDED"
+      | "MUTED"
+      | "ACCOUNT_BANNED"
+      | "ACCESS_BANNED"
+      | "SANCTION_TOO_LONG"
+      | "ADMIN_REVERIFY_REQUIRED"
       | "INTERNAL";
     ForumView: {
       /** @description 能否发交易帖。 */
@@ -1378,6 +1856,16 @@ export interface components {
       url: string;
       /** Format: int32 */
       width: number;
+    };
+    IpBanRequest: {
+      /**
+       * Format: int64
+       * @description 时长（秒）；为空表示永久。
+       */
+      duration_secs?: number | null;
+      /** @description 单个 IP（如 `203.0.113.7`）或网段（如 `203.0.113.0/24`，IPv4 最大 /16、IPv6 最大 /32）。 */
+      ip: string;
+      reason: string;
     };
     LatestResponse: {
       /** @description 这些主题所在的板块。 */
@@ -1428,6 +1916,7 @@ export interface components {
       email: string;
       /** Format: int64 */
       id: number;
+      staff?: components["schemas"]["StaffView"] | null;
       username?: string | null;
     };
     MentionView: {
@@ -1488,6 +1977,58 @@ export interface components {
       flags: components["schemas"]["TopicFlags"];
       /** Format: int32 */
       forum_id: number;
+    };
+    /** @description 站长在后台调整的限速与异常检测阈值（ADR 0013 第 6 条），带默认值与硬上下限。 */
+    ModerationSettings: {
+      /**
+       * Format: int32
+       * @description 窗口内删帖 + 隐藏超过这个数即暂停管理权限并告警。
+       * @default 50
+       */
+      anomaly_deletes: number;
+      /**
+       * Format: int32
+       * @description 窗口内处罚超过这个数即暂停管理权限并告警。
+       * @default 20
+       */
+      anomaly_sanctions: number;
+      /**
+       * Format: int32
+       * @description 异常检测窗口（秒）。
+       * @default 3600
+       */
+      anomaly_window_secs: number;
+      /**
+       * Format: int32
+       * @description 每个窗口内最多：置顶 / 精华 / 锁定 / 移动 / 编辑 / 恢复。
+       * @default 60
+       */
+      rate_content: number;
+      /**
+       * Format: int32
+       * @description 每个窗口内最多：删帖、隐藏主题。
+       * @default 30
+       */
+      rate_delete: number;
+      /**
+       * Format: int32
+       * @description 每个窗口内最多：禁言、禁拍、封号、IP / 设备封禁及解除。
+       * @default 20
+       */
+      rate_sanction: number;
+      /**
+       * Format: int32
+       * @description 限速窗口（秒）。
+       * @default 600
+       */
+      rate_window_secs: number;
+    };
+    ModerationSettingsView: {
+      defaults: components["schemas"]["ModerationSettings"];
+      max: components["schemas"]["ModerationSettings"];
+      /** @description 每项允许的最小值与最大值。 */
+      min: components["schemas"]["ModerationSettings"];
+      settings: components["schemas"]["ModerationSettings"];
     };
     /** @description 私信报价生成的订单：谈判会话与付款上链时的最后一条消息（`GET /api/v1/orders/{id}/negotiation` 读取）。 */
     NegotiationRef: {
@@ -1823,6 +2364,26 @@ export interface components {
       offer_id: number;
       signature: string;
     };
+    /**
+     * @description 管理操作的权限。
+     * @enum {string}
+     */
+    Permission:
+      | "board_access"
+      | "topic_moderate"
+      | "topic_hide"
+      | "post_delete"
+      | "post_edit"
+      | "mute"
+      | "auction_ban"
+      | "ban"
+      | "ip_ban"
+      | "device_ban"
+      | "view_sanctions"
+      | "manage_staff"
+      | "manage_settings"
+      | "revoke_actions"
+      | "reinstate";
     PostSource: {
       source: Record<string, unknown>;
     };
@@ -1950,6 +2511,10 @@ export interface components {
        */
       success_rate_bps?: number | null;
     };
+    RestoreRequest: {
+      /** @description 写入审计日志。 */
+      reason: string;
+    };
     ReverifyRequest: {
       code: string;
     };
@@ -1959,11 +2524,113 @@ export interface components {
       /** Format: int64 */
       resend_in: number;
     };
+    /**
+     * @description 撤销一条管理操作的结果。
+     * @enum {string}
+     */
+    RevertStatus: "reverted" | "already_reverted" | "superseded" | "not_revertible";
+    RevokeItem: {
+      action: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int64 */
+      log_id: number;
+      /** @description 预览时 `reverted` 表示可以撤销。 */
+      status: components["schemas"]["RevertStatus"];
+      target?: string | null;
+    };
+    RevokeRequest: {
+      /**
+       * Format: int64
+       * @description 要撤销其管理操作的账号。
+       */
+      actor_id: number;
+      /** @description `false`：只预览（在回滚的事务里试做一遍）；`true`：执行（需 5 分钟内再验证）。 */
+      execute: boolean;
+      /** Format: date-time */
+      from: string;
+      /** @description 写入审计日志。 */
+      reason: string;
+      /**
+       * Format: date-time
+       * @description 不含；与 `from` 最多相隔 31 天。
+       */
+      to: string;
+    };
+    RevokeResult: {
+      executed: boolean;
+      /** @description 新的在前（撤销也按这个顺序做）。 */
+      items: components["schemas"]["RevokeItem"][];
+      reverted: number;
+      /** @description 超过 500 条只处理最新的 500 条，需要缩小时间段再做一次。 */
+      truncated: boolean;
+    };
+    /**
+     * @description `staff_roles.role` 的编号（与数据库一致，仲裁资格按 `role IN (1, 3)` 判断）。
+     * @enum {string}
+     */
+    Role: "moderator" | "admin" | "owner";
     RulingView: {
       /** Format: int32 */
       bond_to_buyer_bps?: number | null;
       /** Format: int32 */
       to_buyer_bps?: number | null;
+    };
+    /** @enum {string} */
+    SanctionKind: "mute" | "auction_ban" | "ban" | "ip_ban" | "device_ban";
+    SanctionList: {
+      /** @description 新的在前，最多 100 条。 */
+      sanctions: components["schemas"]["SanctionView"][];
+    };
+    SanctionRequest: {
+      /**
+       * Format: int64
+       * @description 时长（秒，60 秒到 10 年）；为空表示永久。版主禁言最长 7 天、禁拍最长 30 天，且不能永久。
+       */
+      duration_secs?: number | null;
+      /**
+       * Format: int32
+       * @description 禁言、禁拍只限这个板块；为空表示全站（版主必须填自己负责的板块）。
+       */
+      forum_id?: number | null;
+      /** @description `mute` / `auction_ban` / `ban` / `device_ban`（IP 封禁用 `POST /api/v1/moderation/ip-bans`）。 */
+      kind: components["schemas"]["SanctionKind"];
+      /** @description 预设理由或补充说明，写入审计日志并通知对方。 */
+      reason: string;
+    };
+    SanctionView: {
+      /** @description 仍在生效（未解除、未到期）。 */
+      active: boolean;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int64 */
+      created_by: number;
+      /**
+       * Format: date-time
+       * @description 为空表示永久。
+       */
+      ends_at?: string | null;
+      /**
+       * Format: int32
+       * @description 只限这个板块；为空表示全站。
+       */
+      forum_id?: number | null;
+      /** Format: int64 */
+      id: number;
+      /** @description IP 封禁的网段。 */
+      ip?: string | null;
+      kind: components["schemas"]["SanctionKind"];
+      reason: string;
+      /** Format: date-time */
+      revoked_at?: string | null;
+      /** Format: int64 */
+      user_id?: number | null;
+    };
+    SanctionsCreated: {
+      /** Format: date-time */
+      ends_at?: string | null;
+      /** @description 新处罚的 ID（设备封禁按设备各一条）。 */
+      ids: number[];
     };
     SendMessage: {
       /** @description 文字，≤ 2000 字（图片消息在图片上传上线后支持）。 */
@@ -1973,6 +2640,53 @@ export interface components {
       to_buyer?: string | null;
       to_fee_recipient?: string | null;
       to_seller?: string | null;
+    };
+    StaffAssignment: {
+      /** Format: date-time */
+      created_at: string;
+      /**
+       * Format: int32
+       * @description 版主负责的板块。
+       */
+      forum_id?: number | null;
+      /** Format: int64 */
+      granted_by?: number | null;
+      /**
+       * Format: int64
+       * @description 任命 ID（撤销时用）。
+       */
+      id: number;
+      role: components["schemas"]["Role"];
+      /** Format: int64 */
+      user_id: number;
+      username?: string | null;
+    };
+    StaffList: {
+      staff: components["schemas"]["StaffAssignment"][];
+    };
+    /** @description 管理角色（ADR 0013）：站长、管理员、版主。 */
+    StaffView: {
+      /** @description 能进后台（只有站长，`administrator` 子域名，需后台 Passkey）。 */
+      admin_backend: boolean;
+      /** @description 只在 `boards` 内可用的权限（版主）。 */
+      board_permissions: components["schemas"]["Permission"][];
+      /** @description 作为版主负责的板块。 */
+      boards: number[];
+      /**
+       * Format: int64
+       * @description 禁拍最长秒数；为空表示不限。
+       */
+      max_auction_ban_secs?: number | null;
+      /**
+       * Format: int64
+       * @description 禁言最长秒数；为空表示不限（可永久）。没有禁言权限时看权限列表。
+       */
+      max_mute_secs?: number | null;
+      roles: components["schemas"]["Role"][];
+      /** @description 全站范围可用的论坛管理权限（管理员、站长）。 */
+      site_permissions: components["schemas"]["Permission"][];
+      /** @description 管理权限被自动暂停（异常检测），待站长恢复；此时下面两个权限列表为空。 */
+      suspended: boolean;
     };
     StartRequest: {
       /** @description Cloudflare Turnstile 令牌。 */
@@ -2006,6 +2720,21 @@ export interface components {
       periods: number;
       /** Format: date-time */
       started_at?: string | null;
+    };
+    SuspensionList: {
+      suspensions: components["schemas"]["SuspensionView"][];
+    };
+    SuspensionView: {
+      /** Format: date-time */
+      created_at: string;
+      detail: Record<string, unknown>;
+      /** Format: int64 */
+      id: number;
+      /** @description `anomaly`：异常检测自动暂停。 */
+      reason: string;
+      /** Format: int64 */
+      user_id: number;
+      username?: string | null;
     };
     TopicFlags: {
       featured: boolean;
@@ -2342,6 +3071,869 @@ export interface operations {
       };
     };
   };
+  audit_log: {
+    parameters: {
+      query?: {
+        /** @description 只看这个账号的操作。 */
+        actor_id?: number | null;
+        /** @description 游标：上一页的 `next_cursor`。 */
+        cursor?: number | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuditPage"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_enroll_code: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminCodeSent"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_enroll_verify: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AdminCodeRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_login_finish: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AdminAssertFinish"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminSessionView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_login_start: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminAssertionOptions"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_logout: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_passkeys: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminPasskeyList"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_register_finish: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AdminRegisterFinish"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminPasskeyView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_register_start: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminRegistrationOptions"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_reverify_finish: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AdminAssertFinish"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminSessionView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_reverify_start: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminAssertionOptions"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  revoke: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RevokeRequest"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RevokeResult"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_current: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminSessionView"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  get_settings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModerationSettingsView"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  put_settings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ModerationSettings"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModerationSettingsView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  list_staff: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["StaffList"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  appoint: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AppointRequest"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["StaffAssignment"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  remove_staff: {
+    parameters: {
+      query: {
+        /** @description 写入审计日志。 */
+        reason: string;
+      };
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  list_suspensions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SuspensionList"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  reinstate: {
+    parameters: {
+      query: {
+        /** @description 写入审计日志。 */
+        reason: string;
+      };
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
   start: {
     parameters: {
       query?: never;
@@ -2411,6 +4003,14 @@ export interface operations {
         };
       };
       400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -3209,6 +4809,225 @@ export interface operations {
       };
     };
   };
+  ban_ip: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["IpBanRequest"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SanctionsCreated"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  lift: {
+    parameters: {
+      query: {
+        /** @description 写入审计日志。 */
+        reason: string;
+      };
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  user_sanctions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SanctionList"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  sanction_user: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SanctionRequest"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SanctionsCreated"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
   list_notifications: {
     parameters: {
       query?: {
@@ -3963,6 +5782,14 @@ export interface operations {
           "application/json": components["schemas"]["ErrorBody"];
         };
       };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
     };
   };
   edit: {
@@ -4051,6 +5878,69 @@ export interface operations {
         };
       };
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  restore: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RestoreRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -4223,6 +6113,14 @@ export interface operations {
         };
       };
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
         headers: {
           [name: string]: unknown;
         };

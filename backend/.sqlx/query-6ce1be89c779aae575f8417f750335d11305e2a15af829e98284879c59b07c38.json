@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO admin_audit_logs (actor_id, action, target, reason, detail, reverts)\n         VALUES ($1, $2, $3, $4, $5, $6)\n         ON CONFLICT (reverts) WHERE reverts IS NOT NULL DO NOTHING RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "admin_audit_logs",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6ce1be89c779aae575f8417f750335d11305e2a15af829e98284879c59b07c38"
+}

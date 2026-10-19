@@ -606,12 +606,34 @@ async fn edit_history_and_delete(db: PgPool) {
         StatusCode::FORBIDDEN
     );
 
-    // 版主编辑他人楼层写审计
+    // 版主不能编辑他人楼层（ADR 0013）；管理员可以，写审计
     assert_eq!(
         edit(
             m.clone(),
             r2,
             json!({"html": "<p>mod</p>", "source": doc("m")})
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    let (admin_id, adm) = member(&app, &db).await;
+    staff::grant(&db, admin_id, staff::ROLE_ADMIN, None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        call(&app, "GET", &src, None, &adm).await.body["source"],
+        doc("b3")
+    );
+    assert_eq!(
+        call(&app, "GET", &src, None, &m).await.status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        edit(
+            adm.clone(),
+            r2,
+            json!({"html": "<p>admin</p>", "source": doc("a")})
         )
         .await
         .status,

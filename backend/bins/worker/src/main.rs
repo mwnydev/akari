@@ -42,6 +42,12 @@ async fn main() -> anyhow::Result<()> {
         _ => None,
     };
     let mailer = Failover::new(primary, backup);
+    let telegram = forum_worker::telegram::Telegram::from_env()?;
+    if telegram.is_none() {
+        tracing::warn!(
+            "TELEGRAM_BOT_TOKEN / TELEGRAM_ADMIN_CHAT_ID not set: staff alerts disabled"
+        );
+    }
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "forum-worker started");
 
     let images = match forum_media::StorageConfig::from_env()? {
@@ -80,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
     let offers = tokio::spawn(offer_expirer(db.clone(), shutdown.clone()));
     let partitions = tokio::spawn(partition_keeper(db.clone(), shutdown.clone()));
     loop {
-        match forum_worker::drain_once(&db, &mailer, Some(&realtime)).await {
+        match forum_worker::drain_once(&db, &mailer, telegram.as_ref(), Some(&realtime)).await {
             // 本批满了说明还有积压，立刻继续。
             Ok(n) if n >= forum_worker::BATCH => continue,
             Ok(_) => {}

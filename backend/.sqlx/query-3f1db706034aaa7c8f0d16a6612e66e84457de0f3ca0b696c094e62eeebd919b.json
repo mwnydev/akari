@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO staff_suspensions (user_id, reason, detail) VALUES ($1, $2, $3)\n         ON CONFLICT (user_id) WHERE reinstated_at IS NULL DO NOTHING RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "staff_suspensions",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3f1db706034aaa7c8f0d16a6612e66e84457de0f3ca0b696c094e62eeebd919b"
+}

@@ -17,7 +17,7 @@ use axum_extra::extract::cookie::Key;
 use forum_api::wallet::{AddressVerifier, WalletState};
 use forum_api::{AppState, app};
 use forum_auth::passkey::webauthn::{CreationChallengeResponse, RequestChallengeResponse, Url};
-use forum_auth::passkey::{UserHandles, wallet_webauthn};
+use forum_auth::passkey::{UserHandles, admin_webauthn, wallet_webauthn};
 use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha};
 use forum_chain::config::WalletInitVersion;
 use forum_chain::kernel::PasskeyPublicKey;
@@ -31,6 +31,7 @@ use webauthn_authenticator_rs::softpasskey::SoftPasskey;
 pub const ORIGIN: &str = "https://forum.test";
 pub const SECRET: [u8; 64] = [9; 64];
 pub const WALLET_ORIGIN: &str = "https://wallet.test";
+pub const ADMIN_ORIGIN: &str = "https://admin.test";
 pub const CHAIN_ID: u64 = 421_614;
 pub const ESCROW: &str = "0x4444444444444444444444444444444444444444";
 pub const USDT: &str = "0x3333333333333333333333333333333333333333";
@@ -49,6 +50,15 @@ impl AddressVerifier for FakeVerifier {
         _: &PasskeyPublicKey,
     ) -> anyhow::Result<bool> {
         Ok(address.to_string() != MISMATCHED_ADDRESS)
+    }
+}
+
+pub fn admin_state() -> forum_api::admin::AdminState {
+    let origin = Url::parse(ADMIN_ORIGIN).unwrap();
+    forum_api::admin::AdminState {
+        webauthn: admin_webauthn("admin.test", "Akari", &origin).unwrap(),
+        origin: ADMIN_ORIGIN.to_owned(),
+        handles: UserHandles::admin(&SECRET).unwrap(),
     }
 }
 
@@ -112,6 +122,7 @@ pub fn state_with(db: PgPool, wallet: WalletState, ns: &str) -> Option<AppState>
         cache: forum_kv::ForumCache::new(kv.clone(), ns),
         internal_hosts: Arc::from(vec!["forum.test".to_owned()]),
         wallet: Arc::new(wallet),
+        admin: Arc::new(admin_state()),
         hub: forum_api::realtime::Hub::new(forum_kv::Realtime::new(kv, ns), url),
         media: media(),
     })

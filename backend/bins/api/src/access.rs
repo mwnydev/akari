@@ -1,6 +1,7 @@
-//! 访问者与权限：游客等级 0，注册用户按等级；版主、管理员绕过等级限制（plan 第 4、9 节）。
+//! 访问者与权限：游客等级 0，注册用户按等级；有板块访问权限的管理人员绕过等级与隐藏限制（plan 第 4 节、ADR 0013）。
 
 use forum_core::ErrorCode;
+use forum_core::staff::{Permission, Scope, StaffRoles};
 use forum_db::forums::Forum;
 use forum_db::users::Actor;
 use time::{Duration, OffsetDateTime};
@@ -36,12 +37,20 @@ impl Viewer {
         self.user.ok_or(ApiError(ErrorCode::Unauthorized))
     }
 
-    /// 能否管理该板块。游客直接为否，不查库。
-    pub async fn is_staff(&self, state: &AppState, forum_id: i32) -> ApiResult<bool> {
+    /// 管理角色；游客直接为空，不查库。
+    pub async fn staff(&self, state: &AppState) -> ApiResult<StaffRoles> {
         match self.user {
-            Some(u) => Ok(forum_db::staff::can_moderate(&state.db, u.id, forum_id).await?),
-            None => Ok(false),
+            Some(u) => Ok(forum_db::staff::roles(&state.db, u.id).await?),
+            None => Ok(StaffRoles::default()),
         }
+    }
+
+    /// 能否以管理人员身份进入该板块：看隐藏主题和等级不够的板块、在锁定主题里回复（[`Permission::BoardAccess`]）。
+    pub async fn is_staff(&self, state: &AppState, forum_id: i32) -> ApiResult<bool> {
+        Ok(self
+            .staff(state)
+            .await?
+            .allows(Permission::BoardAccess, Scope::Board(forum_id)))
     }
 
     /// 能否看到该板块。等级够就不查管理角色。
@@ -57,15 +66,16 @@ impl Viewer {
 pub async fn visible_forums(state: &AppState, viewer: &Viewer) -> ApiResult<Vec<Forum>> {
     let all = forum_db::forums::list_all(&state.db).await?;
     let level = viewer.level();
-    let (global, moderated) = match viewer.user {
-        Some(u) if all.iter().any(|f| f.view_min_level > level) => {
-            forum_db::staff::scope(&state.db, u.id).await?
-        }
-        _ => (false, Vec::new()),
+    let roles = if all.iter().any(|f| f.view_min_level > level) {
+        viewer.staff(state).await?
+    } else {
+        StaffRoles::default()
     };
     Ok(all
         .into_iter()
-        .filter(|f| f.view_min_level <= level || global || moderated.contains(&f.id))
+        .filter(|f| {
+            f.view_min_level <= level || roles.allows(Permission::BoardAccess, Scope::Board(f.id))
+        })
         .collect())
 }
 
