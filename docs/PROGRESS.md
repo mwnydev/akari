@@ -68,18 +68,26 @@
 - [x] 第 7 轮：正式域名写死为代码常量（`AKARI_ENV=production` 时环境变量不能改），Cookie 不带 Domain 的测试；主网部署脚本检查仲裁 / 金库 / 合约管理员必须是 2/3 Safe；Pub/Sub 频道前缀；会话活跃时每小时顺延、最长 90 天
 - [x] 第 7 轮：源站防护：网站与 SSH 都走 Cloudflare Tunnel，无入站端口；出站端口白名单 + CI 检查新增外部请求；SMTP 仅开发用，生产 Resend + Postmark（HTTP API，不泄露源站 IP）；外网暴露检测脚本；换 IP 手册
 - [x] 第 7 轮：论坛前端接上私信、订单聊天、通知、实时推送（跨标签页共用连接）、个人主页、用户名、@提及、图片上传；后端 328、合约 245、前端 21 项全部通过；钱包 e2e 5/5、论坛 e2e 24/24；musl 静态构建通过
-- [ ] 下一轮：站长后台前端、论坛仲裁页面、版主管理入口；交易帖「发起担保」按钮；Telegram 告警接入更多事件
-- [ ] 下一轮前端：板块 / 帖子页接真实 API、Tiptap 编辑器、游客页 Valkey 缓存、Turnstile
+- [x] 第 8 轮：代付签前模拟兜底：`eth_simulateV1` 崩溃 / 不支持时按节点改用 EntryPoint 模拟（`eth_call` 覆盖代码，临时签名人，核对 USDT 余额变化），任何异常一律拒签；本地 `aa.sh` 端口可配、Alto 只听 127.0.0.1、`chain.local.json` 只校验不改写；挑战存取合并；告警去重并补齐代付余额、RPC 切换、深回滚（修复代付余额告警从未送达）
+- [x] 第 8 轮：楼层点赞（点赞人预览、5 分钟合并通知）与朋友圈式两层评论（实时推送、删除 / 恢复 / 举报走权限与审计）；主题列表参与者、交易摘要、时间线；板块颜色字段
+- [x] 第 8 轮：论坛全部页面换成扁平 Discourse 式设计，设计稿与正式页面共用组件；交易帖「担保购买 / 私信卖家 / 发起担保 / 发布公开报价」接通钱包
+- [x] 第 8 轮：站长后台前端（Passkey 登录、任免、阈值、恢复权限、批量撤销、审计日志、仲裁总览与 Safe 文件）；论坛仲裁页面（裁决 Passkey、申诉、当事人陈述）；帖子上的权限感知管理菜单与处罚对话框；Ansible 按服务建数据库角色与授权
+- [x] 第 8 轮合计：后端 354、合约 245、前端 22 项全部通过；论坛 e2e 32、钱包 e2e 5/5（真实代付）；musl 静态构建通过；各路由首屏 JS ≤ 200 KB（论坛最大 193 KB、钱包 198 KB、后台 179 KB）
+- [ ] 下一轮：拍卖流程（出价、防狙击顺延、成交证明、付款期限）；版主举报处理队列；楼层隐藏接口；热门排序后端；后台设置板块颜色
+- [ ] 下一轮前端：游客页 Valkey 缓存、Turnstile、搜索（PGroonga）
 - [ ] 待补 CI：knip、jscpd、cargo-llvm-cov、lefthook
 
 ### 评审记录
 
-- 待办：Arbitrum Nitro 的 `eth_simulateV1` 有已知崩溃问题（OffchainLabs/nitro#3372），forum-sponsor 签前模拟依赖它 → 在 Alchemy / Infura 的 Arbitrum Sepolia 上实测；不可靠则降级为 EntryPoint `simulateHandleOp` / `eth_call` 模拟，模拟失败一律拒签（不放行）。
+- 第 8 轮：`eth_simulateV1` 兜底已实现（见上）；仍需在 Alchemy / Infura 的 Arbitrum Sepolia 上实测两种模拟方式。
+- 第 8 轮：本机 shell 带 HTTP 代理且必须保留；reqwest 不认 `127.*` 通配，测试里连本地服务改用直连客户端，代理说明见代理规则（追加精确 `NO_PROXY`）。
+- 第 8 轮：评论 `reply_to` 传评论 ID，由服务器推出被回复人，防止借评论给任意用户发通知。
+- 待办：Ansible 只套用迁移里写明的授权，各服务的基础表权限矩阵还需整理；Ansible 不跑迁移，首次迁移后需再跑一次 play 让授权生效。
 - 第 7 轮：被封号用户不能再发报价、接受报价（会开新订单）、发交易帖；已有订单、订单聊天、提币照常，保证资金不被卡住。
 - 第 7 轮：Next.js 只读 `COOKIE_SIGNING_KEY`（恰好 32 字节），给完整密钥会拒绝启动；Ansible 检查 web.env 不含 `COOKIE_SECRET`。
 - 第 7 轮：Cloudflare 回源直连方案下，Caddy 在拒绝无客户端证书的连接前已发出带 akari.cc 的证书，会把 IP 和域名关联起来 → 默认改走 Tunnel，直连方案只作应急。
 - 第 7 轮：sqlx::test 按测试路径给临时库命名、整个 Postgres 服务器共用，并行检出会互删 → 每个代理用自己的 Postgres 容器。
-- 待办：本地 `aa.sh` 会改写受版本控制的 `chain.local.json`；Alto 监听 0.0.0.0（局域网可达），改为 127.0.0.1；e2e README 补 S3 CORS 与 `general` 板块初始化；仲裁与钱包的挑战存取函数重复，合并。
+- 待办：e2e README 补 S3 CORS（存储桶需允许论坛来源）与 `general` 板块初始化。
 
 - 第 6 轮：钱包 Passkey 改为可发现凭据（resident key），否则无后端时紧急取回页找不到凭据。
 - 第 6 轮：libwebp 未升级——`webp 0.3.1` 只支持 `libwebp-sys 0.9.x`（libwebp 1.3.1，已含 CVE-2023-4863 修复）；换 1.6 需自写 FFI，与 `unsafe_code = "forbid"` 冲突。解码走纯 Rust，libwebp 只编码已解码像素，暴露面低；`webp` 出新版时升级。
