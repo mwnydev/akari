@@ -91,7 +91,8 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::OfferExpiryInvalid
         | ErrorCode::UsernameRequired
         | ErrorCode::PasskeyFailed
-        | ErrorCode::TooManyPasskeys => StatusCode::BAD_REQUEST,
+        | ErrorCode::TooManyPasskeys
+        | ErrorCode::WalletAddressMismatch => StatusCode::BAD_REQUEST,
     }
 }
 

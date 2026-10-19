@@ -17,6 +17,7 @@ use alloy::primitives::{Address, B256};
 use crate::ChainError;
 use crate::config::ConfirmationPolicy;
 use crate::event::{BlockRef, LogKey, RawLog};
+use crate::order::Market;
 use crate::snapshot::OrderSnapshot;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,10 +46,17 @@ pub trait ChainSource: Send + Sync {
     /// 在指定区块（按哈希，EIP-1898）读取订单快照。
     fn order_snapshot(
         &self,
+        market: Market,
         contract: Address,
         order_id: u64,
         at: B256,
     ) -> impl Future<Output = Result<Option<OrderSnapshot>, ChainError>> + Send;
+
+    /// 区块时间（Unix 秒）；节点返回的日志不带 `blockTimestamp` 时才调用。
+    fn block_time(
+        &self,
+        hash: B256,
+    ) -> impl Future<Output = Result<Option<u64>, ChainError>> + Send;
 }
 
 /// 库里记录的索引进度。
@@ -395,10 +403,15 @@ pub mod tests {
 
         async fn order_snapshot(
             &self,
+            _: Market,
             _: Address,
             _: u64,
             _: B256,
         ) -> Result<Option<OrderSnapshot>, ChainError> {
+            Ok(None)
+        }
+
+        async fn block_time(&self, _: B256) -> Result<Option<u64>, ChainError> {
             Ok(None)
         }
     }

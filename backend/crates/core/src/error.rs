@@ -70,6 +70,8 @@ pub enum ErrorCode {
     TooManyPasskeys,
     #[error("wallet required")]
     WalletRequired,
+    #[error("wallet address does not match the passkey")]
+    WalletAddressMismatch,
     #[error("internal error")]
     Internal,
 }
@@ -109,6 +111,7 @@ impl ErrorCode {
             Self::PasskeyFailed => "Passkey 验证失败，请重试",
             Self::TooManyPasskeys => "Passkey 数量已达上限",
             Self::WalletRequired => "请先开通交易",
+            Self::WalletAddressMismatch => "钱包地址与 Passkey 不匹配，请刷新后重试",
             Self::Internal => "服务暂时不可用，请稍后再试",
         }
     }

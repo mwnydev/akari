@@ -1,0 +1,166 @@
+{
+  "type": "function",
+  "name": "getOrder",
+  "inputs": [
+    {
+      "name": "orderId",
+      "type": "uint256",
+      "internalType": "uint256"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "",
+      "type": "tuple",
+      "internalType": "struct StreamEscrow.Order",
+      "components": [
+        {
+          "name": "buyer",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "startDeadline",
+          "type": "uint64",
+          "internalType": "uint64"
+        },
+        {
+          "name": "interval",
+          "type": "uint32",
+          "internalType": "uint32"
+        },
+        {
+          "name": "seller",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "startedAt",
+          "type": "uint64",
+          "internalType": "uint64"
+        },
+        {
+          "name": "state",
+          "type": "uint8",
+          "internalType": "enum StreamEscrow.State"
+        },
+        {
+          "name": "platformPaid",
+          "type": "bool",
+          "internalType": "bool"
+        },
+        {
+          "name": "sellerDisputed",
+          "type": "bool",
+          "internalType": "bool"
+        },
+        {
+          "name": "disputeSource",
+          "type": "uint8",
+          "internalType": "enum StreamEscrow.FeeSource"
+        },
+        {
+          "name": "token",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "disputedAt",
+          "type": "uint64",
+          "internalType": "uint64"
+        },
+        {
+          "name": "periods",
+          "type": "uint32",
+          "internalType": "uint32"
+        },
+        {
+          "name": "proposer",
+          "type": "address",
+          "internalType": "address"
+        },
+        {
+          "name": "proposalExpiry",
+          "type": "uint64",
+          "internalType": "uint64"
+        },
+        {
+          "name": "proposalWindow",
+          "type": "uint32",
+          "internalType": "uint32"
+        },
+        {
+          "name": "lastClaimAt",
+          "type": "uint64",
+          "internalType": "uint64"
+        },
+        {
+          "name": "resolveTimeout",
+          "type": "uint32",
+          "internalType": "uint32"
+        },
+        {
+          "name": "arbExtended",
+          "type": "uint32",
+          "internalType": "uint32"
+        },
+        {
+          "name": "lateSlashBps",
+          "type": "uint16",
+          "internalType": "uint16"
+        },
+        {
+          "name": "net",
+          "type": "uint128",
+          "internalType": "uint128"
+        },
+        {
+          "name": "claimed",
+          "type": "uint128",
+          "internalType": "uint128"
+        },
+        {
+          "name": "buyerFee",
+          "type": "uint128",
+          "internalType": "uint128"
+        },
+        {
+          "name": "sellerFee",
+          "type": "uint128",
+          "internalType": "uint128"
+        },
+        {
+          "name": "buyerGas",
+          "type": "uint128",
+          "internalType": "uint128"
+        },
+        {
+          "name": "sellerGas",
+          "type": "uint128",
+          "internalType": "uint128"
+        },
+        {
+          "name": "disputeFee",
+          "type": "uint128",
+          "internalType": "uint128"
+        },
+        {
+          "name": "claimGas",
+          "type": "uint128",
+          "internalType": "uint128"
+        },
+        {
+          "name": "bond",
+          "type": "uint128",
+          "internalType": "uint128"
+        },
+        {
+          "name": "proposalToBuyer",
+          "type": "uint128",
+          "internalType": "uint128"
+        }
+      ]
+    }
+  ],
+  "stateMutability": "view"
+}

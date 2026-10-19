@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 我的订单（卖家），游标翻页、新的在前；不含已被区块回滚撤销的订单。$1 seller_id, $2 游标（上一页最后一个 id）, $3 条数\nSELECT id FROM escrow_orders\nWHERE seller_id = $1 AND id < $2 AND state <> 0\nORDER BY id DESC\nLIMIT $3\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cd258562016007f69d7e05019782edb85378f385930c8e220effc351b3f9c19b"
+}

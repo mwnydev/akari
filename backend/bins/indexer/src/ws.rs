@@ -34,7 +34,7 @@ pub async fn run(
     for url in urls.iter().cycle() {
         let name = url
             .parse::<Url>()
-            .map_or_else(|_| "?".to_owned(), |u| crate::rpc::redact(&u));
+            .map_or_else(|_| "?".to_owned(), |u| forum_chain::rpc::redact(&u));
         let started = Instant::now();
         tokio::select! {
             () = shutdown.cancelled() => return,

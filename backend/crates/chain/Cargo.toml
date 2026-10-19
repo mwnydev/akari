@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# 集成测试用的 anvil 进程与 Kernel 夹具（forum_chain::anvil）。
+anvil = ["dep:tokio"]
+
 [dependencies]
 alloy.workspace = true
 serde.workspace = true
@@ -13,6 +17,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 toml.workspace = true
+tokio = { workspace = true, features = ["time"], optional = true }
 
 [dev-dependencies]
 tokio.workspace = true

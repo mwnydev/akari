@@ -1,4 +1,5 @@
-//! 把链上数据写进数据库：执行校对计划、写入 WebSocket 即时日志、升级确认级别，并在订单变化时写发件箱。
+//! 把链上数据写进数据库：执行校对计划、写入 WebSocket 即时日志、升级确认级别，并在订单变化时写发件箱、
+//! 同步生成订单的报价卡片（成交次数用完即已付款）。
 //!
 //! 所有写入都由一个任务串行执行（见 [`crate::run`]），并且同一条链只允许一个 indexer 进程（会话级咨询锁）。
 //! 因此读库、调 RPC、再开事务写库之间不会有别的写入者插进来。
@@ -7,9 +8,9 @@ use std::collections::BTreeMap;
 
 use alloy::primitives::{Address, B256, U256};
 use forum_chain::ChainError;
-use forum_chain::config::ChainConfig;
+use forum_chain::config::{ChainConfig, Contracts};
 use forum_chain::event::{self, BlockRef, LogKey, RawLog};
-use forum_chain::order::{self, Level, OrderLog, OrderView};
+use forum_chain::order::{self, Level, OrderEvent, OrderLog, OrderView};
 use forum_chain::reorg::{self, ChainSource, Plan, Progress, Stored};
 use forum_chain::snapshot::OrderSnapshot;
 use forum_db::chain::{self as db, OrderRef};
@@ -59,6 +60,7 @@ pub struct Applied {
 pub struct Engine {
     pool: PgPool,
     chain_id: i64,
+    contracts: Contracts,
     start_block: u64,
     max_range: u64,
     policy: forum_chain::config::ConfirmationPolicy,
@@ -97,6 +99,7 @@ impl Engine {
                 chain_id,
                 name: &cfg.name,
                 escrow: cfg.contracts.escrow.as_slice(),
+                stream: cfg.contracts.stream.as_slice(),
                 config: cfg.contracts.config.as_slice(),
                 token: cfg.token.address.as_slice(),
                 token_symbol: &cfg.token.symbol,
@@ -110,6 +113,7 @@ impl Engine {
         let mut engine = Self {
             pool,
             chain_id,
+            contracts: cfg.contracts.clone(),
             start_block: cfg.contracts.start_block,
             max_range: cfg.indexer.max_block_range,
             policy: cfg.confirmation.clone(),
@@ -199,7 +203,7 @@ impl Engine {
             }
         }
         // RPC 调用放在事务之外。
-        let prepared = prepare(src, &fresh).await?;
+        let prepared = prepare(src, &self.contracts, &fresh).await?;
 
         let mut tx = self.pool.begin().await?;
         let mut touched: BTreeMap<OrderRef, Cause> = BTreeMap::new();
@@ -268,7 +272,7 @@ impl Engine {
         {
             return Ok(false);
         }
-        let prepared = prepare(src, &[log]).await?;
+        let prepared = prepare(src, &self.contracts, &[log]).await?;
         let mut tx = self.pool.begin().await?;
         let mut touched = BTreeMap::new();
         for p in &prepared {
@@ -335,11 +339,11 @@ impl Engine {
                 contract: log.contract.as_slice(),
                 block_number: db_i64(log.block.number)?,
                 block_hash: log.block.hash.as_slice(),
-                block_time: log.block_timestamp.and_then(timestamp),
+                block_time: p.block_time.and_then(timestamp),
                 tx_hash: log.key.tx_hash.as_slice(),
                 log_index: db_i32(log.key.log_index)?,
                 name: &p.decoded.name,
-                order_id: p.decoded.order_id.map(db_i64).transpose()?,
+                order_id: p.decoded.order_id().map(db_i64).transpose()?,
                 topics: &topics,
                 data: &log.data,
                 payload: &payload,
@@ -349,7 +353,7 @@ impl Engine {
         .await?)
     }
 
-    /// 重新折叠受影响的订单；行有变化的写一条发件箱消息。返回变化的订单数。
+    /// 重新折叠受影响的订单；行有变化的写一条发件箱消息，并同步生成它的报价卡片。返回变化的订单数。
     async fn recompute(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -357,6 +361,12 @@ impl Engine {
     ) -> Result<usize, IndexerError> {
         let mut changed = 0;
         for ((contract, order_id), cause) in touched {
+            let address = Address::try_from(contract.as_slice())
+                .map_err(|_| ChainError::Decode("expected 20-byte address".into()))?;
+            let Some(market) = self.contracts.market(address) else {
+                tracing::warn!(%address, order_id, "order event from a contract that is not a market");
+                continue;
+            };
             let rows = db::order_events(&mut **tx, self.chain_id, contract, *order_id).await?;
             let logs = rows
                 .into_iter()
@@ -367,6 +377,10 @@ impl Engine {
                         level: Level::parse(&r.level)?,
                         topics: r.topics.iter().map(|t| b256(t)).collect::<Result<_, _>>()?,
                         data: r.data.into(),
+                        block_time: r
+                            .block_time
+                            .map(|t| db_u64(t.unix_timestamp()))
+                            .transpose()?,
                         snapshot: r
                             .snapshot
                             .map(serde_json::from_value::<OrderSnapshot>)
@@ -375,19 +389,19 @@ impl Engine {
                     })
                 })
                 .collect::<Result<Vec<_>, IndexerError>>()?;
-            let view = order::fold(db_u64(*order_id)?, &logs)?;
+            let view = order::fold(market, db_u64(*order_id)?, &logs)?;
             let result = match &view {
                 Some(v) => db::upsert_order(&mut **tx, &self.row(contract, v)?).await?,
                 None => db::clear_order(&mut **tx, self.chain_id, contract, *order_id).await?,
             };
             let Some(row) = result else { continue };
             changed += 1;
-            let contract = Address::try_from(contract.as_slice())
-                .map_err(|_| ChainError::Decode("expected 20-byte address".into()))?;
+            db::sync_offer_fills(&mut **tx, self.chain_id, contract, &row.offer_hash).await?;
             let payload = json!({
                 "id": row.id,
                 "chain_id": self.chain_id,
-                "contract": contract.to_checksum(None),
+                "contract": address.to_checksum(None),
+                "mode": market.as_str(),
                 "chain_order_id": order_id,
                 "buyer_id": row.buyer_id,
                 "seller_id": row.seller_id,
@@ -412,10 +426,14 @@ impl Engine {
             i32::try_from(*u).map_err(|_| ChainError::Decode(format!("bps {u} out of range")))
         };
         let s = v.snapshot.as_ref();
+        let stream = v.stream.as_ref();
+        let small =
+            |n: u32| i32::try_from(n).map_err(|_| ChainError::Decode(format!("{n} exceeds i32")));
         Ok(db::OrderUpsert {
             chain_id: self.chain_id,
             contract,
             chain_order_id: db_i64(v.order_id)?,
+            mode: v.market.mode(),
             buyer: v.buyer.to_vec(),
             seller: v.seller.to_vec(),
             token: v.token.to_vec(),
@@ -437,12 +455,20 @@ impl Engine {
             proposal_to_buyer: v.proposal.as_ref().map(|p| dec(&p.to_buyer)),
             proposal_expiry: v.proposal.as_ref().and_then(|p| timestamp(p.expiry)),
             disputed_by: v.dispute.as_ref().map(|d| d.by.to_vec()),
-            dispute_from_bond: v.dispute.as_ref().map(|d| d.from_bond),
+            dispute_from_bond: v
+                .dispute
+                .as_ref()
+                .map(|d| d.source == order::DisputeSource::Bond),
+            disputed_at: v.dispute.as_ref().and_then(|d| d.at).and_then(timestamp),
             ruling_to_buyer_bps: v.ruling.as_ref().map(|r| bps(&r.0)).transpose()?,
             ruling_bond_to_buyer_bps: v.ruling.as_ref().map(|r| bps(&r.1)).transpose()?,
             settled_to_buyer: v.settlement.as_ref().map(|x| dec(&x.to_buyer)),
             settled_to_seller: v.settlement.as_ref().map(|x| dec(&x.to_seller)),
             settled_to_fee: v.settlement.as_ref().map(|x| dec(&x.to_fee_recipient)),
+            interval_secs: stream.map(|x| small(x.terms.interval)).transpose()?,
+            periods: stream.map(|x| small(x.terms.periods)).transpose()?,
+            started_at: stream.and_then(|x| x.started_at).and_then(timestamp),
+            released_amount: stream.map(|x| dec(&x.claimed)),
             snapshot: s
                 .map(serde_json::to_value)
                 .transpose()
@@ -465,46 +491,56 @@ fn mark(
     }
 }
 
-/// 解码好、带快照的待写入日志。
+/// 解码好、带快照与区块时间的待写入日志。
 struct Prepared<'a> {
     log: &'a RawLog,
     decoded: event::Decoded,
     snapshot: Option<OrderSnapshot>,
+    block_time: Option<u64>,
 }
 
 impl Prepared<'_> {
     fn order_ref(&self) -> Option<OrderRef> {
-        let id = i64::try_from(self.decoded.order_id?).ok()?;
+        let id = i64::try_from(self.decoded.order_id()?).ok()?;
         Some((self.log.contract.to_vec(), id))
     }
 }
 
-/// 解码日志；下单事件在其所在区块读取 `getOrder` 快照（每单一次 eth_call）。
+/// 解码日志；下单事件在其所在区块读取 `getOrder` 快照（每单一次 eth_call），折叠要用区块时间的事件
+/// （争议）在节点日志不带 `blockTimestamp` 时另查一次区块。
 /// 无法解码的日志（ABI 之外的事件）照样入库，事件名记为 `unknown`，便于排查。
 async fn prepare<'a, S: ChainSource>(
     src: &S,
+    contracts: &Contracts,
     logs: &[&'a RawLog],
 ) -> Result<Vec<Prepared<'a>>, IndexerError> {
     let mut out = Vec::with_capacity(logs.len());
     for log in logs {
-        let decoded = event::decode(log).unwrap_or_else(|e| {
+        let market = contracts.market(log.contract);
+        let decoded = event::decode(log, market).unwrap_or_else(|e| {
             tracing::warn!(tx = %log.key.tx_hash, error = %e, "undecodable log stored as unknown");
             event::Decoded {
                 name: "unknown".into(),
-                order_id: None,
+                order: None,
                 args: Value::Null,
             }
         });
-        let snapshot = match (decoded.name.as_str(), decoded.order_id) {
-            ("OrderCreated", Some(id)) => {
-                src.order_snapshot(log.contract, id, log.block.hash).await?
+        let (mut snapshot, mut block_time) = (None, log.block_timestamp);
+        if let (Some(market), Some((id, ev))) = (market, &decoded.order) {
+            if matches!(ev, OrderEvent::Created { .. }) {
+                snapshot = src
+                    .order_snapshot(market, log.contract, *id, log.block.hash)
+                    .await?;
             }
-            _ => None,
-        };
+            if ev.needs_block_time() && block_time.is_none() {
+                block_time = src.block_time(log.block.hash).await?;
+            }
+        }
         out.push(Prepared {
             log,
             decoded,
             snapshot,
+            block_time,
         });
     }
     Ok(out)

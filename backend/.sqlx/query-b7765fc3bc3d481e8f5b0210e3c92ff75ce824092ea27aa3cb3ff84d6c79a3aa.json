@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, chain_id, address, passkey_id, created_at FROM wallets WHERE user_id = $1 AND chain_id = $2",
+  "query": "SELECT id, chain_id, address, passkey_id, init_version, created_at FROM wallets\n         WHERE user_id = $1 AND chain_id = $2",
   "describe": {
     "columns": [
       {
@@ -49,6 +49,17 @@
       },
       {
         "ordinal": 4,
+        "name": "init_version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "init_version"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -70,8 +81,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "94cfa3c3b1268e0e93e31c14afc12797a4677623a7988b075ef1d1ed39a96c80"
+  "hash": "b7765fc3bc3d481e8f5b0210e3c92ff75ce824092ea27aa3cb3ff84d6c79a3aa"
 }

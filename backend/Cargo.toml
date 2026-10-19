@@ -22,7 +22,7 @@ forum-content = { path = "crates/content" }
 tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "signal", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 axum = "=0.8.9"
-tower-http = { version = "=0.7.1", features = ["trace", "timeout", "compression-gzip"] }
+tower-http = { version = "=0.7.1", features = ["trace", "timeout", "compression-gzip", "cors"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "1"
 thiserror = "=2.0.21"
@@ -53,9 +53,9 @@ webauthn-rs = { version = "=0.5.5", features = ["danger-allow-state-serialisatio
 webauthn-authenticator-rs = { version = "=0.5.5", default-features = false, features = ["softpasskey"] }
 # webauthn-rs 依赖 OpenSSL；musl 静态构建时用 vendored 源码编译。
 openssl = { version = "0.10", features = ["vendored"] }
-# EIP-712 报价哈希（keccak256），与合约 `Escrow.hashOffer` 逐字节一致。
-sha3 = "=0.12.0"
 alloy = { version = "=2.5.0", default-features = false, features = ["std", "sol-types", "json", "json-abi", "dyn-abi", "contract", "providers", "provider-http", "provider-ws", "pubsub", "rpc-types", "reqwest", "reqwest-rustls-tls", "serde"] }
+# forum-core 的 EIP-712 报价哈希只需要 keccak256；与 alloy 用同一个版本。
+alloy-primitives = { version = "=1.7.3", default-features = false }
 toml = "=1.1.5"
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 

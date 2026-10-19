@@ -10,18 +10,14 @@ use std::time::{Duration, Instant};
 
 use alloy::eips::BlockId;
 use alloy::primitives::{Address, B256, TxKind};
-use alloy::providers::{DynProvider, Provider, ProviderBuilder};
-use alloy::rpc::client::RpcClient;
+use alloy::providers::{DynProvider, Provider};
 use alloy::rpc::types::{BlockNumberOrTag, Filter, TransactionInput, TransactionRequest};
-use alloy::transports::http::reqwest;
 use forum_chain::ChainError;
 use forum_chain::config::ChainConfig;
 use forum_chain::event::{BlockRef, RawLog};
+use forum_chain::order::Market;
 use forum_chain::reorg::{BlockTag, ChainSource};
 use forum_chain::snapshot::{self, OrderSnapshot};
-
-/// 单次 HTTP 请求超时；超时即视为节点故障并切换。
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct RpcSource {
     providers: Vec<(String, DynProvider)>,
@@ -33,33 +29,8 @@ pub struct RpcSource {
 
 impl RpcSource {
     pub fn new(cfg: &ChainConfig) -> Result<Self, ChainError> {
-        let client = |direct: bool| {
-            let b = reqwest::Client::builder().timeout(REQUEST_TIMEOUT);
-            // 本机节点（开发、测试用的 anvil）不走 HTTP_PROXY。
-            let b = if direct { b.no_proxy() } else { b };
-            b.build().map_err(|e| ChainError::Config(e.to_string()))
-        };
-        let (proxied, direct) = (client(false)?, client(true)?);
-        let providers = cfg
-            .endpoints()
-            .into_iter()
-            .map(|e| {
-                let url: reqwest::Url = e
-                    .http
-                    .parse()
-                    .map_err(|err| ChainError::Config(format!("rpc url: {err}")))?;
-                let loopback = matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
-                let http = if loopback { &direct } else { &proxied };
-                let client = RpcClient::new_http_with_client(http.clone(), url.clone());
-                let provider = ProviderBuilder::new()
-                    .disable_recommended_fillers()
-                    .connect_client(client)
-                    .erased();
-                Ok((redact(&url), provider))
-            })
-            .collect::<Result<_, ChainError>>()?;
         Ok(Self {
-            providers,
+            providers: forum_chain::rpc::http_providers(cfg)?,
             contracts: cfg.indexed_contracts(),
             active: AtomicUsize::new(0),
             switched_at: Mutex::new(None),
@@ -120,15 +91,6 @@ impl RpcSource {
     }
 }
 
-/// 日志里只出现主机与端口，路径和查询串里的密钥不打印。
-pub(crate) fn redact(url: &reqwest::Url) -> String {
-    let host = url.host_str().unwrap_or("?");
-    match url.port() {
-        Some(port) => format!("{}://{host}:{port}", url.scheme()),
-        None => format!("{}://{host}", url.scheme()),
-    }
-}
-
 impl ChainSource for RpcSource {
     async fn block(&self, tag: BlockTag) -> Result<Option<BlockRef>, ChainError> {
         let tag = match tag {
@@ -167,11 +129,12 @@ impl ChainSource for RpcSource {
 
     async fn order_snapshot(
         &self,
+        market: Market,
         contract: Address,
         order_id: u64,
         at: B256,
     ) -> Result<Option<OrderSnapshot>, ChainError> {
-        let input = snapshot::encode_call(order_id)?;
+        let input = snapshot::encode_call(market, order_id)?;
         self.call("eth_call getOrder", |p| {
             let tx = TransactionRequest {
                 to: Some(TxKind::Call(contract)),
@@ -180,8 +143,16 @@ impl ChainSource for RpcSource {
             };
             async move {
                 let out = p.call(tx).block(BlockId::hash(at)).await?;
-                snapshot::decode_return(&out)
+                snapshot::decode_return(market, &out)
             }
+        })
+        .await
+    }
+
+    async fn block_time(&self, hash: B256) -> Result<Option<u64>, ChainError> {
+        self.call("eth_getBlockByHash", |p| async move {
+            let block = p.get_block_by_hash(hash).await?;
+            Ok(block.map(|b| b.header.timestamp))
         })
         .await
     }

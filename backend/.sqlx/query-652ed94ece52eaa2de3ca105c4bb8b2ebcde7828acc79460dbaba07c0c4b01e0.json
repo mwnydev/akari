@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, chain_id, address, passkey_id, created_at FROM wallets WHERE user_id = $1 ORDER BY chain_id",
+  "query": "INSERT INTO wallets (user_id, chain_id, address, passkey_id, init_version) VALUES ($1, $2, $3, $4, $5)\n           ON CONFLICT DO NOTHING\n           RETURNING id, chain_id, address, passkey_id, init_version, created_at",
   "describe": {
     "columns": [
       {
@@ -49,6 +49,17 @@
       },
       {
         "ordinal": 4,
+        "name": "init_version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "init_version"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -61,7 +72,11 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Int4"
       ]
     },
     "nullable": [
@@ -69,8 +84,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "7afb7f5875ac86b9f9d87e411b2034f3fcadac31908d287e7643bd097838b211"
+  "hash": "652ed94ece52eaa2de3ca105c4bb8b2ebcde7828acc79460dbaba07c0c4b01e0"
 }

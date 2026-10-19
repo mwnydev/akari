@@ -145,13 +145,36 @@ async fn register_assert_and_bind_wallet(db: PgPool) {
 
     // 链 ID 不对、零地址
     for body in [
-        json!({"chain_id": 1, "address": ADDR}),
-        json!({"chain_id": CHAIN_ID, "address": "0x0000000000000000000000000000000000000000"}),
+        json!({"chain_id": 1, "address": ADDR, "init_version": 1}),
+        json!({"chain_id": CHAIN_ID, "address": "0x0000000000000000000000000000000000000000", "init_version": 1}),
+        json!({"chain_id": CHAIN_ID, "address": ADDR, "init_version": 2}),
     ] {
         let r = wallet_call(&app, "POST", "/api/v1/wallet/account", Some(body), &cookies).await;
-        assert_eq!(r.status, StatusCode::BAD_REQUEST);
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{:?}", r.body);
     }
-    let body = json!({"chain_id": CHAIN_ID, "address": ADDR});
+    // 必须说明地址是按哪个版本算的
+    let r = wallet_call(
+        &app,
+        "POST",
+        "/api/v1/wallet/account",
+        Some(json!({"chain_id": CHAIN_ID, "address": ADDR})),
+        &cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // 地址与 Passkey 按该版本推出的不符
+    let mismatch =
+        json!({"chain_id": CHAIN_ID, "address": common::MISMATCHED_ADDRESS, "init_version": 1});
+    let r = wallet_call(
+        &app,
+        "POST",
+        "/api/v1/wallet/account",
+        Some(mismatch),
+        &cookies,
+    )
+    .await;
+    assert_eq!(r.body["code"], "WALLET_ADDRESS_MISMATCH");
+    let body = json!({"chain_id": CHAIN_ID, "address": ADDR, "init_version": 1});
     let r = wallet_call(
         &app,
         "POST",
@@ -163,9 +186,9 @@ async fn register_assert_and_bind_wallet(db: PgPool) {
     assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
     assert_eq!(r.body["passkey_id"], passkey_id);
     assert_eq!(r.body["address"], ADDR);
+    assert_eq!(r.body["init_version"], 1);
     // 每人每条链一个
-    let other =
-        json!({"chain_id": CHAIN_ID, "address": "0x5555555555555555555555555555555555555555"});
+    let other = json!({"chain_id": CHAIN_ID, "address": "0x5555555555555555555555555555555555555555", "init_version": 1});
     let r = wallet_call(
         &app,
         "POST",
@@ -180,6 +203,7 @@ async fn register_assert_and_bind_wallet(db: PgPool) {
     assert_eq!(r.body["enabled"], true);
     assert_eq!(r.body["passkeys"].as_array().unwrap().len(), 1);
     assert_eq!(r.body["wallets"][0]["address"], ADDR);
+    assert_eq!(r.body["wallets"][0]["init_version"], 1);
 
     // 新会话（另一台设备登录）：没有近期验证，绑定 / 再注册都被拒绝
     let email = email_of(&db, id).await;
@@ -332,7 +356,7 @@ async fn assert_needs_a_passkey_and_addresses_are_unique(db: PgPool) {
         &app,
         "POST",
         "/api/v1/wallet/account",
-        Some(json!({"chain_id": CHAIN_ID, "address": ADDR})),
+        Some(json!({"chain_id": CHAIN_ID, "address": ADDR, "init_version": 1})),
         &nobody,
     )
     .await;
@@ -355,9 +379,118 @@ async fn assert_needs_a_passkey_and_addresses_are_unique(db: PgPool) {
         &app,
         "POST",
         "/api/v1/wallet/account",
-        Some(json!({"chain_id": CHAIN_ID, "address": ADDR})),
+        Some(json!({"chain_id": CHAIN_ID, "address": ADDR, "init_version": 1})),
         &cb,
     )
     .await;
     assert_eq!(r.status, StatusCode::CONFLICT);
+}
+
+/// 本机 anvil 上装 Kernel v3.3 工厂的 chain 配置（只有 RPC 有意义）。
+fn anvil_chain(anvil: &forum_chain::anvil::Anvil) -> forum_chain::config::ChainConfig {
+    use forum_chain::config::*;
+    let placeholder = alloy::primitives::Address::repeat_byte(1);
+    ChainConfig {
+        chain_id: 31_337,
+        name: "anvil".into(),
+        rpc: RpcConfig {
+            primary: Endpoint {
+                http: anvil.http(),
+                ws: None,
+            },
+            backup: None,
+        },
+        contracts: Contracts {
+            escrow: placeholder,
+            stream: placeholder,
+            config: placeholder,
+            start_block: 0,
+        },
+        token: Token {
+            symbol: "mUSDT".into(),
+            address: placeholder,
+            decimals: 6,
+        },
+        confirmation: ConfirmationPolicy::default(),
+        indexer: IndexerPolicy::default(),
+        wallet_init_versions: vec![forum_chain::anvil::dev_wallet_version()],
+    }
+}
+
+/// 真实地址校验：在 anvil 上经 Kernel 工厂 `getAddress` 推算（ADR 0008）。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn wallet_address_is_verified_against_the_kernel_factory(db: PgPool) {
+    use forum_api::wallet::ChainAddressVerifier;
+    use forum_chain::anvil::{Anvil, anvil_bin, dev_wallet_version, install_kernel_factory};
+    use forum_chain::kernel::{AddressResolver, PasskeyPublicKey};
+
+    let Some(bin) = anvil_bin() else {
+        eprintln!("skipped: anvil not found (install Foundry or set ANVIL_BIN)");
+        return;
+    };
+    let anvil = Anvil::spawn(&bin).unwrap();
+    let version = dev_wallet_version();
+    install_kernel_factory(&anvil.provider().await.unwrap(), &version)
+        .await
+        .unwrap();
+    let resolver = AddressResolver::new(&anvil_chain(&anvil)).unwrap();
+
+    // ZeroDev SDK 5.5.10 对同一组参数（Arbitrum Sepolia 分叉上 getSenderAddress）算出的地址。
+    let sdk_key = PasskeyPublicKey::new([0x11; 32], [0x22; 32], b"akari-test-credential");
+    assert_eq!(
+        resolver.address(&version, &sdk_key).await.unwrap(),
+        alloy::primitives::address!("960D3E65b1370D32E31A86D1DAD6ae51E25Bb833")
+    );
+    // 工厂里的 Kernel 实现与配置不符：配置错误，不是「地址不符」。
+    let wrong_impl = forum_chain::config::WalletInitVersion {
+        kernel_implementation: alloy::primitives::Address::repeat_byte(7),
+        ..version.clone()
+    };
+    assert!(resolver.address(&wrong_impl, &sdk_key).await.is_err());
+
+    let mut wallet = common::wallet_state();
+    wallet.verifier = std::sync::Arc::new(ChainAddressVerifier(resolver));
+    let Some(app) = common::build_with(db.clone(), wallet) else {
+        return;
+    };
+    let (id, cookies) = user(&app, &db).await;
+    set_username(&db, id, "erin").await;
+    reverify(&app, &db, &cookies).await;
+    let mut auth = soft_passkey();
+    let r = register_passkey(&app, &mut auth, &cookies).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let (cred, x, y): (Vec<u8>, Vec<u8>, Vec<u8>) =
+        sqlx::query_as("SELECT credential_id, pubkey_x, pubkey_y FROM passkeys WHERE id = $1")
+            .bind(r.body["id"].as_i64().unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    let key = PasskeyPublicKey::new(x.try_into().unwrap(), y.try_into().unwrap(), &cred);
+    let expected = AddressResolver::new(&anvil_chain(&anvil))
+        .unwrap()
+        .address(&version, &key)
+        .await
+        .unwrap();
+
+    let body =
+        |address: String| json!({"chain_id": CHAIN_ID, "address": address, "init_version": 1});
+    let r = wallet_call(
+        &app,
+        "POST",
+        "/api/v1/wallet/account",
+        Some(body(ADDR.into())),
+        &cookies,
+    )
+    .await;
+    assert_eq!(r.body["code"], "WALLET_ADDRESS_MISMATCH");
+    let r = wallet_call(
+        &app,
+        "POST",
+        "/api/v1/wallet/account",
+        Some(body(format!("{expected:#x}"))),
+        &cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    assert_eq!(r.body["address"], format!("{expected:#x}"));
 }

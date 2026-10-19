@@ -24,6 +24,7 @@ pub struct ChainRow<'a> {
     pub chain_id: i64,
     pub name: &'a str,
     pub escrow: &'a [u8],
+    pub stream: &'a [u8],
     pub config: &'a [u8],
     pub token: &'a [u8],
     pub token_symbol: &'a str,
@@ -36,10 +37,11 @@ pub struct ChainRow<'a> {
 pub async fn upsert_chain(db: impl PgExecutor<'_>, c: ChainRow<'_>) -> Result<(), sqlx::Error> {
     sqlx::query!(
         "INSERT INTO chains (chain_id, name, escrow_address, config_address, token_address, token_symbol,
-                             token_decimals, start_block, safe_depth, finalized_depth)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                             token_decimals, start_block, safe_depth, finalized_depth, stream_address)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (chain_id) DO UPDATE SET
            name = EXCLUDED.name, escrow_address = EXCLUDED.escrow_address,
+           stream_address = EXCLUDED.stream_address,
            config_address = EXCLUDED.config_address, token_address = EXCLUDED.token_address,
            token_symbol = EXCLUDED.token_symbol, token_decimals = EXCLUDED.token_decimals,
            start_block = EXCLUDED.start_block, safe_depth = EXCLUDED.safe_depth,
@@ -53,7 +55,8 @@ pub async fn upsert_chain(db: impl PgExecutor<'_>, c: ChainRow<'_>) -> Result<()
         c.token_decimals,
         c.start_block,
         c.safe_depth,
-        c.finalized_depth
+        c.finalized_depth,
+        c.stream
     )
     .execute(db)
     .await?;
@@ -279,6 +282,7 @@ pub async fn insert_event(
 pub struct OrderEventRow {
     pub block_number: i64,
     pub log_index: i32,
+    pub block_time: Option<OffsetDateTime>,
     pub level: String,
     pub topics: Vec<Vec<u8>>,
     pub data: Vec<u8>,
@@ -293,7 +297,8 @@ pub async fn order_events(
 ) -> Result<Vec<OrderEventRow>, sqlx::Error> {
     sqlx::query_as!(
         OrderEventRow,
-        r#"SELECT block_number, log_index, level::text AS "level!", topics, data, payload->'snapshot' AS snapshot
+        r#"SELECT block_number, log_index, block_time, level::text AS "level!", topics, data,
+                  payload->'snapshot' AS snapshot
            FROM escrow_events
            WHERE chain_id = $1 AND contract = $2 AND order_id = $3
            ORDER BY block_number, log_index"#,
@@ -311,6 +316,8 @@ pub struct OrderUpsert<'a> {
     pub chain_id: i64,
     pub contract: &'a [u8],
     pub chain_order_id: i64,
+    /// 0 = 一次性担保、1 = 分期。
+    pub mode: i16,
     pub buyer: Vec<u8>,
     pub seller: Vec<u8>,
     pub token: Vec<u8>,
@@ -333,11 +340,17 @@ pub struct OrderUpsert<'a> {
     pub proposal_expiry: Option<OffsetDateTime>,
     pub disputed_by: Option<Vec<u8>>,
     pub dispute_from_bond: Option<bool>,
+    pub disputed_at: Option<OffsetDateTime>,
     pub ruling_to_buyer_bps: Option<i32>,
     pub ruling_bond_to_buyer_bps: Option<i32>,
     pub settled_to_buyer: Option<String>,
     pub settled_to_seller: Option<String>,
     pub settled_to_fee: Option<String>,
+    pub interval_secs: Option<i32>,
+    pub periods: Option<i32>,
+    pub started_at: Option<OffsetDateTime>,
+    /// 分期已领取（合约 `Order.claimed`）；一次性担保为 `None`（存 0）。
+    pub released_amount: Option<String>,
     pub snapshot: Option<Value>,
     pub level: &'a str,
     pub created_block: i64,
@@ -345,11 +358,12 @@ pub struct OrderUpsert<'a> {
 }
 
 /// 订单行变化后的结果。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderChanged {
     pub id: i64,
     pub buyer_id: Option<i64>,
     pub seller_id: Option<i64>,
+    pub offer_hash: Vec<u8>,
 }
 
 /// 写入订单；内容没变时返回 `None`。
@@ -363,6 +377,7 @@ pub async fn upsert_order(
         o.chain_id,
         o.contract,
         o.chain_order_id,
+        o.mode,
         o.buyer,
         o.seller,
         o.token,
@@ -385,11 +400,16 @@ pub async fn upsert_order(
         o.proposal_expiry,
         o.disputed_by,
         o.dispute_from_bond,
+        o.disputed_at,
         o.ruling_to_buyer_bps,
         o.ruling_bond_to_buyer_bps,
         o.settled_to_buyer,
         o.settled_to_seller,
         o.settled_to_fee,
+        o.interval_secs,
+        o.periods,
+        o.started_at,
+        o.released_amount,
         o.snapshot,
         o.level,
         o.created_block,
@@ -410,13 +430,31 @@ pub async fn clear_order(
         OrderChanged,
         "UPDATE escrow_orders SET state = 0, level = 'latest', updated_at = now()
          WHERE chain_id = $1 AND contract = $2 AND chain_order_id = $3 AND state <> 0
-         RETURNING id, buyer_id, seller_id",
+         RETURNING id, buyer_id, seller_id, offer_hash",
         chain_id,
         contract,
         chain_order_id
     )
     .fetch_optional(db)
     .await
+}
+
+/// 订单行变化后同步生成它的报价卡片（见 `queries/offer_fills_sync.sql`）。返回卡片状态是否改变。
+pub async fn sync_offer_fills(
+    db: impl PgExecutor<'_>,
+    chain_id: i64,
+    contract: &[u8],
+    offer_hash: &[u8],
+) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query_file!(
+        "queries/offer_fills_sync.sql",
+        chain_id,
+        contract,
+        offer_hash
+    )
+    .execute(db)
+    .await?;
+    Ok(done.rows_affected() > 0)
 }
 
 /// 把 `upto` 及之前、级别低于 `level` 的事件升级为 `level`，返回受影响的订单。

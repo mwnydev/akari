@@ -62,3 +62,15 @@ pub async fn scope(db: impl PgExecutor<'_>, user_id: i64) -> Result<(bool, Vec<i
         rows.into_iter().filter_map(|r| r.forum_id).collect(),
     ))
 }
+
+/// 是否仲裁员（可查看全部订单详情，plan 第 7 节「仲裁规则」）。
+pub async fn is_arbiter(db: impl PgExecutor<'_>, user_id: i64) -> Result<bool, sqlx::Error> {
+    let row = sqlx::query!(
+        r#"SELECT EXISTS (SELECT 1 FROM staff_roles WHERE user_id = $1 AND role = $2) AS "ok!""#,
+        user_id,
+        ROLE_ARBITER
+    )
+    .fetch_one(db)
+    .await?;
+    Ok(row.ok)
+}

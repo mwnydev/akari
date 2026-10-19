@@ -123,6 +123,17 @@ async fn params_expose_domain_and_bounds(db: PgPool) {
     assert_eq!(r.body["min_window"], 86_400);
     assert_eq!(r.body["max_window"], 30 * 86_400);
     assert_eq!(r.body["defaults"]["private_offer_ttl"], 86_400);
+    let versions = r.body["wallet_init_versions"].as_array().unwrap();
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0]["version"], 1);
+    assert_eq!(
+        versions[0]["kernel_factory"],
+        "0x2577507b78c2008ff367261cb6285d44ba5ef2e9"
+    );
+    assert_eq!(
+        versions[0]["approve_amount"],
+        alloy::primitives::U256::MAX.to_string()
+    );
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]

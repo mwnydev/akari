@@ -89,26 +89,35 @@ pub struct Wallet {
     pub chain_id: i64,
     pub address: Vec<u8>,
     pub passkey_id: i64,
+    /// 计算地址用的初始化参数版本（ADR 0008）。
+    pub init_version: i32,
     pub created_at: OffsetDateTime,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NewWallet<'a> {
+    pub user_id: i64,
+    pub chain_id: i64,
+    pub address: &'a [u8],
+    pub passkey_id: i64,
+    pub init_version: i32,
 }
 
 /// 登记钱包地址。每人每条链一个、每个地址只属于一人：冲突返回 `None`。
 pub async fn insert_wallet(
     db: impl PgExecutor<'_>,
-    user_id: i64,
-    chain_id: i64,
-    address: &[u8],
-    passkey_id: i64,
+    w: NewWallet<'_>,
 ) -> Result<Option<Wallet>, sqlx::Error> {
     sqlx::query_as!(
         Wallet,
-        r#"INSERT INTO wallets (user_id, chain_id, address, passkey_id) VALUES ($1, $2, $3, $4)
+        r#"INSERT INTO wallets (user_id, chain_id, address, passkey_id, init_version) VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT DO NOTHING
-           RETURNING id, chain_id, address, passkey_id, created_at"#,
-        user_id,
-        chain_id,
-        address,
-        passkey_id
+           RETURNING id, chain_id, address, passkey_id, init_version, created_at"#,
+        w.user_id,
+        w.chain_id,
+        w.address,
+        w.passkey_id,
+        w.init_version
     )
     .fetch_optional(db)
     .await
@@ -117,7 +126,7 @@ pub async fn insert_wallet(
 pub async fn wallets(db: impl PgExecutor<'_>, user_id: i64) -> Result<Vec<Wallet>, sqlx::Error> {
     sqlx::query_as!(
         Wallet,
-        "SELECT id, chain_id, address, passkey_id, created_at FROM wallets WHERE user_id = $1 ORDER BY chain_id",
+        "SELECT id, chain_id, address, passkey_id, init_version, created_at FROM wallets WHERE user_id = $1 ORDER BY chain_id",
         user_id
     )
     .fetch_all(db)
@@ -131,7 +140,7 @@ pub async fn wallet_on(
 ) -> Result<Option<Wallet>, sqlx::Error> {
     sqlx::query_as!(
         Wallet,
-        "SELECT id, chain_id, address, passkey_id, created_at FROM wallets WHERE user_id = $1 AND chain_id = $2",
+        "SELECT id, chain_id, address, passkey_id, init_version, created_at FROM wallets\n         WHERE user_id = $1 AND chain_id = $2",
         user_id,
         chain_id
     )

@@ -7,6 +7,7 @@ use alloy::sol_types::SolEventInterface;
 
 use crate::ChainError;
 use crate::bindings::Escrow::EscrowEvents;
+use crate::bindings::StreamEscrow::StreamEscrowEvents;
 use crate::snapshot::OrderSnapshot;
 
 /// 链上确认级别（plan 第 2 节「链上状态分级确认」）；顺序即确认程度。
@@ -80,17 +81,81 @@ impl OrderState {
     }
 }
 
+/// 订单所在的担保合约（`escrow_orders.mode`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Market {
+    /// 一次性担保 `Escrow`。
+    Escrow,
+    /// 分期担保 `StreamEscrow`。
+    Stream,
+}
+
+impl Market {
+    /// 与数据库列 `escrow_orders.mode` 的取值一致。
+    pub fn mode(self) -> i16 {
+        match self {
+            Self::Escrow => 0,
+            Self::Stream => 1,
+        }
+    }
+
+    pub fn from_mode(mode: i16) -> Result<Self, ChainError> {
+        match mode {
+            0 => Ok(Self::Escrow),
+            1 => Ok(Self::Stream),
+            _ => Err(ChainError::Decode(format!("unknown order mode {mode}"))),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Escrow => "escrow",
+            Self::Stream => "stream",
+        }
+    }
+}
+
+/// 争议费从哪里付（一次性担保只有钱包与保证金两种）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisputeSource {
+    Wallet,
+    /// 分期：从本单已解锁未领取的本金里扣（计入已领取）。
+    Unlocked,
+    Bond,
+}
+
+impl DisputeSource {
+    /// 与 `StreamEscrow.FeeSource` 一致。
+    fn from_stream(v: u8) -> Result<Self, ChainError> {
+        Ok(match v {
+            0 => Self::Wallet,
+            1 => Self::Unlocked,
+            2 => Self::Bond,
+            _ => return Err(ChainError::Decode(format!("unknown fee source {v}"))),
+        })
+    }
+}
+
+/// 分期条款：每期秒数与期数。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamTerms {
+    pub interval: u32,
+    pub periods: u32,
+}
+
 /// 影响订单状态的事件（`sol!` 类型解码后的精简形式）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OrderEvent {
     Created {
         buyer: Address,
         seller: Address,
-        token: Address,
+        /// 分期的下单事件不带代币，取自下单快照。
+        token: Option<Address>,
         amount: U256,
         offer_hash: B256,
         listing_hash: B256,
         instant: bool,
+        stream: Option<StreamTerms>,
     },
     AuctionSettled {
         auction_id: U256,
@@ -104,6 +169,13 @@ pub enum OrderEvent {
     DeadlineExtended {
         deadline: u64,
     },
+    Started {
+        started_at: u64,
+    },
+    Claimed {
+        to_seller: U256,
+        claim_gas: U256,
+    },
     EndProposed {
         proposer: Address,
         to_buyer: U256,
@@ -112,7 +184,7 @@ pub enum OrderEvent {
     Disputed {
         by: Address,
         fee: U256,
-        from_bond: bool,
+        source: DisputeSource,
     },
     Resolved {
         to_buyer_bps: U256,
@@ -126,31 +198,54 @@ pub enum OrderEvent {
     },
 }
 
+impl OrderEvent {
+    /// 折叠要用到所在区块的时间（争议时间：分期解锁冻结在这一刻）。
+    pub fn needs_block_time(&self) -> bool {
+        matches!(self, Self::Disputed { .. })
+    }
+}
+
 fn order_id(id: U256) -> Result<u64, ChainError> {
     u64::try_from(id).map_err(|_| ChainError::Decode(format!("order id {id} exceeds u64")))
 }
 
 /// 解码订单类事件；其他事件（押金池、配置、提现等）返回 `None`。
-pub fn decode(topics: &[B256], data: &[u8]) -> Result<Option<(u64, OrderEvent)>, ChainError> {
+pub fn decode(
+    market: Market,
+    topics: &[B256],
+    data: &[u8],
+) -> Result<Option<(u64, OrderEvent)>, ChainError> {
     let Some(topic0) = topics.first() else {
         return Ok(None);
     };
-    if !EscrowEvents::SELECTORS.contains(&topic0.0) {
-        return Ok(None);
+    match market {
+        Market::Escrow if EscrowEvents::SELECTORS.contains(&topic0.0) => {
+            let ev = EscrowEvents::decode_raw_log(topics, data)
+                .map_err(|e| ChainError::Decode(format!("escrow event: {e}")))?;
+            decode_escrow(ev)
+        }
+        Market::Stream if StreamEscrowEvents::SELECTORS.contains(&topic0.0) => {
+            let ev = StreamEscrowEvents::decode_raw_log(topics, data)
+                .map_err(|e| ChainError::Decode(format!("stream escrow event: {e}")))?;
+            decode_stream(ev)
+        }
+        _ => Ok(None),
     }
-    let ev = EscrowEvents::decode_raw_log(topics, data)
-        .map_err(|e| ChainError::Decode(format!("escrow event: {e}")))?;
+}
+
+fn decode_escrow(ev: EscrowEvents) -> Result<Option<(u64, OrderEvent)>, ChainError> {
     Ok(Some(match ev {
         EscrowEvents::OrderCreated(e) => (
             order_id(e.orderId)?,
             OrderEvent::Created {
                 buyer: e.buyer,
                 seller: e.seller,
-                token: e.token,
+                token: Some(e.token),
                 amount: e.amount,
                 offer_hash: e.offerHash,
                 listing_hash: e.listingHash,
                 instant: e.instant,
+                stream: None,
             },
         ),
         EscrowEvents::AuctionSettled(e) => (
@@ -190,7 +285,11 @@ pub fn decode(topics: &[B256], data: &[u8]) -> Result<Option<(u64, OrderEvent)>,
             OrderEvent::Disputed {
                 by: e.by,
                 fee: e.disputeFee,
-                from_bond: e.fromBond,
+                source: if e.fromBond {
+                    DisputeSource::Bond
+                } else {
+                    DisputeSource::Wallet
+                },
             },
         ),
         EscrowEvents::Resolved(e) => (
@@ -221,6 +320,82 @@ pub fn decode(topics: &[B256], data: &[u8]) -> Result<Option<(u64, OrderEvent)>,
     }))
 }
 
+fn decode_stream(ev: StreamEscrowEvents) -> Result<Option<(u64, OrderEvent)>, ChainError> {
+    Ok(Some(match ev {
+        StreamEscrowEvents::OrderCreated(e) => (
+            order_id(e.orderId)?,
+            OrderEvent::Created {
+                buyer: e.buyer,
+                seller: e.seller,
+                token: None,
+                amount: e.amount,
+                offer_hash: e.offerHash,
+                listing_hash: e.listingHash,
+                instant: false,
+                stream: Some(StreamTerms {
+                    interval: e.interval,
+                    periods: e.periods,
+                }),
+            },
+        ),
+        StreamEscrowEvents::Started(e) => (
+            order_id(e.orderId)?,
+            OrderEvent::Started {
+                started_at: e.startedAt,
+            },
+        ),
+        StreamEscrowEvents::Claimed(e) => (
+            order_id(e.orderId)?,
+            OrderEvent::Claimed {
+                to_seller: e.toSeller,
+                claim_gas: e.claimGas,
+            },
+        ),
+        StreamEscrowEvents::DeadlineExtended(e) => (
+            order_id(e.orderId)?,
+            OrderEvent::DeadlineExtended {
+                deadline: e.deadline,
+            },
+        ),
+        StreamEscrowEvents::EndProposed(e) => (
+            order_id(e.orderId)?,
+            OrderEvent::EndProposed {
+                proposer: e.proposer,
+                to_buyer: e.toBuyer,
+                expiry: e.expiry,
+            },
+        ),
+        StreamEscrowEvents::Disputed(e) => (
+            order_id(e.orderId)?,
+            OrderEvent::Disputed {
+                by: e.by,
+                fee: e.disputeFee,
+                source: DisputeSource::from_stream(e.source)?,
+            },
+        ),
+        StreamEscrowEvents::Resolved(e) => (
+            order_id(e.orderId)?,
+            OrderEvent::Resolved {
+                to_buyer_bps: e.toBuyerBps,
+                bond_to_buyer_bps: e.bondToBuyerBps,
+            },
+        ),
+        StreamEscrowEvents::Settled(e) => (
+            order_id(e.orderId)?,
+            OrderEvent::Settled {
+                state: OrderState::from_u8(e.state)?,
+                to_buyer: e.toBuyer,
+                to_seller: e.toSeller,
+                to_fee_recipient: e.toFeeRecipient,
+            },
+        ),
+        StreamEscrowEvents::Credited(_)
+        | StreamEscrowEvents::EIP712DomainChanged(_)
+        | StreamEscrowEvents::Withdrawn(_)
+        | StreamEscrowEvents::OfferCancelled(_) => return Ok(None),
+    }))
+}
+
 /// 折叠输入：一条已入库的订单事件。
 #[derive(Debug, Clone)]
 pub struct OrderLog {
@@ -229,6 +404,8 @@ pub struct OrderLog {
     pub level: Level,
     pub topics: Vec<B256>,
     pub data: Bytes,
+    /// 区块时间（Unix 秒）；只保证 [`OrderEvent::needs_block_time`] 的事件有。
+    pub block_time: Option<u64>,
     /// 仅下单事件带：下单区块的 `getOrder` 快照。
     pub snapshot: Option<OrderSnapshot>,
 }
@@ -244,7 +421,9 @@ pub struct Proposal {
 pub struct Dispute {
     pub by: Address,
     pub fee: U256,
-    pub from_bond: bool,
+    pub source: DisputeSource,
+    /// 发起争议的区块时间（Unix 秒）。
+    pub at: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -254,9 +433,20 @@ pub struct Settlement {
     pub to_fee_recipient: U256,
 }
 
+/// 分期订单的进度。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamProgress {
+    pub terms: StreamTerms,
+    /// 卖家开始服务的时间；未开始为 `None`。
+    pub started_at: Option<u64>,
+    /// 已领取的可解锁净本金（与合约 `Order.claimed` 一致：含领取 gas 与从已解锁部分扣的争议费）。
+    pub claimed: U256,
+}
+
 /// 折叠结果，对应 escrow_orders 的一行。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderView {
+    pub market: Market,
     pub order_id: u64,
     pub buyer: Address,
     pub seller: Address,
@@ -268,8 +458,10 @@ pub struct OrderView {
     pub auction_id: Option<U256>,
     pub snapshot: Option<OrderSnapshot>,
     pub state: OrderState,
+    /// 一次性：发货期限；分期：开始期限。
     pub ship_deadline: Option<u64>,
     pub confirm_deadline: Option<u64>,
+    pub stream: Option<StreamProgress>,
     pub proposal: Option<Proposal>,
     pub dispute: Option<Dispute>,
     /// 仲裁裁决：(本金给买家的万分比, 押金给买家的万分比)。
@@ -282,12 +474,16 @@ pub struct OrderView {
 }
 
 /// 按区块顺序折叠一个订单的事件。没有下单事件（被回滚，或还没补拉到）时返回 `None`。
-pub fn fold(order_id: u64, logs: &[OrderLog]) -> Result<Option<OrderView>, ChainError> {
+pub fn fold(
+    market: Market,
+    order_id: u64,
+    logs: &[OrderLog],
+) -> Result<Option<OrderView>, ChainError> {
     let mut sorted: Vec<&OrderLog> = logs.iter().collect();
     sorted.sort_by_key(|l| (l.block_number, l.log_index));
     let mut view: Option<OrderView> = None;
     for log in sorted {
-        let Some((id, ev)) = decode(&log.topics, &log.data)? else {
+        let Some((id, ev)) = decode(market, &log.topics, &log.data)? else {
             continue;
         };
         if id != order_id {
@@ -303,26 +499,33 @@ pub fn fold(order_id: u64, logs: &[OrderLog]) -> Result<Option<OrderView>, Chain
             offer_hash,
             listing_hash,
             instant,
+            stream,
         } = ev
         {
+            let snapshot = log.snapshot.as_ref();
             view = Some(OrderView {
+                market,
                 order_id,
                 buyer,
                 seller,
-                token,
+                // 分期快照缺失（节点异常）时没有代币地址：记为零地址，不阻塞其余字段。
+                token: token
+                    .or_else(|| snapshot.map(|s| s.token))
+                    .unwrap_or_default(),
                 amount,
                 offer_hash,
                 listing_hash,
                 instant,
                 auction_id: None,
-                ship_deadline: log
-                    .snapshot
-                    .as_ref()
-                    .map(|s| s.ship_deadline)
-                    .filter(|d| *d != 0),
+                ship_deadline: snapshot.map(OrderSnapshot::deadline).filter(|d| *d != 0),
                 snapshot: log.snapshot.clone(),
                 state: OrderState::Funded,
                 confirm_deadline: None,
+                stream: stream.map(|terms| StreamProgress {
+                    terms,
+                    started_at: None,
+                    claimed: U256::ZERO,
+                }),
                 proposal: None,
                 dispute: None,
                 ruling: None,
@@ -344,12 +547,28 @@ pub fn fold(order_id: u64, logs: &[OrderLog]) -> Result<Option<OrderView>, Chain
             | OrderEvent::ConfirmExtended { confirm_deadline } => {
                 v.confirm_deadline = Some(confirm_deadline);
             }
-            // 仲裁 Safe 延期：已发货延确认期，未发货延发货期（与合约 `extendDeadlines` 一致）。
+            // 仲裁 Safe 延期：已发货延确认期，未发货（或分期未开始）延发货 / 开始期限（与合约 `extendDeadlines` 一致）。
             OrderEvent::DeadlineExtended { deadline } => {
                 if v.confirm_deadline.is_some() {
                     v.confirm_deadline = Some(deadline);
                 } else {
                     v.ship_deadline = Some(deadline);
+                }
+            }
+            OrderEvent::Started { started_at } => {
+                if let Some(s) = v.stream.as_mut() {
+                    s.started_at = Some(started_at);
+                }
+            }
+            OrderEvent::Claimed {
+                to_seller,
+                claim_gas,
+            } => {
+                if let Some(s) = v.stream.as_mut() {
+                    s.claimed = s
+                        .claimed
+                        .saturating_add(to_seller)
+                        .saturating_add(claim_gas);
                 }
             }
             OrderEvent::EndProposed {
@@ -363,9 +582,19 @@ pub fn fold(order_id: u64, logs: &[OrderLog]) -> Result<Option<OrderView>, Chain
                     expiry,
                 });
             }
-            OrderEvent::Disputed { by, fee, from_bond } => {
+            OrderEvent::Disputed { by, fee, source } => {
                 v.state = OrderState::Disputed;
-                v.dispute = Some(Dispute { by, fee, from_bond });
+                if source == DisputeSource::Unlocked
+                    && let Some(s) = v.stream.as_mut()
+                {
+                    s.claimed = s.claimed.saturating_add(fee);
+                }
+                v.dispute = Some(Dispute {
+                    by,
+                    fee,
+                    source,
+                    at: log.block_time,
+                });
             }
             OrderEvent::Resolved {
                 to_buyer_bps,
@@ -397,9 +626,9 @@ mod tests {
     use alloy::sol_types::SolEvent;
 
     use super::*;
-    use crate::bindings::Escrow;
+    use crate::bindings::{Escrow, StreamEscrow};
     use crate::event::tests::raw;
-    use crate::snapshot::tests::sample;
+    use crate::snapshot::tests::{sample, stream_sample};
 
     const BUYER: Address = address!("00000000000000000000000000000000000000b1");
     const SELLER: Address = address!("00000000000000000000000000000000000000c1");
@@ -412,6 +641,7 @@ mod tests {
             level,
             topics: r.topics,
             data: r.data,
+            block_time: None,
             snapshot: None,
         }
     }
@@ -470,7 +700,7 @@ mod tests {
             created(1, 10, Level::Finalized),
             delivered(1, 20, 5_000),
         ];
-        let v = fold(1, &logs).unwrap().unwrap();
+        let v = fold(Market::Escrow, 1, &logs).unwrap().unwrap();
         assert_eq!(v.state, OrderState::Released);
         assert_eq!(v.buyer, BUYER);
         assert_eq!(v.ship_deadline, Some(1_000));
@@ -482,8 +712,11 @@ mod tests {
 
     #[test]
     fn without_creation_there_is_no_order() {
-        assert_eq!(fold(1, &[delivered(1, 20, 5)]).unwrap(), None);
-        assert_eq!(fold(1, &[]).unwrap(), None);
+        assert_eq!(
+            fold(Market::Escrow, 1, &[delivered(1, 20, 5)]).unwrap(),
+            None
+        );
+        assert_eq!(fold(Market::Escrow, 1, &[]).unwrap(), None);
     }
 
     #[test]
@@ -499,7 +732,7 @@ mod tests {
                 Level::Latest,
             )
         };
-        let before = fold(1, &[created(1, 1, Level::Latest), ext(2)])
+        let before = fold(Market::Escrow, 1, &[created(1, 1, Level::Latest), ext(2)])
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -507,6 +740,7 @@ mod tests {
             (Some(9_999), None)
         );
         let after = fold(
+            Market::Escrow,
             1,
             &[created(1, 1, Level::Latest), delivered(1, 2, 5), ext(3)],
         )
@@ -520,7 +754,7 @@ mod tests {
 
     #[test]
     fn dispute_then_resolution() {
-        let disputed = log(
+        let mut disputed = log(
             Escrow::Disputed {
                 orderId: U256::from(1),
                 by: BUYER,
@@ -531,12 +765,22 @@ mod tests {
             0,
             Level::Latest,
         );
-        let v = fold(1, &[created(1, 1, Level::Safe), disputed.clone()])
-            .unwrap()
-            .unwrap();
-        assert_eq!(v.state, OrderState::Disputed);
-        assert_eq!(v.dispute.as_ref().unwrap().by, BUYER);
+        disputed.block_time = Some(7_777);
         let v = fold(
+            Market::Escrow,
+            1,
+            &[created(1, 1, Level::Safe), disputed.clone()],
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(v.state, OrderState::Disputed);
+        let d = v.dispute.as_ref().unwrap();
+        assert_eq!(
+            (d.by, d.source, d.at),
+            (BUYER, DisputeSource::Wallet, Some(7_777))
+        );
+        let v = fold(
+            Market::Escrow,
             1,
             &[
                 created(1, 1, Level::Safe),
@@ -551,7 +795,7 @@ mod tests {
 
     #[test]
     fn foreign_order_event_is_rejected() {
-        assert!(fold(1, &[created(2, 1, Level::Latest)]).is_err());
+        assert!(fold(Market::Escrow, 1, &[created(2, 1, Level::Latest)]).is_err());
     }
 
     #[test]
@@ -566,11 +810,137 @@ mod tests {
             0,
             Level::Latest,
         );
-        assert!(decode(&credited.topics, &credited.data).unwrap().is_none());
-        let v = fold(1, &[created(1, 1, Level::Finalized), credited])
+        assert!(
+            decode(Market::Escrow, &credited.topics, &credited.data)
+                .unwrap()
+                .is_none()
+        );
+        let v = fold(
+            Market::Escrow,
+            1,
+            &[created(1, 1, Level::Finalized), credited],
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(v.level, Level::Finalized);
+    }
+
+    fn stream_created(block: u64) -> OrderLog {
+        let mut l = log(
+            StreamEscrow::OrderCreated {
+                orderId: U256::from(1),
+                offerHash: B256::repeat_byte(1),
+                buyer: BUYER,
+                seller: SELLER,
+                amount: U256::from(50_000_000u64),
+                listingHash: B256::repeat_byte(2),
+                interval: 3_600,
+                periods: 24,
+            },
+            block,
+            0,
+            Level::Latest,
+        );
+        l.snapshot = Some(stream_sample());
+        l
+    }
+
+    fn stream_log<E: SolEvent>(ev: E, block: u64) -> OrderLog {
+        log(ev, block, 0, Level::Latest)
+    }
+
+    #[test]
+    fn stream_start_claim_and_dispute_from_unlocked() {
+        let id = U256::from(1);
+        let mut disputed = stream_log(
+            StreamEscrow::Disputed {
+                orderId: id,
+                by: SELLER,
+                disputeFee: U256::from(1_000_000u64),
+                source: 1, // FeeSource.Unlocked
+            },
+            5,
+        );
+        disputed.block_time = Some(20_000);
+        let logs = [
+            stream_created(1),
+            stream_log(
+                StreamEscrow::Started {
+                    orderId: id,
+                    startedAt: 10_000,
+                    endsAt: 10_000 + 24 * 3_600,
+                },
+                2,
+            ),
+            stream_log(
+                StreamEscrow::Claimed {
+                    orderId: id,
+                    toSeller: U256::from(4_000_000u64),
+                    claimGas: U256::from(20_000u64),
+                },
+                3,
+            ),
+            disputed,
+        ];
+        let v = fold(Market::Stream, 1, &logs).unwrap().unwrap();
+        assert_eq!(v.market, Market::Stream);
+        assert_eq!(
+            v.token,
+            stream_sample().token,
+            "stream token comes from the snapshot"
+        );
+        assert_eq!(v.ship_deadline, Some(5_000), "start deadline");
+        let s = v.stream.as_ref().unwrap();
+        assert_eq!(
+            s.terms,
+            StreamTerms {
+                interval: 3_600,
+                periods: 24
+            }
+        );
+        assert_eq!(s.started_at, Some(10_000));
+        assert_eq!(
+            s.claimed,
+            U256::from(5_020_000u64),
+            "claims + gas + fee taken from unlocked"
+        );
+        let d = v.dispute.unwrap();
+        assert_eq!((d.source, d.at), (DisputeSource::Unlocked, Some(20_000)));
+        assert_eq!(v.state, OrderState::Disputed);
+    }
+
+    #[test]
+    fn stream_deadline_extension_moves_start_deadline() {
+        let ext = stream_log(
+            StreamEscrow::DeadlineExtended {
+                orderId: U256::from(1),
+                deadline: 9_999,
+            },
+            2,
+        );
+        let v = fold(Market::Stream, 1, &[stream_created(1), ext])
             .unwrap()
             .unwrap();
-        assert_eq!(v.level, Level::Finalized);
+        assert_eq!((v.ship_deadline, v.confirm_deadline), (Some(9_999), None));
+    }
+
+    #[test]
+    fn market_decides_the_abi() {
+        // 同一条分期下单日志按一次性担保的 ABI 不是订单事件（签名不同）。
+        let l = stream_created(1);
+        assert!(
+            decode(Market::Escrow, &l.topics, &l.data)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            decode(Market::Stream, &l.topics, &l.data)
+                .unwrap()
+                .is_some()
+        );
+        for m in [Market::Escrow, Market::Stream] {
+            assert_eq!(Market::from_mode(m.mode()).unwrap(), m);
+        }
     }
 
     #[test]

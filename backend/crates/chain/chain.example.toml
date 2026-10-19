@@ -1,12 +1,13 @@
 # 链配置示例（单链 Arbitrum One）。RPC 地址带密钥，留空并用环境变量提供：
 #   CHAIN_RPC_PRIMARY_HTTP / CHAIN_RPC_PRIMARY_WS / CHAIN_RPC_BACKUP_HTTP / CHAIN_RPC_BACKUP_WS
-# indexer 用 CHAIN_CONFIG=<本文件路径> 指定。
+# forum-indexer 与 forum-api 用 CHAIN_CONFIG=<本文件路径> 指定。
 chain_id = 42161
 name = "Arbitrum One"
 
 [contracts]
 # 部署后填写（contracts/script/Deploy.s.sol 输出）；这里是占位地址。
 escrow = "0x0000000000000000000000000000000000000001"
+stream = "0x0000000000000000000000000000000000000003"
 config = "0x0000000000000000000000000000000000000002"
 start_block = 0
 
@@ -25,3 +26,17 @@ reconcile_interval_ms = 5000
 max_block_range = 2000
 promote_every = 6
 failback_secs = 300
+
+# 钱包初始化参数版本（ADR 0008）：钱包地址由这些参数和 Passkey 公钥决定，已用过的版本绝不能改，
+# 换 Paymaster 或代币时追加新版本。Kernel v3.3 与 WebAuthn 验证器是 ZeroDev 的公开部署（ADR 0003）；
+# paymaster 为部署后的 FixedFeePaymaster（这里是占位地址）。
+[[wallet_init_versions]]
+version = 1
+kernel_implementation = "0xd6CEDDe84be40893d153Be9d467CD6aD37875b28"
+kernel_factory = "0x2577507b78c2008Ff367261CB6285d44ba5eF2E9"
+kernel_meta_factory = "0xd703aaE79538628d27099B8c4f621bE4CCd142d5"
+webauthn_validator = "0x7ab16Ff354AcB328452F1D445b3Ddee9a91e9e69"
+entry_point = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
+paymaster = "0x0000000000000000000000000000000000000004"
+approve_token = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+approve_amount = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"

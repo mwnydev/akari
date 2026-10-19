@@ -21,6 +21,7 @@ const BIG_TABLES: &[&str] = &[
     "users",
     "outbox",
     "offers",
+    "escrow_orders",
 ];
 
 #[derive(Debug, Default)]
@@ -107,6 +108,17 @@ async fn seed(db: &PgPool) {
                decode(repeat('ab', 32), 'hex'), 1800000000, 1, g, '\x01', sha256(int4send(g)),
                CASE WHEN g % 20 = 0 THEN 'pending' ELSE 'expired' END::offer_status,
                now() + ((g % 100 - 50) || ' hours')::interval
+        FROM generate_series(1, 20000) g;
+        -- 2 万张订单分给 1000 个买家、1000 个卖家；订单 g 由报价卡片 g 生成
+        INSERT INTO chains (chain_id, name, escrow_address, config_address, token_address, token_symbol,
+          token_decimals, start_block, safe_depth, finalized_depth)
+        VALUES (421614, 'test', decode(repeat('44', 20), 'hex'), decode(repeat('c0', 20), 'hex'),
+          decode(repeat('33', 20), 'hex'), 'USDT', 6, 0, 240, 4800);
+        INSERT INTO escrow_orders (chain_id, contract, chain_order_id, buyer, seller, buyer_id, seller_id, token,
+          amount, instant, offer_hash, listing_hash, state, level, created_block, updated_block)
+        SELECT 421614, decode(repeat('44', 20), 'hex'), g, decode(repeat('b1', 20), 'hex'),
+               decode(repeat('c1', 20), 'hex'), 1 + g % 1000, 1 + (g + 7) % 1000, decode(repeat('33', 20), 'hex'),
+               5000000, false, sha256(int4send(g)), decode(repeat('ab', 32), 'hex'), 1 + g % 5, 'finalized', g, g
         FROM generate_series(1, 20000) g;
         ANALYZE;
         ",
@@ -301,6 +313,65 @@ async fn hot_queries_use_indexes(db: PgPool) {
         "offers_pending_expiry",
     )
     .await;
+
+    let sql = q!("escrow_orders_buyer.sql");
+    check(
+        &db,
+        "escrow_orders_buyer",
+        sqlx::query(sql).bind(7_i64).bind(i64::MAX).bind(20_i64),
+        "escrow_orders_buyer",
+    )
+    .await;
+
+    let sql = q!("escrow_orders_seller.sql");
+    check(
+        &db,
+        "escrow_orders_seller",
+        sqlx::query(sql).bind(7_i64).bind(10_000_i64).bind(20_i64),
+        "escrow_orders_seller",
+    )
+    .await;
+
+    let order_ids: Vec<i64> = (100..120).collect();
+    let sql = q!("escrow_orders_by_ids.sql");
+    check(
+        &db,
+        "escrow_orders_by_ids",
+        sqlx::query(sql).bind(&order_ids),
+        "escrow_orders_pkey",
+    )
+    .await;
+
+    let offer_hash: Vec<u8> = sqlx::query_scalar("SELECT sha256(int4send(77))")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    let sql = q!("escrow_order_by_offer.sql");
+    check(
+        &db,
+        "escrow_order_by_offer",
+        sqlx::query(sql)
+            .bind(&offer_hash)
+            .bind(421_614_i64)
+            .bind([0x44_u8; 20].as_slice())
+            .bind(78_i64),
+        "escrow_orders_offer",
+    )
+    .await;
+
+    let sql = q!("offer_fills_sync.sql");
+    for index in ["escrow_orders_offer", "offers_offer_hash_key"] {
+        check(
+            &db,
+            "offer_fills_sync",
+            sqlx::query(sql)
+                .bind(421_614_i64)
+                .bind([0x44_u8; 20].as_slice())
+                .bind(&offer_hash),
+            index,
+        )
+        .await;
+    }
 
     let sql = q!("post_edit_save.sql");
     check(

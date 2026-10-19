@@ -7,10 +7,9 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use sha3::{Digest, Keccak256};
 
 pub fn keccak256(data: &[u8]) -> [u8; 32] {
-    Keccak256::digest(data).into()
+    alloy_primitives::keccak256(data).0
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

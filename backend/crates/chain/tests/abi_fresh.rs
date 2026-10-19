@@ -19,12 +19,13 @@ fn committed_abi_matches_forge_artifacts() {
         eprintln!("skipped: contracts/out not built (cd contracts && forge build)");
         return;
     }
-    for name in ["Escrow", "EscrowConfig", "MockUSDT"] {
+    for name in ["Escrow", "StreamEscrow", "EscrowConfig", "MockUSDT"] {
         let forge = read(&out.join(format!("{name}.sol/{name}.json")));
         let Value::Array(mut abi) = forge["abi"].clone() else {
             panic!("{name}: no abi array");
         };
-        if name == "Escrow" {
+        // getOrder 的返回结构超过 sol! 元组上限，单独存放（见 regen.sh）。
+        if matches!(name, "Escrow" | "StreamEscrow") {
             let get_order = abi
                 .iter()
                 .find(|f| f["name"] == "getOrder")
@@ -32,8 +33,8 @@ fn committed_abi_matches_forge_artifacts() {
                 .unwrap();
             assert_eq!(
                 get_order,
-                read(&root.join("abi/Escrow.getOrder.json")),
-                "Escrow.getOrder"
+                read(&root.join(format!("abi/{name}.getOrder.json"))),
+                "{name}.getOrder"
             );
             abi.retain(|f| f["name"] != "getOrder");
         }

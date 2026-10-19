@@ -6,10 +6,11 @@
 
 use std::time::Duration;
 
-use alloy::primitives::Address;
+use alloy::primitives::{Address, U256};
 use serde::Deserialize;
 
 use crate::ChainError;
+use crate::order::Market;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -24,6 +25,9 @@ pub struct ChainConfig {
     pub confirmation: ConfirmationPolicy,
     #[serde(default)]
     pub indexer: IndexerPolicy,
+    /// 钱包初始化参数的各个版本（ADR 0008），按版本号升序、只增不改。
+    #[serde(default)]
+    pub wallet_init_versions: Vec<WalletInitVersion>,
 }
 
 /// 两家 RPC 服务商（plan 第 2 节「每类至少两家」）。`ws` 只用于订阅即时事件，缺省时只靠定时补拉。
@@ -46,7 +50,10 @@ pub struct Endpoint {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Contracts {
+    /// 一次性担保 `Escrow`（也是统一保证金池）。
     pub escrow: Address,
+    /// 分期担保 `StreamEscrow`。
+    pub stream: Address,
     pub config: Address,
     /// 合约部署所在区块；首次启动从这里开始补拉。
     pub start_block: u64,
@@ -58,6 +65,38 @@ pub struct Token {
     pub symbol: String,
     pub address: Address,
     pub decimals: u8,
+}
+
+impl Contracts {
+    /// 地址是哪份担保合约；EscrowConfig 与其他地址为 `None`。
+    pub fn market(&self, contract: Address) -> Option<Market> {
+        if contract == self.escrow {
+            Some(Market::Escrow)
+        } else if contract == self.stream {
+            Some(Market::Stream)
+        } else {
+            None
+        }
+    }
+}
+
+/// 一个版本的钱包初始化参数（ADR 0008）：Kernel v3.3 账户的 CREATE2 地址由它们和 Passkey 公钥共同决定，
+/// 所以一经使用就不能修改；换 Paymaster 或代币时新增一个版本。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WalletInitVersion {
+    pub version: u32,
+    pub kernel_implementation: Address,
+    pub kernel_factory: Address,
+    /// 部署账户（首笔操作的 initCode）经它调用 `kernel_factory`。
+    pub kernel_meta_factory: Address,
+    pub webauthn_validator: Address,
+    pub entry_point: Address,
+    /// 初始化时授权的代付合约（ADR 0004：代付费在验证阶段扣，第一笔操作前就要有授权）。
+    pub paymaster: Address,
+    pub approve_token: Address,
+    /// 授权额度（十进制或 0x 十六进制字符串；通常为 uint256 最大值）。
+    pub approve_amount: U256,
 }
 
 /// 链上状态分级确认（plan 第 2、8 节）：latest 立即写入；safe / finalized 优先用 RPC 的同名区块标记，
@@ -153,7 +192,11 @@ impl ChainConfig {
 
     /// indexer 订阅与补拉日志的合约。
     pub fn indexed_contracts(&self) -> Vec<Address> {
-        vec![self.contracts.escrow, self.contracts.config]
+        vec![
+            self.contracts.escrow,
+            self.contracts.stream,
+            self.contracts.config,
+        ]
     }
 
     fn validate(&self) -> Result<(), ChainError> {
@@ -172,11 +215,37 @@ impl ChainConfig {
                 return bad("rpc ws url must be ws(s)");
             }
         }
-        if self.contracts.escrow.is_zero()
-            || self.contracts.config.is_zero()
+        let c = &self.contracts;
+        if c.escrow.is_zero()
+            || c.stream.is_zero()
+            || c.config.is_zero()
             || self.token.address.is_zero()
         {
             return bad("contract and token addresses must be non-zero");
+        }
+        if c.escrow == c.stream || c.escrow == c.config || c.stream == c.config {
+            return bad("escrow, stream and config must be different contracts");
+        }
+        let mut last = 0;
+        for v in &self.wallet_init_versions {
+            if v.version <= last {
+                return bad(
+                    "wallet_init_versions must be listed by strictly increasing version >= 1",
+                );
+            }
+            last = v.version;
+            let addrs = [
+                v.kernel_implementation,
+                v.kernel_factory,
+                v.kernel_meta_factory,
+                v.webauthn_validator,
+                v.entry_point,
+                v.paymaster,
+                v.approve_token,
+            ];
+            if addrs.iter().any(|a| a.is_zero()) {
+                return bad("wallet init version addresses must be non-zero");
+            }
         }
         if self.token.decimals > 36 {
             return bad("token decimals out of range");
@@ -225,6 +294,32 @@ mod tests {
         assert_eq!(backup.ws, None);
         assert_eq!(cfg.endpoints().len(), 2);
         assert_eq!(cfg.indexer, IndexerPolicy::default());
+        assert_eq!(cfg.indexed_contracts().len(), 3);
+        let c = &cfg.contracts;
+        assert_eq!(c.market(c.stream), Some(Market::Stream));
+        assert_eq!(c.market(c.config), None);
+        let [v1] = cfg.wallet_init_versions.as_slice() else {
+            panic!("one wallet init version");
+        };
+        assert_eq!((v1.version, v1.approve_amount), (1, U256::MAX));
+        assert_eq!(v1.approve_token, cfg.token.address);
+    }
+
+    #[test]
+    fn wallet_init_versions_must_increase() {
+        // 示例里的版本表在文件末尾：再接一份同号的版本。
+        let v1 = EXAMPLE.find("[[wallet_init_versions]]").unwrap();
+        let err = ChainConfig::parse(&format!("{EXAMPLE}\n{}", &EXAMPLE[v1..]), env).unwrap_err();
+        assert!(err.to_string().contains("increasing"), "{err}");
+        let decimal = EXAMPLE.replace(
+            "approve_amount = \"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\"",
+            "approve_amount = \"1000000\"",
+        );
+        let cfg = ChainConfig::parse(&decimal, env).unwrap();
+        assert_eq!(
+            cfg.wallet_init_versions[0].approve_amount,
+            U256::from(1_000_000)
+        );
     }
 
     #[test]

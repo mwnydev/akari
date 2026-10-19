@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO chains (chain_id, name, escrow_address, config_address, token_address, token_symbol,\n                             token_decimals, start_block, safe_depth, finalized_depth, stream_address)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n         ON CONFLICT (chain_id) DO UPDATE SET\n           name = EXCLUDED.name, escrow_address = EXCLUDED.escrow_address,\n           stream_address = EXCLUDED.stream_address,\n           config_address = EXCLUDED.config_address, token_address = EXCLUDED.token_address,\n           token_symbol = EXCLUDED.token_symbol, token_decimals = EXCLUDED.token_decimals,\n           start_block = EXCLUDED.start_block, safe_depth = EXCLUDED.safe_depth,\n           finalized_depth = EXCLUDED.finalized_depth, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Text",
+        "Int2",
+        "Int8",
+        "Int4",
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b3932fea455d7a1582c65abd7246e367fd40a439b0ef326bf7ffd0356f64d1c6"
+}

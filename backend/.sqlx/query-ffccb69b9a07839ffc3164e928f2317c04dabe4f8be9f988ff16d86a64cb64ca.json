@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE escrow_orders SET state = 0, level = 'latest', updated_at = now()\n         WHERE chain_id = $1 AND contract = $2 AND chain_order_id = $3 AND state <> 0\n         RETURNING id, buyer_id, seller_id",
+  "query": "UPDATE escrow_orders SET state = 0, level = 'latest', updated_at = now()\n         WHERE chain_id = $1 AND contract = $2 AND chain_order_id = $3 AND state <> 0\n         RETURNING id, buyer_id, seller_id, offer_hash",
   "describe": {
     "columns": [
       {
@@ -35,6 +35,17 @@
             "name": "seller_id"
           }
         }
+      },
+      {
+        "ordinal": 3,
+        "name": "offer_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "offer_hash"
+          }
+        }
       }
     ],
     "parameters": {
@@ -47,8 +58,9 @@
     "nullable": [
       false,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "44ff8f748608defce891dc561e6c8c64a4a40f154ee6b45c2277765335aea542"
+  "hash": "ffccb69b9a07839ffc3164e928f2317c04dabe4f8be9f988ff16d86a64cb64ca"
 }

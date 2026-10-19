@@ -3,6 +3,7 @@
 pub mod audit;
 pub mod chain;
 pub mod forums;
+pub mod orders;
 pub mod outbox;
 pub mod posts;
 pub mod staff;

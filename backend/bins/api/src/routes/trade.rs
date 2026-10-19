@@ -11,6 +11,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use forum_chain::config::WalletInitVersion;
 use forum_core::eip712::{Address, B256, DOMAIN_NAME, DOMAIN_VERSION, Offer, U256, keccak256};
 use forum_core::trade::{
     MAX_OFFER_TTL_SECS, MAX_WINDOW, MIN_OFFER_TTL_SECS, MIN_WINDOW, check_bond, check_offer,
@@ -90,6 +91,39 @@ pub struct TradeParams {
     pub min_offer_ttl: u64,
     pub max_offer_ttl: u64,
     pub defaults: TradeDefaults,
+    /// 钱包初始化参数各版本（ADR 0008），按版本号升序；新钱包用最后一个，已有钱包用自己登记的版本。
+    pub wallet_init_versions: Vec<WalletInitVersionView>,
+}
+
+/// 一个版本的 Kernel v3.3 账户初始化参数。地址为 `0x` 小写十六进制。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct WalletInitVersionView {
+    pub version: u32,
+    pub kernel_implementation: String,
+    pub kernel_factory: String,
+    pub kernel_meta_factory: String,
+    pub webauthn_validator: String,
+    pub entry_point: String,
+    pub paymaster: String,
+    pub approve_token: String,
+    /// 十进制字符串。
+    pub approve_amount: String,
+}
+
+impl From<&WalletInitVersion> for WalletInitVersionView {
+    fn from(v: &WalletInitVersion) -> Self {
+        Self {
+            version: v.version,
+            kernel_implementation: hex0x(v.kernel_implementation.as_slice()),
+            kernel_factory: hex0x(v.kernel_factory.as_slice()),
+            kernel_meta_factory: hex0x(v.kernel_meta_factory.as_slice()),
+            webauthn_validator: hex0x(v.webauthn_validator.as_slice()),
+            entry_point: hex0x(v.entry_point.as_slice()),
+            paymaster: hex0x(v.paymaster.as_slice()),
+            approve_token: hex0x(v.approve_token.as_slice()),
+            approve_amount: v.approve_amount.to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -131,6 +165,12 @@ pub async fn params(State(state): State<AppState>) -> Json<TradeParams> {
             public_offer_ttl: DEFAULT_PUBLIC_TTL,
             private_offer_ttl: DEFAULT_PRIVATE_TTL,
         },
+        wallet_init_versions: w
+            .chain
+            .wallet_init_versions
+            .iter()
+            .map(WalletInitVersionView::from)
+            .collect(),
     })
 }
 

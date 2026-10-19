@@ -1,0 +1,510 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 按主键批量取订单（金额以十进制文本取出），附带生成它的报价卡片与交易帖。$1 ids\nSELECT o.id, o.chain_id, o.contract, o.chain_order_id, o.mode, o.buyer, o.seller, o.buyer_id, o.seller_id,\n  o.token, o.amount::text AS \"amount!\", o.buyer_fee::text AS \"buyer_fee?\", o.seller_fee::text AS \"seller_fee?\",\n  o.buyer_gas::text AS \"buyer_gas?\", o.seller_gas::text AS \"seller_gas?\", o.dispute_fee::text AS \"dispute_fee?\",\n  o.bond::text AS \"bond?\", o.instant, o.offer_hash, o.listing_hash, o.auction_id::text AS \"auction_id?\", o.state,\n  o.ship_deadline, o.confirm_deadline, o.proposer, o.proposal_to_buyer::text AS \"proposal_to_buyer?\",\n  o.proposal_expiry, o.disputed_by, o.dispute_from_bond, o.disputed_at, o.ruling_to_buyer_bps,\n  o.ruling_bond_to_buyer_bps, o.settled_to_buyer::text AS \"settled_to_buyer?\",\n  o.settled_to_seller::text AS \"settled_to_seller?\", o.settled_to_fee::text AS \"settled_to_fee?\",\n  o.interval_secs, o.periods, o.started_at, o.released_amount::text AS \"released_amount!\",\n  o.level::text AS \"level!\", o.created_block, o.updated_block, o.created_at, o.updated_at,\n  f.id AS \"offer_id?\", f.listing_id AS \"listing_id?\", l.topic_id AS \"listing_topic_id?\"\nFROM escrow_orders o\nLEFT JOIN offers f ON f.offer_hash = o.offer_hash AND f.chain_id = o.chain_id AND f.verifying_contract = o.contract\nLEFT JOIN trade_listings l ON l.id = f.listing_id\nWHERE o.id = ANY($1::bigint[])\nORDER BY o.id DESC\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "chain_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "chain_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "contract",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "contract"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "chain_order_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "chain_order_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "mode",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "mode"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "buyer",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "buyer"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "seller",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "seller"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "buyer_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "buyer_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "seller_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "seller_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "token",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "token"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "buyer_fee?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "seller_fee?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "buyer_gas?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "seller_gas?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "dispute_fee?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
+        "name": "bond?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 17,
+        "name": "instant",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "instant"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "offer_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "offer_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "listing_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "listing_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "auction_id?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 21,
+        "name": "state",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "ship_deadline",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "ship_deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "confirm_deadline",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "confirm_deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "proposer",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "proposer"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "proposal_to_buyer?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 26,
+        "name": "proposal_expiry",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "proposal_expiry"
+          }
+        }
+      },
+      {
+        "ordinal": 27,
+        "name": "disputed_by",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "disputed_by"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "dispute_from_bond",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "dispute_from_bond"
+          }
+        }
+      },
+      {
+        "ordinal": 29,
+        "name": "disputed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "disputed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 30,
+        "name": "ruling_to_buyer_bps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "ruling_to_buyer_bps"
+          }
+        }
+      },
+      {
+        "ordinal": 31,
+        "name": "ruling_bond_to_buyer_bps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "ruling_bond_to_buyer_bps"
+          }
+        }
+      },
+      {
+        "ordinal": 32,
+        "name": "settled_to_buyer?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 33,
+        "name": "settled_to_seller?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 34,
+        "name": "settled_to_fee?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 35,
+        "name": "interval_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "interval_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 36,
+        "name": "periods",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "periods"
+          }
+        }
+      },
+      {
+        "ordinal": 37,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 38,
+        "name": "released_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 39,
+        "name": "level!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 40,
+        "name": "created_block",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "created_block"
+          }
+        }
+      },
+      {
+        "ordinal": 41,
+        "name": "updated_block",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "updated_block"
+          }
+        }
+      },
+      {
+        "ordinal": 42,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 43,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 44,
+        "name": "offer_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 45,
+        "name": "listing_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "listing_id"
+          }
+        }
+      },
+      {
+        "ordinal": 46,
+        "name": "listing_topic_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "trade_listings",
+            "name": "topic_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      true,
+      true,
+      null,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      null,
+      null,
+      true,
+      true,
+      true,
+      null,
+      null,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "44ac958d6424790b9ca9502169e285bd01873ff61ecd067a908bba6b5ade401c"
+}

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use axum_extra::extract::cookie::Key;
 use forum_api::config::Config;
-use forum_api::wallet::{NoopAddressVerifier, WalletState};
+use forum_api::wallet::{AddressVerifier, ChainAddressVerifier, NoChainVerifier, WalletState};
 use forum_api::{AppState, app};
 use forum_auth::passkey::{UserHandles, wallet_webauthn, webauthn::Url};
 use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha, Turnstile};
@@ -33,15 +33,23 @@ async fn main() -> anyhow::Result<()> {
         .iter()
         .map(|o| Url::parse(o))
         .collect::<Result<Vec<_>, _>>()?;
+    let verifier: Arc<dyn AddressVerifier> = match &cfg.chain_file {
+        Some(file) => Arc::new(ChainAddressVerifier(
+            forum_chain::kernel::AddressResolver::new(file)?,
+        )),
+        None => {
+            tracing::warn!("CHAIN_CONFIG not set: wallet addresses cannot be registered");
+            Arc::new(NoChainVerifier)
+        }
+    };
     let wallet = WalletState {
         webauthn: wallet_webauthn(&cfg.wallet_rp_id, &cfg.brand_name, &origins)?,
         origins: cfg.wallet_origins.clone(),
         brand: cfg.brand_name.clone(),
         handles: UserHandles::new(&cfg.auth_secret)?,
-        chain: cfg.chain,
+        chain: cfg.chain.clone(),
         limits: cfg.trade_limits,
-        // 见 AddressVerifier 的 TODO：chain crate 落地后换成按 Kernel 工厂校验地址。
-        verifier: Arc::new(NoopAddressVerifier),
+        verifier,
     };
     let state = AppState {
         db,

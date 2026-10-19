@@ -17,6 +17,7 @@ use forum_auth::passkey::webauthn::{
     PublicKeyCredential, RegisterPublicKeyCredential, RequestChallengeResponse,
 };
 use forum_auth::passkey::{P256Key, start_registration};
+use forum_chain::kernel::PasskeyPublicKey;
 use forum_core::ErrorCode;
 use forum_core::eip712::Address;
 use forum_db::outbox;
@@ -427,9 +428,11 @@ pub async fn assert_finish(
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct NewWallet {
     pub chain_id: u64,
-    /// 浏览器用 ZeroDev SDK（Kernel v3.3 + EntryPoint v0.7，固定初始参数）算出的 counterfactual 地址。
+    /// 浏览器用 ZeroDev SDK（Kernel v3.3 + EntryPoint v0.7）按 `init_version` 的参数算出的 counterfactual 地址。
     #[schema(value_type = String, example = "0x1111111111111111111111111111111111111111")]
     pub address: Address,
+    /// 计算地址用的初始化参数版本（`GET /api/v1/trade/params` 的 `wallet_init_versions`）。
+    pub init_version: u32,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -437,6 +440,8 @@ pub struct WalletView {
     pub chain_id: i64,
     pub address: String,
     pub passkey_id: i64,
+    /// 初始化参数版本：推算地址、部署钱包都用这个版本，不用当前最新版本（ADR 0008）。
+    pub init_version: i32,
     #[schema(value_type = String, format = DateTime)]
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
@@ -448,12 +453,14 @@ impl From<db::Wallet> for WalletView {
             chain_id: w.chain_id,
             address: hex0x(&w.address),
             passkey_id: w.passkey_id,
+            init_version: w.init_version,
             created_at: w.created_at,
         }
     }
 }
 
 /// 登记智能账户地址，绑定到 5 分钟内刚验证过的那个 Passkey（通常是刚注册的那个）。每人每条链一个。
+/// 服务端按 `init_version` 的参数与该 Passkey 公钥推算地址，与提交的不一致时拒绝。
 #[utoipa::path(
     post, path = "/api/v1/wallet/account", tag = "wallet",
     request_body = NewWallet,
@@ -475,34 +482,43 @@ pub async fn create_account(
     if req.chain_id != w.chain.chain_id || req.address.is_zero() {
         return Err(ApiError(ErrorCode::InvalidParameter));
     }
+    let version = w
+        .chain
+        .wallet_init_version(req.init_version)
+        .ok_or(ApiError(ErrorCode::InvalidParameter))?;
+    let init_version =
+        i32::try_from(version.version).map_err(|_| ApiError(ErrorCode::InvalidParameter))?;
     let passkey = db::wallet_passkeys(&state.db, user_id)
         .await?
         .into_iter()
         .find(|p| p.id == passkey_id)
         .ok_or(ApiError(ErrorCode::PasskeyRequired))?;
-    let key = P256Key {
-        x: passkey
-            .pubkey_x
-            .as_slice()
-            .try_into()
-            .map_err(ApiError::internal)?,
-        y: passkey
-            .pubkey_y
-            .as_slice()
-            .try_into()
-            .map_err(ApiError::internal)?,
-    };
+    let coordinate = |c: &[u8]| <[u8; 32]>::try_from(c).map_err(ApiError::internal);
+    let key = PasskeyPublicKey::new(
+        coordinate(&passkey.pubkey_x)?,
+        coordinate(&passkey.pubkey_y)?,
+        &passkey.credential_id,
+    );
     if !w
         .verifier
-        .verify(req.chain_id, &req.address, &key)
+        .verify(version, &req.address, &key)
         .await
         .map_err(ApiError::internal)?
     {
-        return Err(ApiError(ErrorCode::InvalidParameter));
+        return Err(ApiError(ErrorCode::WalletAddressMismatch));
     }
-    let wallet = db::insert_wallet(&state.db, user_id, w.chain_id(), &req.address.0, passkey_id)
-        .await?
-        .ok_or(ApiError(ErrorCode::Conflict))?;
+    let wallet = db::insert_wallet(
+        &state.db,
+        db::NewWallet {
+            user_id,
+            chain_id: w.chain_id(),
+            address: &req.address.0,
+            passkey_id,
+            init_version,
+        },
+    )
+    .await?
+    .ok_or(ApiError(ErrorCode::Conflict))?;
     Ok((StatusCode::CREATED, Json(wallet.into())))
 }
 

@@ -12,7 +12,8 @@ use alloy::primitives::{Address, B256, Bytes};
 use serde_json::{Map, Value, json};
 
 use crate::ChainError;
-use crate::bindings::{Escrow, EscrowConfig};
+use crate::bindings::{Escrow, EscrowConfig, StreamEscrow};
+use crate::order::{Market, OrderEvent};
 
 /// 一个区块的号与哈希。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -66,33 +67,47 @@ impl TryFrom<alloy::rpc::types::Log> for RawLog {
     }
 }
 
-/// 解码结果：事件名、所属订单（订单类事件）和可读参数。
+/// 解码结果：事件名、订单类事件（所属订单号与精简形式）和可读参数。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Decoded {
     pub name: String,
-    pub order_id: Option<u64>,
+    pub order: Option<(u64, OrderEvent)>,
     pub args: Value,
 }
 
-/// 两份 ABI 里所有事件，按 topic0 查找。
-static EVENTS: LazyLock<HashMap<B256, Event>> = LazyLock::new(|| {
-    let escrow = Escrow::abi::contract();
-    let config = EscrowConfig::abi::contract();
-    escrow
-        .events()
-        .chain(config.events())
+impl Decoded {
+    pub fn order_id(&self) -> Option<u64> {
+        self.order.as_ref().map(|(id, _)| *id)
+    }
+}
+
+type EventMap = LazyLock<HashMap<B256, Event>>;
+
+fn events(abi: &alloy::json_abi::JsonAbi) -> HashMap<B256, Event> {
+    abi.events()
         .filter(|e| !e.anonymous)
         .map(|e| (e.selector(), e.clone()))
         .collect()
-});
+}
 
-/// 按 ABI 解码一条 Escrow / EscrowConfig 日志。未知事件（例如合约升级后新增的）返回错误，由调用方记录后跳过。
-pub fn decode(log: &RawLog) -> Result<Decoded, ChainError> {
+/// 每份 ABI 的事件按 topic0 查找。两份担保合约有同名事件，按日志来自哪份合约选 ABI。
+static ESCROW_EVENTS: EventMap = LazyLock::new(|| events(&Escrow::abi::contract()));
+static STREAM_EVENTS: EventMap = LazyLock::new(|| events(&StreamEscrow::abi::contract()));
+static CONFIG_EVENTS: EventMap = LazyLock::new(|| events(&EscrowConfig::abi::contract()));
+
+/// 按 ABI 解码一条日志：`market` 为日志所在的担保合约，`None` = EscrowConfig。
+/// 未知事件（例如合约升级后新增的）返回错误，由调用方记录后跳过。
+pub fn decode(log: &RawLog, market: Option<Market>) -> Result<Decoded, ChainError> {
     let topic0 = log
         .topics
         .first()
         .ok_or_else(|| ChainError::Decode("log without topics".into()))?;
-    let event = EVENTS
+    let map = match market {
+        Some(Market::Escrow) => &ESCROW_EVENTS,
+        Some(Market::Stream) => &STREAM_EVENTS,
+        None => &CONFIG_EVENTS,
+    };
+    let event = map
         .get(topic0)
         .ok_or_else(|| ChainError::Decode(format!("unknown event {topic0}")))?;
     let decoded = event
@@ -109,10 +124,13 @@ pub fn decode(log: &RawLog) -> Result<Decoded, ChainError> {
         let value = value.ok_or_else(|| ChainError::Decode(format!("{}: arity", event.name)))?;
         args.insert(input.name.clone(), to_json(&value, &input.components));
     }
-    let order_id = crate::order::decode(&log.topics, &log.data)?.map(|(id, _)| id);
+    let order = match market {
+        Some(m) => crate::order::decode(m, &log.topics, &log.data)?,
+        None => None,
+    };
     Ok(Decoded {
         name: event.name.clone(),
-        order_id,
+        order,
         args: Value::Object(args),
     })
 }
@@ -188,9 +206,9 @@ pub(crate) mod tests {
             listingHash: B256::ZERO,
             instant: false,
         };
-        let d = decode(&raw(&ev, 5, 0)).unwrap();
+        let d = decode(&raw(&ev, 5, 0), Some(Market::Escrow)).unwrap();
         assert_eq!(d.name, "OrderCreated");
-        assert_eq!(d.order_id, Some(7));
+        assert_eq!(d.order_id(), Some(7));
         assert_eq!(d.args["orderId"], "7");
         assert_eq!(d.args["amount"], "1000000000000000000000000000000");
         assert_eq!(
@@ -211,8 +229,8 @@ pub(crate) mod tests {
                 gasSubsidyCap: 100,
             },
         };
-        let d = decode(&raw(&ev, 1, 0)).unwrap();
-        assert_eq!(d.order_id, None);
+        let d = decode(&raw(&ev, 1, 0), None).unwrap();
+        assert_eq!(d.order_id(), None);
         assert_eq!(d.args["campaign"]["rateBps"], "50");
         assert_eq!(d.args["campaign"]["gasSubsidyCap"], "100");
     }
@@ -224,7 +242,30 @@ pub(crate) mod tests {
             token: Address::ZERO,
             amount: U256::from(1),
         };
-        assert_eq!(decode(&raw(&ev, 1, 0)).unwrap().order_id, None);
+        assert_eq!(
+            decode(&raw(&ev, 1, 0), Some(Market::Escrow))
+                .unwrap()
+                .order_id(),
+            None
+        );
+    }
+
+    #[test]
+    fn stream_events_decode_with_the_stream_abi() {
+        let ev = StreamEscrow::Disputed {
+            orderId: U256::from(3),
+            by: Address::ZERO,
+            disputeFee: U256::from(1),
+            source: 2,
+        };
+        let log = raw(&ev, 1, 0);
+        let d = decode(&log, Some(Market::Stream)).unwrap();
+        assert_eq!((d.name.as_str(), d.order_id()), ("Disputed", Some(3)));
+        assert_eq!(d.args["source"], "2");
+        assert!(
+            decode(&log, Some(Market::Escrow)).is_err(),
+            "Escrow.Disputed has a different signature"
+        );
     }
 
     #[test]
@@ -238,6 +279,6 @@ pub(crate) mod tests {
             0,
         );
         log.topics[0] = B256::ZERO;
-        assert!(decode(&log).is_err());
+        assert!(decode(&log, Some(Market::Escrow)).is_err());
     }
 }

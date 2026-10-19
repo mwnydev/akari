@@ -12,11 +12,13 @@ use axum::body::{Body, to_bytes};
 use axum::extract::connect_info::MockConnectInfo;
 use axum::http::{Request, StatusCode, header};
 use axum_extra::extract::cookie::Key;
-use forum_api::wallet::{NoopAddressVerifier, WalletState};
+use forum_api::wallet::{AddressVerifier, WalletState};
 use forum_api::{AppState, app};
 use forum_auth::passkey::webauthn::{CreationChallengeResponse, RequestChallengeResponse, Url};
 use forum_auth::passkey::{UserHandles, wallet_webauthn};
 use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha};
+use forum_chain::config::WalletInitVersion;
+use forum_chain::kernel::PasskeyPublicKey;
 use forum_core::trade::TradeLimits;
 use forum_db::PgPool;
 use serde_json::{Value, json};
@@ -31,6 +33,23 @@ pub const CHAIN_ID: u64 = 421_614;
 pub const ESCROW: &str = "0x4444444444444444444444444444444444444444";
 pub const USDT: &str = "0x3333333333333333333333333333333333333333";
 
+/// 假的钱包地址校验：除了 [`MISMATCHED_ADDRESS`] 一律当作与 Passkey 相符（真实校验见 wallet_flow 的 anvil 用例）。
+pub struct FakeVerifier;
+
+pub const MISMATCHED_ADDRESS: &str = "0x9999999999999999999999999999999999999999";
+
+#[async_trait::async_trait]
+impl AddressVerifier for FakeVerifier {
+    async fn verify(
+        &self,
+        _: &WalletInitVersion,
+        address: &forum_core::eip712::Address,
+        _: &PasskeyPublicKey,
+    ) -> anyhow::Result<bool> {
+        Ok(address.to_string() != MISMATCHED_ADDRESS)
+    }
+}
+
 pub fn wallet_state() -> WalletState {
     let origin = Url::parse(WALLET_ORIGIN).unwrap();
     WalletState {
@@ -42,9 +61,10 @@ pub fn wallet_state() -> WalletState {
             chain_id: CHAIN_ID,
             escrow: Some(ESCROW.parse().unwrap()),
             usdt: Some(USDT.parse().unwrap()),
+            wallet_init_versions: vec![forum_chain::anvil::dev_wallet_version()],
         },
         limits: TradeLimits::default(),
-        verifier: Arc::new(NoopAddressVerifier),
+        verifier: Arc::new(FakeVerifier),
     }
 }
 
@@ -56,6 +76,11 @@ fn nanos() -> u128 {
 }
 
 pub fn build(db: PgPool) -> Option<Router> {
+    build_with(db, wallet_state())
+}
+
+/// 同 [`build`]，但指定钱包状态（例如换成真实的链上地址校验）。
+pub fn build_with(db: PgPool, wallet: WalletState) -> Option<Router> {
     let Ok(url) = std::env::var("VALKEY_URL") else {
         eprintln!("VALKEY_URL not set, skipping valkey-backed test");
         return None;
@@ -71,7 +96,7 @@ pub fn build(db: PgPool) -> Option<Router> {
         cookie_secure: true,
         cache: forum_kv::ForumCache::new(kv, format!("test{}:", nanos())),
         internal_hosts: Arc::from(vec!["forum.test".to_owned()]),
-        wallet: Arc::new(wallet_state()),
+        wallet: Arc::new(wallet),
     };
     // 每个用例用不同的假 IP，避免 IP 限流互相影响
     Some(app(state, &SECRET).layer(MockConnectInfo(SocketAddr::from((rand_ip(), 40000)))))
@@ -317,7 +342,7 @@ pub async fn enable_trading(
         app,
         "POST",
         "/api/v1/wallet/account",
-        Some(json!({"chain_id": CHAIN_ID, "address": address})),
+        Some(json!({"chain_id": CHAIN_ID, "address": address, "init_version": 1})),
         cookies,
     )
     .await;

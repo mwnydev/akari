@@ -10,8 +10,8 @@ publish.workspace = true
 openapi = ["dep:utoipa"]
 
 [dependencies]
+alloy-primitives.workspace = true
 serde.workspace = true
-sha3.workspace = true
 thiserror.workspace = true
 utoipa = { workspace = true, optional = true }
 

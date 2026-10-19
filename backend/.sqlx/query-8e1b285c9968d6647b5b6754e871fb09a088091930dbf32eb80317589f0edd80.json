@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 报价卡片生成的、当前用户是买方或卖方的最新一张订单。$1 offer_hash, $2 chain_id, $3 合约地址, $4 用户\nSELECT id FROM escrow_orders\nWHERE offer_hash = $1 AND chain_id = $2 AND contract = $3 AND state <> 0\n  AND (buyer_id = $4 OR seller_id = $4)\nORDER BY id DESC\nLIMIT 1\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8e1b285c9968d6647b5b6754e871fb09a088091930dbf32eb80317589f0edd80"
+}

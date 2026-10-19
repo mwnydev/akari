@@ -16,6 +16,7 @@ async fn setup(pool: &PgPool) {
             chain_id: CHAIN,
             name: "test",
             escrow: &ESCROW,
+            stream: &[0x5e; 20],
             config: &[0xc0; 20],
             token: &[0xd1; 20],
             token_symbol: "mUSDT",
@@ -221,4 +222,86 @@ async fn order_upsert_reports_only_real_changes(pool: PgPool) {
             .is_none(),
         "already cleared"
     );
+}
+
+/// 生成订单的报价卡片：成交次数用完即已付款；区块回滚撤销订单后恢复。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn offer_paid_follows_order_fills(pool: PgPool) {
+    setup(&pool).await;
+    let seller: i64 =
+        sqlx::query_scalar("INSERT INTO users (email) VALUES ('s@example.com') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let offer_hash = [7u8; 32];
+    // 可成交 2 次的报价。
+    let twice: i64 = sqlx::query_scalar(
+            "INSERT INTO offers (conversation_id, seller_id, chain_id, verifying_contract, seller, buyer, token,
+               amount, fee_payer, max_fee_bps, max_base_gas, max_min_fee, bond, late_slash_bps, instant, ship_window,
+               confirm_window, listing_hash, expiry, max_fills, nonce, signature, offer_hash, expires_at)
+             VALUES (1, $1, $2, $3, $4, $4, $4, 5000000, 0, 100, 100000, 1000000, 0, 0, false, 86400, 86400,
+               $5, 1800000000, 2, 1, '\\x01', $6, now() + interval '1 day')
+         RETURNING id",
+    )
+    .bind(seller)
+    .bind(CHAIN)
+    .bind(ESCROW.as_slice())
+    .bind([0u8; 20].as_slice())
+    .bind([2u8; 32].as_slice())
+    .bind(offer_hash.as_slice())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let status = |id: i64| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, String>("SELECT status::text FROM offers WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        }
+    };
+    let order = |chain_order_id: i64| OrderUpsert {
+        chain_id: CHAIN,
+        contract: &ESCROW,
+        chain_order_id,
+        buyer: vec![0xb1; 20],
+        seller: vec![0xc1; 20],
+        token: vec![0xd1; 20],
+        amount: "5000000".into(),
+        offer_hash: offer_hash.to_vec(),
+        listing_hash: vec![2; 32],
+        state: 1,
+        level: "latest",
+        created_block: 3,
+        updated_block: 3,
+        ..Default::default()
+    };
+    let sync = || chain::sync_offer_fills(&pool, CHAIN, &ESCROW, &offer_hash);
+
+    chain::upsert_order(&pool, &order(1)).await.unwrap();
+    assert!(
+        !sync().await.unwrap(),
+        "one of two fills used: still pending"
+    );
+    assert_eq!(status(twice).await, "pending");
+    chain::upsert_order(&pool, &order(2)).await.unwrap();
+    assert!(sync().await.unwrap());
+    assert_eq!(status(twice).await, "paid");
+    assert!(!sync().await.unwrap(), "already paid: no rewrite");
+
+    // 回滚撤销第 2 单：恢复为待确认。
+    chain::clear_order(&pool, CHAIN, &ESCROW, 2).await.unwrap();
+    assert!(sync().await.unwrap());
+    assert_eq!(status(twice).await, "pending");
+
+    // 另一份合约上同哈希的订单不算。
+    let other = OrderUpsert {
+        contract: &[0x5e; 20],
+        ..order(2)
+    };
+    chain::upsert_order(&pool, &other).await.unwrap();
+    assert!(!sync().await.unwrap());
+    assert_eq!(status(twice).await, "pending");
 }

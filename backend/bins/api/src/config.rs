@@ -1,6 +1,7 @@
 //! 配置全部来自环境变量（生产由 systemd-creds 注入密钥）。
 
 use anyhow::{Context, bail};
+use forum_chain::config::WalletInitVersion;
 use forum_core::Usdt;
 use forum_core::eip712::Address;
 use forum_core::trade::{MAX_BASE_GAS, MAX_FEE_BPS, MAX_MIN_FEE, TradeLimits};
@@ -30,16 +31,57 @@ pub struct Config {
     /// 品牌名：Passkey 显示名称「品牌名 钱包签名（勿删）· 用户名」。
     pub brand_name: String,
     pub chain: ChainConfig,
+    /// `CHAIN_CONFIG` 指向的链配置文件（RPC 用于校验钱包地址）；未设置时钱包地址登记不可用。
+    pub chain_file: Option<forum_chain::config::ChainConfig>,
     pub trade_limits: TradeLimits,
 }
 
-/// 担保合约所在链。链配置表（chains）落地后改从数据库读取。
-#[derive(Debug, Clone, Copy)]
+/// 担保合约所在链的公开参数。
+#[derive(Debug, Clone)]
 pub struct ChainConfig {
     pub chain_id: u64,
     /// 未配置时报价接口不可用（开发环境可只测论坛与 Passkey）。
     pub escrow: Option<Address>,
     pub usdt: Option<Address>,
+    /// 钱包初始化参数版本（ADR 0008）；为空时不能登记钱包地址。
+    pub wallet_init_versions: Vec<WalletInitVersion>,
+}
+
+impl ChainConfig {
+    pub fn wallet_init_version(&self, version: u32) -> Option<&WalletInitVersion> {
+        self.wallet_init_versions
+            .iter()
+            .find(|v| v.version == version)
+    }
+}
+
+/// 链参数：设置了 `CHAIN_CONFIG` 时全部取自链配置文件（与 indexer 同一份），
+/// 否则用 `CHAIN_ID` / `ESCROW_ADDRESS` / `USDT_ADDRESS`（只用于不接链的本地开发）。
+fn chain() -> anyhow::Result<(ChainConfig, Option<forum_chain::config::ChainConfig>)> {
+    let Some(path) = std::env::var_os("CHAIN_CONFIG").filter(|p| !p.is_empty()) else {
+        let chain = ChainConfig {
+            // 默认 Arbitrum Sepolia；主网 42161。
+            chain_id: num_or("CHAIN_ID", 421_614)?,
+            escrow: opt_address("ESCROW_ADDRESS")?,
+            usdt: opt_address("USDT_ADDRESS")?,
+            wallet_init_versions: Vec::new(),
+        };
+        return Ok((chain, None));
+    };
+    for k in ["CHAIN_ID", "ESCROW_ADDRESS", "USDT_ADDRESS"] {
+        if std::env::var(k).is_ok_and(|v| !v.is_empty()) {
+            bail!("{k} conflicts with CHAIN_CONFIG (the chain config file is the single source)");
+        }
+    }
+    let file = forum_chain::config::ChainConfig::load(path.as_ref())?;
+    let address = |a: alloy::primitives::Address| Address(a.into_array());
+    let chain = ChainConfig {
+        chain_id: file.chain_id,
+        escrow: Some(address(file.contracts.escrow)),
+        usdt: Some(address(file.token.address)),
+        wallet_init_versions: file.wallet_init_versions.clone(),
+    };
+    Ok((chain, Some(file)))
 }
 
 fn list(value: &str) -> Vec<String> {
@@ -104,6 +146,7 @@ fn trade_limits() -> anyhow::Result<TradeLimits> {
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
+        let (chain, chain_file) = chain()?;
         Ok(Self {
             listen: std::env::var("API_LISTEN").unwrap_or_else(|_| "127.0.0.1:8080".to_owned()),
             database_url: var("DATABASE_URL")?,
@@ -128,12 +171,8 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "Akari".to_owned()),
-            chain: ChainConfig {
-                // 默认 Arbitrum Sepolia；主网 42161。
-                chain_id: num_or("CHAIN_ID", 421_614)?,
-                escrow: opt_address("ESCROW_ADDRESS")?,
-                usdt: opt_address("USDT_ADDRESS")?,
-            },
+            chain,
+            chain_file,
             trade_limits: trade_limits()?,
         })
     }

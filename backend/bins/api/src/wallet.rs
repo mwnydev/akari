@@ -5,7 +5,9 @@ use std::sync::Arc;
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::header;
 use axum::http::request::Parts;
-use forum_auth::passkey::{P256Key, UserHandles, webauthn::Webauthn};
+use forum_auth::passkey::{UserHandles, webauthn::Webauthn};
+use forum_chain::config::WalletInitVersion;
+use forum_chain::kernel::{AddressResolver, PasskeyPublicKey};
 use forum_core::ErrorCode;
 use forum_core::eip712::{Address, Domain};
 use forum_core::trade::TradeLimits;
@@ -27,25 +29,45 @@ pub const MAX_PASSKEYS: usize = 5;
 const SESSION_EMAIL_REVERIFIED: &str = "wallet_email_at";
 const SESSION_PASSKEY_VERIFIED: &str = "wallet_passkey";
 
-/// 浏览器算出的钱包地址能否由该 Passkey 公钥推出。
-///
-/// 服务端暂时无法验证：Kernel v3.3 counterfactual 地址要调用链上工厂的 `getAddress`（或在本地复刻
-/// CREATE2 + initCode 编码），这需要 chain crate。在那之前用 [`NoopAddressVerifier`]，地址以浏览器为准；
-/// 错误的地址只会让该用户自己收不到款，不影响他人。
-/// TODO(chain crate): 实现基于工厂 `getAddress` 的验证器并在 main 里替换。
+/// 浏览器算出的钱包地址能否按该初始化参数版本由这个 Passkey 推出（ADR 0008）。
+/// 生产实现是 [`ChainAddressVerifier`]；测试用假实现，不连链。
 #[async_trait::async_trait]
 pub trait AddressVerifier: Send + Sync {
-    async fn verify(&self, chain_id: u64, address: &Address, key: &P256Key)
-    -> anyhow::Result<bool>;
+    async fn verify(
+        &self,
+        version: &WalletInitVersion,
+        address: &Address,
+        key: &PasskeyPublicKey,
+    ) -> anyhow::Result<bool>;
 }
 
-/// 不做校验，一律接受。
-pub struct NoopAddressVerifier;
+/// 经链上 Kernel 工厂 `getAddress`（eth_call，主备节点）推算 counterfactual 地址再比较。
+pub struct ChainAddressVerifier(pub AddressResolver);
 
 #[async_trait::async_trait]
-impl AddressVerifier for NoopAddressVerifier {
-    async fn verify(&self, _: u64, _: &Address, _: &P256Key) -> anyhow::Result<bool> {
-        Ok(true)
+impl AddressVerifier for ChainAddressVerifier {
+    async fn verify(
+        &self,
+        version: &WalletInitVersion,
+        address: &Address,
+        key: &PasskeyPublicKey,
+    ) -> anyhow::Result<bool> {
+        Ok(self.0.address(version, key).await?.0 == address.0)
+    }
+}
+
+/// 没有链配置（`CHAIN_CONFIG`）时：没有初始化参数版本，登记钱包在查版本时就被拒绝，走不到这里。
+pub struct NoChainVerifier;
+
+#[async_trait::async_trait]
+impl AddressVerifier for NoChainVerifier {
+    async fn verify(
+        &self,
+        _: &WalletInitVersion,
+        _: &Address,
+        _: &PasskeyPublicKey,
+    ) -> anyhow::Result<bool> {
+        anyhow::bail!("wallet address verification needs CHAIN_CONFIG")
     }
 }
 

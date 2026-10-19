@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT block_number, log_index, level::text AS \"level!\", topics, data, payload->'snapshot' AS snapshot\n           FROM escrow_events\n           WHERE chain_id = $1 AND contract = $2 AND order_id = $3\n           ORDER BY block_number, log_index",
+  "query": "SELECT block_number, log_index, block_time, level::text AS \"level!\", topics, data,\n                  payload->'snapshot' AS snapshot\n           FROM escrow_events\n           WHERE chain_id = $1 AND contract = $2 AND order_id = $3\n           ORDER BY block_number, log_index",
   "describe": {
     "columns": [
       {
@@ -27,12 +27,23 @@
       },
       {
         "ordinal": 2,
+        "name": "block_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_events",
+            "name": "block_time"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "level!",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "topics",
         "type_info": "ByteaArray",
         "origin": {
@@ -43,7 +54,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "data",
         "type_info": "Bytea",
         "origin": {
@@ -54,7 +65,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "snapshot",
         "type_info": "Jsonb",
         "origin": "Expression"
@@ -70,11 +81,12 @@
     "nullable": [
       false,
       false,
+      true,
       null,
       false,
       false,
       null
     ]
   },
-  "hash": "d4181de93c565d7d0010347cc7dfc39bcea8cba2cba1bf64646b8137dd913eb6"
+  "hash": "471be2bb6041ac8c31693ba3987e620fcab1492321262e98cdef3e2b28732707"
 }
