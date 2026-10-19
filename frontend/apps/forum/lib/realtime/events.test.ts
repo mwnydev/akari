@@ -46,3 +46,42 @@ describe("topic page events", () => {
     expect(e && eventTopic(e)).toBe("t:4");
   });
 });
+
+describe("auction events", () => {
+  // forum-core `chat::Event::AuctionBid` / `AuctionState` 序列化后的样子
+  const bid = {
+    type: "auction_bid",
+    topic_id: 103,
+    auction_id: 9,
+    bid_id: 24,
+    amount: "130000",
+    bidder: "夜***风",
+    linked: false,
+    bids: 24,
+    ends_at: "2026-10-20T10:14:05Z",
+    reserve_met: true,
+  };
+
+  it("parses bid and state pushes on the topic channel", () => {
+    const e = parseEvent(bid);
+    expect(e && eventTopic(e)).toBe("t:103");
+    const state = parseEvent({
+      type: "auction_state",
+      topic_id: 103,
+      auction_id: 9,
+      state: "unsold",
+    });
+    expect(state?.type).toBe("auction_state");
+    expect(state && eventTopic(state)).toBe("t:103");
+  });
+
+  it("drops malformed auction pushes", () => {
+    expect(
+      parseEvent({ type: "auction_state", topic_id: 103, auction_id: 9, state: "paid" }),
+    ).toBeNull();
+    expect(parseEvent({ type: "auction_state", topic_id: 103, state: "unsold" })).toBeNull();
+    expect(parseEvent({ ...bid, amount: "1.3" })).toBeNull();
+    expect(parseEvent({ ...bid, ends_at: "soon" })).toBeNull();
+    expect(parseEvent({ ...bid, linked: "no" })).toBeNull();
+  });
+});

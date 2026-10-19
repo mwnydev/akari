@@ -99,6 +99,10 @@ function memoryApi(state: { overview: WalletOverview; remote: WalletInitVersion[
     withdrawAddresses: unused,
     addWithdrawAddress: unused,
     removeWithdrawAddress: unused,
+    auction: unused,
+    startAuction: unused,
+    finishAuction: unused,
+    auctionPayment: unused,
   };
   return { api, bound };
 }

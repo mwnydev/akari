@@ -1,6 +1,8 @@
 // 设计稿 v2 的模拟数据：只供 /design/v2/* 展示，不调接口。字段按页面需要取舍，不代表最终接口形状；
 // 页面经 views.tsx 换算成正式组件的显示模型。
 import type { TradeReputation } from "@akari/ui";
+import type { AuctionFacts } from "../../../../components/forum/AuctionLine";
+import type { AuctionPanelBid } from "../../../../components/forum/AuctionPanel";
 import type { TradeFacts } from "../../../../components/forum/TradeLine";
 import type { BoardColor } from "../../../../lib/board-color";
 
@@ -196,17 +198,6 @@ export function board(slug: string): Board {
   return b;
 }
 
-export interface AuctionFacts {
-  currency: "USDT" | "CNY";
-  /** 当前价：USDT 时为最小单位，CNY 时为分 */
-  current: string;
-  /** 卖家签名汇率，仅 CNY */
-  cnyPerUsdt?: number;
-  bids: number;
-  secondsLeft: number;
-  reserveMet: boolean;
-}
-
 export interface TopicSummary {
   id: number;
   title: string;
@@ -276,7 +267,6 @@ export const topics: TopicSummary[] = [
     auction: {
       currency: "CNY",
       current: "128000",
-      cnyPerUsdt: 72_000,
       bids: 23,
       secondsLeft: 2 * 3600 + 14 * 60 + 5,
       reserveMet: true,
@@ -630,23 +620,63 @@ export const auctionFloors: FloorData[] = [
   },
 ];
 
-export interface Bid {
-  id: number;
-  /** 已脱敏，如「星**」 */
-  bidder: string;
-  /** 拍卖币种最小单位 */
-  amount: string;
-  time: string;
-  timeIso: string;
-}
+export type Bid = AuctionPanelBid;
 
 export const bids: Bid[] = [
-  { id: 23, bidder: "北**", amount: "128000", time: "16:08:41", timeIso: "2026-10-20T08:08:41Z" },
-  { id: 22, bidder: "夜**", amount: "126000", time: "16:02:10", timeIso: "2026-10-20T08:02:10Z" },
-  { id: 21, bidder: "北**", amount: "124000", time: "15:47:55", timeIso: "2026-10-20T07:47:55Z" },
-  { id: 20, bidder: "m***o", amount: "120000", time: "15:20:03", timeIso: "2026-10-20T07:20:03Z" },
-  { id: 19, bidder: "张**", amount: "116000", time: "14:51:30", timeIso: "2026-10-20T06:51:30Z" },
-  { id: 18, bidder: "夜**", amount: "110000", time: "13:05:12", timeIso: "2026-10-20T05:05:12Z" },
+  {
+    id: 23,
+    bidder: "北**",
+    amount: "128000",
+    time: "16:08:41",
+    timeIso: "2026-10-20T08:08:41Z",
+    mine: false,
+    linked: false,
+  },
+  {
+    id: 22,
+    bidder: "夜**",
+    amount: "126000",
+    time: "16:02:10",
+    timeIso: "2026-10-20T08:02:10Z",
+    mine: false,
+    linked: false,
+  },
+  {
+    id: 21,
+    bidder: "北**",
+    amount: "124000",
+    time: "15:47:55",
+    timeIso: "2026-10-20T07:47:55Z",
+    mine: false,
+    linked: false,
+  },
+  {
+    id: 20,
+    bidder: "m***o",
+    amount: "120000",
+    time: "15:20:03",
+    timeIso: "2026-10-20T07:20:03Z",
+    mine: false,
+    linked: false,
+  },
+  {
+    id: 19,
+    bidder: "张**",
+    amount: "116000",
+    time: "14:51:30",
+    timeIso: "2026-10-20T06:51:30Z",
+    mine: false,
+    linked: false,
+  },
+  {
+    id: 18,
+    bidder: "夜**",
+    amount: "110000",
+    time: "13:05:12",
+    timeIso: "2026-10-20T05:05:12Z",
+    mine: false,
+    linked: false,
+  },
 ];
 
 /** 交易板块：置顶规则帖 + 交易帖、拍卖帖 + 普通讨论 */

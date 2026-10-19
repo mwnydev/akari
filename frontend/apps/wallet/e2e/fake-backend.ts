@@ -2,6 +2,10 @@ import { escrowAbi, localChain as chain, mockUsdtAbi } from "@akari/contracts";
 import type { BrowserContext, Route } from "@playwright/test";
 import { createPublicKey, randomBytes } from "node:crypto";
 import type {
+  ApiAuctionAuth,
+  AuctionPayment,
+  AuctionSigning,
+  AuctionView,
   NewOfferRequest,
   NewWallet,
   OfferView,
@@ -14,7 +18,9 @@ import type {
   WalletView,
   WithdrawAddressView,
 } from "../lib/wallet/api";
+import { parseAuctionAuth } from "../lib/wallet/auction";
 import { toView } from "../lib/wallet/init-version";
+import { AUCTION_TYPES } from "../lib/wallet/typed-data";
 import { publicClient } from "./env";
 
 // 测试替身：forum-api 没运行、或还没实现某些接口（订单接口由 indexer 提供）时，在浏览器网络层模拟它们。
@@ -62,10 +68,69 @@ function checkChallenge(user: User, credential: { response: { clientDataJSON: st
   user.challenge = undefined;
 }
 
+interface FakeAuction {
+  /** 卖家看到的拍卖（含保留价）；上线后 state 变 live、带上拍卖帖主题 */
+  view: AuctionView;
+  /** `POST /auctions/{id}/start` 生成的授权 */
+  auth: ApiAuctionAuth;
+  /** 上线后的拍卖帖主题 */
+  topicId: number;
+  /** 卖家在钱包签好后提交的授权签名 */
+  sellerSig?: string;
+  payment?: AuctionPayment;
+}
+
 export class FakeBackend {
   private users: User[] = [];
   private offers: OfferView[] = [];
   private finalized = new Set<string>();
+  private auctions = new Map<string, FakeAuction>();
+
+  /**
+   * 测试登记一场待卖家签名的拍卖草稿（真实的挂拍、出价、成交证明与 createFromAuction 见 forum-api 的
+   * `auction_e2e.rs`；这里只测钱包页面与链上的那一段）。
+   */
+  addAuction(view: AuctionView, auth: ApiAuctionAuth, topicId: number) {
+    this.auctions.set(String(view.id), { view, auth, topicId });
+  }
+
+  /** 测试登记过的拍卖的接口总由这里回答（有真实 forum-api 时也一样：真实后端里没有这场拍卖）。 */
+  servesAuction(path: string): boolean {
+    const id = /^\/api\/v1\/auctions\/(\d+)(?:\/|$)/.exec(path)?.[1];
+    return id !== undefined && this.auctions.has(id);
+  }
+
+  auctionSellerSig(id: number): string | undefined {
+    return this.auctions.get(String(id))?.sellerSig;
+  }
+
+  /** 结束后由测试签好成交证明（模拟 forum-sponsor），赢家付款页从这里取数据。 */
+  settleAuction(id: number, payment: Omit<AuctionPayment, "auth" | "seller_signature">) {
+    const a = this.auctions.get(String(id));
+    if (!a?.sellerSig) throw new Error(`auction ${id} has no seller signature`);
+    a.payment = { ...payment, auth: a.auth, seller_signature: a.sellerSig };
+    a.view = { ...a.view, state: "awaiting_payment", round: 1 };
+  }
+
+  private auction(id: string): FakeAuction {
+    const a = this.auctions.get(id);
+    if (!a) throw new HttpError(404, "NOT_FOUND", "内容不存在或已被删除");
+    return a;
+  }
+
+  /** 拍卖详情；付款上链后（模拟 indexer）带上站内订单 ID = 链上订单号。 */
+  private async auctionView(a: FakeAuction): Promise<AuctionView> {
+    if (!a.payment) return a.view;
+    const logs = await publicClient.getContractEvents({
+      address: chain.contracts.Escrow,
+      abi: escrowAbi,
+      eventName: "AuctionSettled",
+      args: { auctionId: BigInt(a.view.id) },
+      fromBlock: (await publicClient.getBlockNumber()) - 1000n,
+    });
+    const orderId = logs.at(-1)?.args.orderId;
+    return orderId ? { ...a.view, state: "settled", order_id: Number(orderId) } : a.view;
+  }
 
   /** 让某个订单在模拟的 indexer 里变成 finalized（真实环境要等十几分钟）。 */
   finalize(orderId: string) {
@@ -325,6 +390,50 @@ export class FakeBackend {
         const created = logs.at(-1);
         if (!created?.args.orderId) throw new HttpError(404, "NOT_FOUND", "内容不存在或已被删除");
         return [200, await this.order(created.args.orderId.toString())];
+      }
+      case "GET /api/v1/auctions/{id}":
+        return [200, await this.auctionView(this.auction(id))];
+      case "POST /api/v1/auctions/{id}/start": {
+        // 近期 Passkey 验证由真实后端检查（auction_flow.rs）；这里的用户可能在真实后端验证，不在这里记录
+        const a = this.auction(id);
+        const auth = parseAuctionAuth(a.auth);
+        if (!auth || a.view.state !== "draft") {
+          throw new HttpError(409, "AUCTION_UNAVAILABLE", "拍卖当前状态不能进行这项操作");
+        }
+        const authHash = await publicClient.readContract({
+          address: chain.contracts.Escrow,
+          abi: escrowAbi,
+          functionName: "hashAuction",
+          args: [auth],
+        });
+        const signing: AuctionSigning = {
+          auction_id: a.view.id,
+          typed_data: {
+            domain: {
+              name: "AkariEscrow",
+              version: "1",
+              chainId: chain.chainId,
+              verifyingContract: chain.contracts.Escrow,
+            },
+            types: AUCTION_TYPES,
+            primaryType: "AuctionAuth",
+            message: a.auth,
+          },
+          auth_hash: authHash,
+          sign_deadline: new Date(Date.now() + 600_000).toISOString(),
+        };
+        return [200, signing];
+      }
+      case "POST /api/v1/auctions/{id}/finish": {
+        const a = this.auction(id);
+        a.sellerSig = (body as { signature: string }).signature;
+        a.view = { ...a.view, state: "live", topic_id: a.topicId };
+        return [200, a.view];
+      }
+      case "GET /api/v1/auctions/{id}/payment": {
+        const payment = this.auction(id).payment;
+        if (!payment) throw new HttpError(404, "NOT_FOUND", "内容不存在或已被删除");
+        return [200, payment];
       }
       default:
         throw new HttpError(404, "NOT_FOUND", "内容不存在或已被删除");

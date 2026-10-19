@@ -96,6 +96,24 @@ describe("真实 WalletApi", () => {
     await expect(api.order(9)).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
   });
 
+  it("拍卖：开始签名、提交签名带 Cookie，路径与请求体与后端一致", async () => {
+    const signing = { auction_id: 7, auth_hash: `0x${"ab".repeat(32)}` };
+    const { api, seen } = fakeApi({
+      "POST /api/v1/auctions/7/start": () => json(200, signing),
+      "POST /api/v1/auctions/7/finish": () => json(200, { id: 7, topic_id: 12 }),
+      "GET /api/v1/auctions/7/payment": () =>
+        json(403, { code: "FORBIDDEN", message: "没有权限进行此操作" }),
+    });
+    expect(await api.startAuction(7)).toEqual(signing);
+    expect(await api.finishAuction(7, "0x01")).toMatchObject({ topic_id: 12 });
+    expect(seen.map((r) => [r.method, r.body])).toEqual([
+      ["POST", undefined],
+      ["POST", { signature: "0x01" }],
+    ]);
+    expect(seen.every((r) => r.credentials === "include")).toBe(true);
+    await expect(api.auctionPayment(7)).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
+  });
+
   it("不是后端错误格式的失败响应按网络异常处理", async () => {
     const { api } = fakeApi({
       "GET /api/v1/offers/3/order": () => new Response("bad gateway", { status: 502 }),

@@ -1,6 +1,7 @@
 // WebSocket 推送的消息结构（协议见 forum-api `routes::ws` 模块文档）。
 // 外层的 `type` 信封不在 OpenAPI 里；里面的消息、通知、在线状态都用生成的类型。
 import type { Schemas } from "@akari/api-client";
+import type { AuctionState } from "../auction";
 
 export type Presence = Schemas["Presence"];
 
@@ -42,6 +43,24 @@ export type RealtimeEvent =
       liked: boolean;
       likes: number;
     }
+  /**
+   * 订阅的拍卖帖：新出价（金额是拍卖币种最小单位，出价人已打码；`linked` 表示与本场其他出价人同设备，
+   * `ends_at` 是防狙击顺延后的结束时间）
+   */
+  | {
+      type: "auction_bid";
+      topic_id: number;
+      auction_id: number;
+      bid_id: number;
+      amount: string;
+      bidder: string;
+      linked: boolean;
+      bids: number;
+      ends_at: string;
+      reserve_met: boolean;
+    }
+  /** 订阅的拍卖帖：状态变了（结束、成交待付款、已成交、流拍、取消），详情按 REST 重取 */
+  | { type: "auction_state"; topic_id: number; auction_id: number; state: AuctionState }
   /** 推送可能漏了（服务端广播断过，或本页刚重连）：按 REST 补拉。 */
   | { type: "resync" }
   /** 本地事件：别的页面把通知标成了已读。 */
@@ -84,6 +103,8 @@ export function eventTopic(e: RealtimeEvent): string | null {
     case "comment":
     case "comment_removed":
     case "likes":
+    case "auction_bid":
+    case "auction_state":
       return topicKey({ topic_id: e.topic_id });
     default:
       return null;
@@ -92,6 +113,17 @@ export function eventTopic(e: RealtimeEvent): string | null {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 const isInt = (v: unknown): v is number => Number.isSafeInteger(v);
+const isDecimal = (v: unknown): v is string => typeof v === "string" && /^\d{1,78}$/.test(v);
+const AUCTION_STATES: ReadonlySet<string> = new Set<AuctionState>([
+  "draft",
+  "live",
+  "ended",
+  "awaiting_payment",
+  "settled",
+  "unsold",
+  "cancelled",
+]);
+const isTime = (v: unknown): v is string => typeof v === "string" && !Number.isNaN(Date.parse(v));
 
 /**
  * 解析一条服务端推送；不认识或结构不对的返回 null（协议加新事件时旧页面直接忽略）。
@@ -152,6 +184,25 @@ export function parseEvent(raw: unknown): RealtimeEvent | null {
         isInt(v.user_id) &&
         typeof v.liked === "boolean" &&
         isInt(v.likes)
+        ? (v as RealtimeEvent)
+        : null;
+    case "auction_bid":
+      return isInt(v.topic_id) &&
+        isInt(v.auction_id) &&
+        isInt(v.bid_id) &&
+        isDecimal(v.amount) &&
+        typeof v.bidder === "string" &&
+        typeof v.linked === "boolean" &&
+        isInt(v.bids) &&
+        typeof v.reserve_met === "boolean" &&
+        isTime(v.ends_at)
+        ? (v as RealtimeEvent)
+        : null;
+    case "auction_state":
+      return isInt(v.topic_id) &&
+        isInt(v.auction_id) &&
+        typeof v.state === "string" &&
+        AUCTION_STATES.has(v.state)
         ? (v as RealtimeEvent)
         : null;
     case "resync":

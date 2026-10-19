@@ -6,8 +6,9 @@ import { ComposerProvider } from "../../../../components/forum/ComposerContext";
 import { FloorStream } from "../../../../components/forum/Floor";
 import { SellerCard } from "../../../../components/forum/SellerCard";
 import { TopicHeader } from "../../../../components/forum/TopicHeader";
-import { AuctionPanel, type AuctionTerms } from "../_components/AuctionPanel";
-import { AuctionRules } from "../_components/AuctionRules";
+import type { AuctionPanelData } from "../../../../components/forum/AuctionPanel";
+import { AuctionRules } from "../../../../components/forum/AuctionRules";
+import { MockAuction } from "../_components/MockAuction";
 import { MockFloor } from "../_components/MockFloor";
 import { MockShell } from "../_components/MockShell";
 import { auctionFloors, bids, topics, user, VIEWER_ID } from "../_mock/data";
@@ -16,20 +17,29 @@ import { mockHeader, mockPerson } from "../_mock/views";
 export const metadata: Metadata = { title: "拍卖帖" };
 
 /** 参数取 plan 第 9 节默认值：付款期 48 小时、防狙击 15 分钟、累计顺延上限 24 小时。 */
-const terms: AuctionTerms = {
+const auction: AuctionPanelData = {
+  state: "live",
   currency: "CNY",
   cnyPerUsdt: 72_000,
   start: "50000",
   increment: "2000",
   current: "128000",
+  minNext: "130000",
   bidCount: 23,
   reserveMet: true,
   secondsLeft: 2 * 3600 + 14 * 60 + 5,
-  payHours: 48,
+  endsAt: "2026-10-20T10:22:46Z",
+  extendedSecs: 0,
+  snipeWindowSecs: 15 * 60,
+  snipeExtendSecs: 15 * 60,
+  maxExtensionSecs: 24 * 3600,
+  payWindowSecs: 48 * 3600,
+  runnerUpWindowSecs: 24 * 3600,
+  defaultBanSecs: 30 * 86_400,
   paySecondsLeft: 47 * 3600 + 12 * 60 + 9,
-  snipeMinutes: 15,
-  snipeCapHours: 24,
-  balancePercent: 10,
+  my: "none",
+  eligibility: { kind: "percent", percent: 10 },
+  feePayer: 0,
 };
 
 /** 正文列与右侧面板；窄屏面板排在标题和楼层之间。 */
@@ -53,8 +63,8 @@ export default function DesignAuctionPage() {
           aria-label="出价"
           className="mt-3 space-y-3 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:mt-0"
         >
-          <AuctionPanel terms={terms} bids={bids} viewer={mask(user(VIEWER_ID).name)} />
-          <AuctionRules terms={terms} />
+          <MockAuction auction={auction} bids={bids} viewer={mask(user(VIEWER_ID).name)} />
+          <AuctionRules auction={auction} />
           <SellerCard
             seller={mockPerson(topic.authorId)}
             facts={`在售 3 件 · 加入于 ${user(topic.authorId).joined}`}

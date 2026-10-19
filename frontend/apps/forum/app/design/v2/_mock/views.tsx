@@ -11,7 +11,7 @@ import { TradeLine } from "../../../../components/forum/TradeLine";
 import type { PersonCard } from "../../../../components/forum/UserPopover";
 import type { PostSocial, SocialPerson } from "../../../../lib/floor-social";
 import { PROSE_CLASS } from "../../../../lib/prose";
-import { AuctionLine } from "../_components/AuctionLine";
+import { AuctionLine } from "../../../../components/forum/AuctionLine";
 import {
   board as boardOf,
   boards,

@@ -4,7 +4,8 @@ import { AA_RPC_PATH, API_ORIGIN, backendPaths } from "./e2e/env";
 // AA 端到端测试：先 `deploy/dev/aa.sh up` 启动本地链与 bundler（见 deploy/dev/README-aa.md）；链没起来时整组跳过。
 // 钱包用 `next dev` 运行；forum-api（WALLET_E2E_API，可选）实现了 /aa/rpc 就走真实代付，
 // 否则用 DEV 代付（构建产物禁止带 DEV 代付，见 next.config.ts）。
-const PORT = 3101;
+// 端口可改：同一台机器上多份检出同时跑 e2e 时互不冲突
+const PORT = Number(process.env.WALLET_E2E_PORT ?? 3101);
 const realSponsor = (await backendPaths()).has(AA_RPC_PATH);
 
 export default defineConfig({

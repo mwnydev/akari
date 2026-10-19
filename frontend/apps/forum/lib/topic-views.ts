@@ -1,6 +1,7 @@
 // 接口数据 → 论坛共享组件的显示模型（主题列表行、标题区、名片）。纯函数，单元测试直接测。
 import type { Schemas } from "@akari/api-client";
 import type { PersonCard } from "../components/forum/UserPopover";
+import type { AuctionFacts } from "../components/forum/AuctionLine";
 import type { TopicHeaderView } from "../components/forum/TopicHeader";
 import type { TopicKind, TopicRowView } from "../components/forum/TopicTable";
 import type { TradeFacts } from "../components/forum/TradeLine";
@@ -11,16 +12,23 @@ import {
   userName,
   type UserCardView,
 } from "./display";
+import { auctionCurrency, secondsUntil } from "./auction";
 import { topicHref } from "./links";
 import { boardRef } from "./nav";
 
-/** TopicSummary.kind：0 普通、1 交易、2 争议。 */
+/** TopicSummary.kind：0 普通、1 交易、2 争议、3 拍卖。 */
 const TOPIC_KIND_TRADE = 1;
+const TOPIC_KIND_AUCTION = 3;
+
+export function isAuctionTopic(t: Pick<Schemas["TopicSummary"], "kind" | "auction">): boolean {
+  return t.kind === TOPIC_KIND_AUCTION || t.auction != null;
+}
 
 type Lookup = (id: number) => UserCardView;
 
-export function topicKind(t: Pick<Schemas["TopicSummary"], "kind">): TopicKind {
-  return t.kind === TOPIC_KIND_TRADE ? "trade" : "normal";
+export function topicKind(t: Pick<Schemas["TopicSummary"], "kind" | "auction">): TopicKind {
+  if (t.kind === TOPIC_KIND_TRADE) return "trade";
+  return isAuctionTopic(t) ? "auction" : "normal";
 }
 
 /** 有过交易记录才在名片上显示信誉（否则人人都是「新卖家 · 已成交 0 笔」）。 */
@@ -82,6 +90,20 @@ export function tradeFacts(t: Schemas["TopicSummary"], user: Lookup): TradeFacts
     instant: trade.instant,
     stock: trade.stock,
     seller: hasTraded(seller) ? tradeReputation(seller) : undefined,
+  };
+}
+
+/** 列表行里拍卖帖的摘要；剩余时间按渲染时刻算（服务端渲染用服务器时钟）。不是拍卖帖或币种不认识时返回 null。 */
+export function auctionFacts(t: Schemas["TopicSummary"], now = new Date()): AuctionFacts | null {
+  const a = t.auction;
+  const currency = a ? auctionCurrency(a.currency) : null;
+  if (!a || !currency) return null;
+  return {
+    currency,
+    current: a.current,
+    bids: a.bids,
+    reserveMet: a.reserve_met,
+    secondsLeft: secondsUntil(a.ends_at, now.getTime(), 0),
   };
 }
 

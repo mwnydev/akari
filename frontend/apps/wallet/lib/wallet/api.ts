@@ -27,6 +27,12 @@ export type OrderRole = paths["/api/v1/orders"]["get"]["parameters"]["query"]["r
 export type WalletBalances = Schemas["Balances"];
 export type WithdrawAddressView = Schemas["WithdrawAddressView"];
 export type NewWithdrawAddress = Schemas["NewWithdrawAddressRequest"];
+export type AuctionView = Schemas["AuctionView"];
+export type AuctionSigning = Schemas["AuctionSigning"];
+export type AuctionPayment = Schemas["AuctionPayment"];
+/** EIP-712 `AuctionAuth` 的 JSON：uint256 为十进制字符串，uint8–uint64 为 JSON 数字，bytes32 / address 为 0x 十六进制。 */
+export type ApiAuctionAuth = Schemas["AuctionAuth"];
+export type ApiSettlementProof = Schemas["SettlementProof"];
 
 /**
  * 钱包前端依赖的全部后端接口。页面与 SDK 只依赖这个接口；单元测试换成内存实现（见 ./sdk.test.ts）。
@@ -65,6 +71,14 @@ export interface WalletApi {
   addWithdrawAddress(req: NewWithdrawAddress): Promise<WithdrawAddressView>;
   /** 撤销提币地址（需近期 Passkey 验证） */
   removeWithdrawAddress(id: number): Promise<void>;
+  /** 拍卖详情（草稿只有卖家看得到；链上成交、indexer 同步后带 `order_id`） */
+  auction(id: number): Promise<AuctionView>;
+  /** 挂拍第二步：后端按当前参数生成拍卖授权（需近期 Passkey 验证；可重复调用，旧的作废） */
+  startAuction(id: number): Promise<AuctionSigning>;
+  /** 挂拍第三步：提交卖家签名，后端链上验签通过后发拍卖帖、开始计时 */
+  finishAuction(id: number, signature: string): Promise<AuctionView>;
+  /** 中标者（或递补者）付款建单的数据 */
+  auctionPayment(id: number): Promise<AuctionPayment>;
 }
 
 interface Options {
@@ -151,6 +165,18 @@ export function createWalletApi({ baseUrl = API_BASE, fetch: f = fetch }: Option
         api.DELETE("/api/v1/wallet/withdraw-addresses/{id}", { params: { path: { id } } }),
       );
     },
+    auction: (id) => unwrap(api.GET("/api/v1/auctions/{id}", { params: { path: { id } } })),
+    startAuction: (id) =>
+      unwrap(api.POST("/api/v1/auctions/{id}/start", { params: { path: { id } } })),
+    finishAuction: (id, signature) =>
+      unwrap(
+        api.POST("/api/v1/auctions/{id}/finish", {
+          params: { path: { id } },
+          body: { signature },
+        }),
+      ),
+    auctionPayment: (id) =>
+      unwrap(api.GET("/api/v1/auctions/{id}/payment", { params: { path: { id } } })),
   };
 }
 

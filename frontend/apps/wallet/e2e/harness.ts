@@ -12,7 +12,7 @@ import {
   type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { AA_RPC_PATH, backendPaths, publicClient } from "./env";
+import { AA_RPC_PATH, BUNDLER_URL, RPC_URL, backendPaths, publicClient } from "./env";
 import { FAKE_EMAIL_CODE, FakeBackend } from "./fake-backend";
 import { signIn, waitForCode } from "./forum-user";
 
@@ -77,7 +77,18 @@ export async function harness(): Promise<Harness> {
       const context = await browser.newContext();
       // 已登录用户：有真实后端就真的登录，否则模拟后端里每个上下文本身就是一个用户
       const login = isReal("/api/v1/wallet") ? await signIn(context, baseURL, tag) : null;
-      await fake.attach(context, (path) => !isReal(path));
+      await fake.attach(context, (path) => !isReal(path) || fake.servesAuction(path));
+      // 钱包前端连 chain.local.json 里的默认端口；测试链换了端口时把浏览器的请求转过去
+      for (const [from, to] of [
+        [chain.rpcUrl, RPC_URL],
+        [chain.bundlerUrl, BUNDLER_URL],
+      ] as const) {
+        if (from === to) continue;
+        await context.route(
+          (url) => url.origin === new URL(from).origin,
+          async (route) => route.fulfill({ response: await route.fetch({ url: to }) }),
+        );
+      }
       const page = await context.newPage();
       const cdp: CDPSession = await context.newCDPSession(page);
       await cdp.send("WebAuthn.enable");
@@ -122,7 +133,7 @@ export async function createWallet({ page, emailCode }: User): Promise<Address> 
 /** 部署账户的钱包客户端（本地链，公开的开发密钥）。 */
 export const deployer = createWalletClient({
   account: privateKeyToAccount(DEV_DEPLOYER_KEY),
-  transport: http(chain.rpcUrl),
+  transport: http(RPC_URL),
 });
 
 /** 给地址铸测试 USDT 并等上链。 */

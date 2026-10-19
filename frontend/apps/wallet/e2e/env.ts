@@ -8,7 +8,14 @@ import { createPublicClient, http } from "viem";
 export const API_ORIGIN = process.env.WALLET_E2E_API ?? "http://127.0.0.1:8080";
 export const AA_RPC_PATH = "/api/v1/aa/rpc";
 
-export const publicClient = createPublicClient({ transport: http(chain.rpcUrl) });
+/**
+ * 链与 bundler 的地址。默认是 chain.local.json 里的默认端口；同一台机器上另有检出占着默认端口时，
+ * 用 aa.sh 的 ANVIL_PORT / BUNDLER_PORT 起自己的链，再设这两个变量（浏览器里的请求由 harness 转过去）。
+ */
+export const RPC_URL = process.env.WALLET_E2E_RPC_URL ?? chain.rpcUrl;
+export const BUNDLER_URL = process.env.WALLET_E2E_BUNDLER_URL ?? chain.bundlerUrl;
+
+export const publicClient = createPublicClient({ transport: http(RPC_URL) });
 
 /** 链与 bundler 都在线返回 null，否则返回跳过原因。 */
 export async function chainIsDown(): Promise<string | null> {
@@ -18,7 +25,7 @@ export async function chainIsDown(): Promise<string | null> {
     if (!(await publicClient.getCode({ address: chain.contracts.Escrow }))) {
       return "Escrow 没有部署（chain.local.json 与当前链不符，重新运行 aa.sh up）";
     }
-    const res = await fetch(chain.bundlerUrl, {
+    const res = await fetch(BUNDLER_URL, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

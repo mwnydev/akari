@@ -1,6 +1,6 @@
 import { ApiError } from "@akari/api-client";
 import { Button, EmptyState } from "@akari/ui";
-import { BadgeDollarSign } from "lucide-react";
+import { BadgeDollarSign, Gavel } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -43,6 +43,12 @@ const loadBoard = cache(async (slug: string, page: number, cursor: string | unde
     }),
   ),
 );
+
+/** 站长后台的拍卖总开关。 */
+async function auctionsEnabled(): Promise<boolean> {
+  const params = await load((await serverApi()).GET("/api/v1/auctions/params"));
+  return !(params instanceof ApiError) && params.settings.enabled === true;
+}
 
 /** 板块热门（后端 `sort=hot`，不含置顶帖；排名每 5 分钟更新），`?hot=` 翻下一页。 */
 const loadHot = async (slug: string, cursor: string | undefined) =>
@@ -92,6 +98,9 @@ export default async function BoardPage({
     );
   }
   const { forum } = data;
+  // 拍卖帖与交易帖同样只能发在允许交易的板块；拍卖总开关关闭（或读不到）时不显示发拍卖帖入口
+  const auctionBoard = forum.allow_trade;
+  const canAuction = me !== null && auctionBoard && (await auctionsEnabled());
   const topics = [...data.pinned, ...data.topics];
   const ctx = { user: cardLookup(data.users) };
   const older = data.next_cursor ? (
@@ -152,7 +161,10 @@ export default async function BoardPage({
                 ]),
           ]}
           defaultTab={hotCursor ? "hot" : undefined}
-          filters={forum.allow_trade ? ["trade"] : []}
+          filters={[
+            ...(forum.allow_trade ? (["trade"] as const) : []),
+            ...(auctionBoard ? (["auction"] as const) : []),
+          ]}
           action={
             me ? (
               <>
@@ -161,6 +173,14 @@ export default async function BoardPage({
                     <Link href={`${boardHref(forum.slug)}/listing`}>
                       <BadgeDollarSign size={16} aria-hidden />
                       发交易帖
+                    </Link>
+                  </Button>
+                ) : null}
+                {canAuction ? (
+                  <Button asChild size="sm" variant="secondary">
+                    <Link href={`${boardHref(forum.slug)}/auction`}>
+                      <Gavel size={16} aria-hidden />
+                      发拍卖帖
                     </Link>
                   </Button>
                 ) : null}

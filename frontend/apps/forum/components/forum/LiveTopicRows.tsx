@@ -1,6 +1,7 @@
 import type { Schemas } from "@akari/api-client";
 import type { UserCardView } from "../../lib/display";
-import { topicRowView, tradeFacts } from "../../lib/topic-views";
+import { auctionFacts, topicRowView, tradeFacts } from "../../lib/topic-views";
+import { AuctionLine } from "./AuctionLine";
 import type { FeedRow } from "./TopicFeed";
 import { TopicRow } from "./TopicTable";
 import { TradeLine } from "./TradeLine";
@@ -18,11 +19,17 @@ export function liveFeedRows(
   return topics.map((t) => {
     const view = topicRowView(t, ctx.user, { forum: ctx.forum?.(t.forum_id), now });
     const trade = tradeFacts(t, ctx.user);
+    const auction = trade ? null : auctionFacts(t, now);
+    const info = trade ? (
+      <TradeLine trade={trade} />
+    ) : auction ? (
+      <AuctionLine auction={auction} />
+    ) : null;
     return {
       id: t.id,
       kind: view.kind,
       pinned: view.pinned,
-      node: <TopicRow key={t.id} topic={view} info={trade ? <TradeLine trade={trade} /> : null} />,
+      node: <TopicRow key={t.id} topic={view} info={info} />,
     };
   });
 }
