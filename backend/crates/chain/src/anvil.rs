@@ -1,11 +1,16 @@
 //! 测试用本机 anvil 与 Kernel v3.3 夹具（`anvil` 特性，只给集成测试用）。
 
+use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
+use std::time::Duration;
 
 use alloy::primitives::{U256, address};
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
+use alloy::rpc::client::RpcClient;
+use alloy::transports::http::reqwest;
 
 use crate::ChainError;
 use crate::config::WalletInitVersion;
@@ -63,14 +68,50 @@ impl Drop for Anvil {
     }
 }
 
+/// 等 anvil 报告监听成功的最长时间。
+const LISTEN_TIMEOUT: Duration = Duration::from_secs(30);
+/// 端口被并行测试的另一个 anvil 抢先占用时换端口重试的次数。
+const SPAWN_ATTEMPTS: usize = 5;
+
 impl Anvil {
+    /// 在随机空闲端口上启动，等它在标准输出报告「Listening on」才返回。
+    /// 选端口与 anvil 绑定之间有空隙：并行测试里另一个 anvil 可能先占了同一端口，这时本进程绑定失败退出，
+    /// 若只探测端口能否连上，就会连到别人的链上（部署地址、nonce 全乱）。所以以本进程的输出为准，失败换端口重试。
     pub fn spawn(bin: &PathBuf) -> std::io::Result<Self> {
-        let port = TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
-        let child = Command::new(bin)
-            .args(["--port", &port.to_string(), "--silent"])
-            .stdout(Stdio::null())
-            .spawn()?;
-        Ok(Self { child, port })
+        let mut last = std::io::Error::other("anvil did not start");
+        for _ in 0..SPAWN_ATTEMPTS {
+            let port = TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
+            let mut child = Command::new(bin)
+                .args(["--port", &port.to_string()])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()?;
+            let stdout = child
+                .stdout
+                .take()
+                .ok_or_else(|| std::io::Error::other("anvil stdout"))?;
+            let (tx, rx) = mpsc::channel();
+            // 读到监听成功就通知；之后继续读完输出，免得管道写满卡住 anvil
+            std::thread::spawn(move || {
+                let mut tx = Some(tx);
+                for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                    if line.contains("Listening on")
+                        && let Some(tx) = tx.take()
+                    {
+                        let _ = tx.send(());
+                    }
+                }
+            });
+            match rx.recv_timeout(LISTEN_TIMEOUT) {
+                Ok(()) => return Ok(Self { child, port }),
+                Err(_) => {
+                    last = std::io::Error::other(format!("anvil failed to listen on {port}"));
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        Err(last)
     }
 
     pub fn http(&self) -> String {
@@ -82,15 +123,16 @@ impl Anvil {
     }
 
     /// HTTP 客户端，等到节点能响应才返回（不在客户端填 nonce / gas：anvil 的 eth_sendTransaction 会自己填，
-    /// `evm_revert` 之后也不会用到过期的 nonce）。
+    /// `evm_revert` 之后也不会用到过期的 nonce）。本机地址直连，不走环境里的 `HTTP_PROXY`。
     pub async fn provider(&self) -> Result<DynProvider, ChainError> {
-        let url = self
+        let url: reqwest::Url = self
             .http()
             .parse()
             .map_err(|e| ChainError::Config(format!("anvil url: {e}")))?;
+        let client = RpcClient::new_http_with_client(crate::rpc::http_client(&url)?, url);
         let p = ProviderBuilder::new()
             .disable_recommended_fillers()
-            .connect_http(url)
+            .connect_client(client)
             .erased();
         let mut last = ChainError::Rpc("anvil not started".into());
         for _ in 0..100 {

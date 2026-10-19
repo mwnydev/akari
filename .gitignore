@@ -27,5 +27,5 @@ frontend/apps/*/AGENTS.md
 # deploy/dev/aa.sh 生成的后端链配置（含部署区块，每次 up 不同）
 /deploy/dev/chain.local.toml
 
-# 各工作区（jj workspace / 并行代理）的运行状态：pid、日志、临时环境变量
-/.run/
+# 运行状态（任意目录下）：jj 工作区 / 并行代理的 pid、日志、临时环境变量、截图
+.run/

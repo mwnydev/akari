@@ -10,6 +10,16 @@ timezone: UTC
 
 postgresql_version: 18
 pgroonga_package: postgresql-18-pgdg-pgroonga
+# 每个程序一个数据库账号（plan 第 2、8 节），本机 Unix socket 按系统用户 peer 认证（pg_ident 映射）。
+# 授权见 roles/postgresql/templates/grants.sql.j2；迁移跑到 pg_grants_schema_version 之后才执行。
+pg_database: akari
+pg_owner: akari_owner
+pg_app_accounts:
+  - { system_user: forum-api, role: forum_api }
+  - { system_user: forum-worker, role: forum_worker }
+  - { system_user: forum-indexer, role: forum_indexer }
+  - { system_user: forum-sponsor, role: forum_sponsor }
+pg_grants_schema_version: 20261201000001
 valkey_version: 9.1.2
 valkey_sha256: 0d2a79936cbafa5f527a5175536bb17bd3f767f95f53529e59dddfacf762eec0 # gitleaks:allow（公开校验和）
 

@@ -1,7 +1,10 @@
 import type { Address } from "viem";
 import local from "./chain.local.json" with { type: "json" };
 
-/** 一条链上钱包需要的全部地址。本地链由 deploy/dev/aa.sh 生成；测试网 / 主网配置接入时按同一形状加。 */
+/**
+ * 一条链上钱包需要的全部地址。本地链读入库的 chain.local.json（地址固定、URL 用默认端口；deploy/dev/aa.sh up
+ * 只核对不改写，见 README-aa.md）；测试网 / 主网配置接入时按同一形状加。
+ */
 export interface ChainConfig {
   chainId: number;
   name: string;
@@ -43,7 +46,7 @@ export interface WalletInitVersion {
 /** uint256 最大值：initCode 里给 Paymaster 的 USDT 授权额度。 */
 const MAX_UINT256 = (2n ** 256n - 1n).toString();
 
-/** 本地链每次 `aa.sh up` 重新部署，只有版本 1，参数直接取自生成的 chain.local.json。 */
+/** 本地链每次 `aa.sh up` 重新部署（地址不变），只有版本 1，参数直接取自 chain.local.json。 */
 export const localChain: ChainConfig = {
   ...(local as Omit<ChainConfig, "walletInitVersions">),
   walletInitVersions: [

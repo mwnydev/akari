@@ -2580,6 +2580,8 @@ export interface components {
     ForumView: {
       /** @description 能否发交易帖。 */
       allow_trade: boolean;
+      /** @description 板块色块：固定色板里的 `#rrggbb`；为空时前端按排序位置轮换。 */
+      color?: string | null;
       description: string;
       /** Format: int32 */
       id: number;

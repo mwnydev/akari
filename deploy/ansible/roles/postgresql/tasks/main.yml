@@ -17,6 +17,7 @@
       - "postgresql-{{ postgresql_version }}"
       - "{{ pgroonga_package }}"
       - pgbackrest
+      - python3-psycopg2 # community.postgresql 模块需要
     state: present
     update_cache: true
 
@@ -37,3 +38,91 @@
       [Service]
       MemoryHigh={{ pg_memory_high }}
   notify: Restart postgresql
+
+- name: Start PostgreSQL before creating accounts
+  ansible.builtin.meta: flush_handlers
+
+- name: Database owner role (no login)
+  community.postgresql.postgresql_user:
+    name: "{{ pg_owner }}"
+    role_attr_flags: NOLOGIN
+  become: true
+  become_user: postgres
+
+- name: Database
+  community.postgresql.postgresql_db:
+    name: "{{ pg_database }}"
+    owner: "{{ pg_owner }}"
+    encoding: UTF-8
+  become: true
+  become_user: postgres
+
+# 程序账号只登录、不建对象：public 模式的 CREATE 只留给属主（PostgreSQL 15 起默认如此，这里显式写死）
+- name: Application database accounts
+  community.postgresql.postgresql_user:
+    name: "{{ item.role }}"
+    role_attr_flags: LOGIN,NOSUPERUSER,NOCREATEDB,NOCREATEROLE,NOINHERIT
+  loop: "{{ pg_app_accounts }}"
+  become: true
+  become_user: postgres
+
+- name: Connect privilege for application accounts
+  community.postgresql.postgresql_privs:
+    login_db: "{{ pg_database }}"
+    type: database
+    objs: "{{ pg_database }}"
+    privs: CONNECT
+    roles: "{{ pg_app_accounts | map(attribute='role') | join(',') }}"
+  become: true
+  become_user: postgres
+
+- name: Map service system users to their database accounts (peer auth)
+  ansible.builtin.blockinfile:
+    path: "/etc/postgresql/{{ postgresql_version }}/main/pg_ident.conf"
+    marker: "# {mark} akari application accounts (Ansible)"
+    block: |
+      {% for a in pg_app_accounts %}
+      akari {{ a.system_user }} {{ a.role }}
+      {% endfor %}
+  notify: Reload postgresql
+
+- name: Application accounts may only connect to the forum database, as their own service user
+  community.postgresql.postgresql_pg_hba:
+    dest: "/etc/postgresql/{{ postgresql_version }}/main/pg_hba.conf"
+    contype: local
+    databases: "{{ pg_database }}"
+    users: "{{ pg_app_accounts | map(attribute='role') | join(',') }}"
+    method: peer
+    options: map=akari
+  notify: Reload postgresql
+
+- name: Applied schema version
+  community.postgresql.postgresql_query:
+    login_db: "{{ pg_database }}"
+    query: >-
+      SELECT CASE WHEN to_regclass('public._sqlx_migrations') IS NULL THEN 0
+        ELSE (SELECT coalesce(max(version), 0) FROM _sqlx_migrations WHERE success) END AS version
+  register: postgresql_schema
+  changed_when: false
+  check_mode: false
+  become: true
+  become_user: postgres
+
+- name: Table grants (each migration's header lists what its tables need)
+  ansible.builtin.template:
+    src: grants.sql.j2
+    dest: /etc/postgresql/akari-grants.sql
+    owner: postgres
+    group: postgres
+    mode: "0640"
+  register: postgresql_grants_file
+
+# 授权语句都可重复执行；迁移还没跑到 pg_grants_schema_version 时（新机器、先装数据库后发版本）跳过，发版本迁移后再跑一次本 play
+- name: Apply table grants
+  community.postgresql.postgresql_script:
+    login_db: "{{ pg_database }}"
+    path: /etc/postgresql/akari-grants.sql
+  when: (postgresql_schema.query_result[0].version | int) >= pg_grants_schema_version
+  changed_when: postgresql_grants_file.changed
+  become: true
+  become_user: postgres

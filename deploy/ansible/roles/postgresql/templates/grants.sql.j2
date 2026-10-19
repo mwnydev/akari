@@ -1,0 +1,73 @@
+-- {{ ansible_managed }}
+-- 各程序数据库账号的表级授权，逐条对应 backend/crates/db/migrations 里每个迁移文件开头的「数据库账号另需」说明；
+-- 新迁移写了授权说明就在这里补上，并把 group_vars 的 pg_grants_schema_version 改成该迁移的版本号。
+-- 所有语句可重复执行。任何账号都不授予审计日志、仲裁裁决与陈述、订单聊天、提币额度流水的 UPDATE / DELETE。
+BEGIN;
+
+-- 20261103000001_chain_indexer：链上派生表只有 forum_indexer 写
+GRANT SELECT, INSERT, UPDATE, DELETE ON chains, escrow_orders, escrow_events,
+  indexer_cursors, indexer_checkpoints TO forum_indexer;
+GRANT INSERT ON outbox TO forum_indexer;
+GRANT SELECT ON wallets TO forum_indexer;
+GRANT SELECT ON chains, escrow_orders, escrow_events TO forum_api, forum_worker, forum_sponsor;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON chains, escrow_orders, escrow_events,
+  indexer_cursors, indexer_checkpoints FROM forum_api, forum_worker, forum_sponsor;
+
+-- 20261104000001_sponsor
+GRANT SELECT, INSERT, UPDATE ON sponsorships, sponsored_calls, sponsor_accounts TO forum_sponsor;
+GRANT SELECT ON wallets TO forum_sponsor;
+GRANT INSERT ON outbox TO forum_sponsor;
+
+-- 20261110000001_orders_stream_wallet_versions
+GRANT SELECT ON offers TO forum_indexer;
+GRANT UPDATE (status, updated_at) ON offers TO forum_indexer;
+
+-- 20261117000001_withdraw_addresses
+GRANT SELECT, INSERT ON withdraw_addresses TO forum_api;
+GRANT UPDATE (revoked_at) ON withdraw_addresses TO forum_api;
+GRANT SELECT ON withdraw_addresses TO forum_sponsor;
+
+-- 20261117000002_withdraw_credits：额度由触发器以属主身份维护，流水只增
+GRANT SELECT, INSERT ON withdraw_credit_ledger TO forum_api, forum_indexer, forum_sponsor;
+GRANT SELECT ON withdraw_credits TO forum_api, forum_sponsor;
+GRANT SELECT ON sponsorships TO forum_api;
+
+-- 20261118000001_messaging
+GRANT SELECT, INSERT ON messages, order_messages, order_negotiations TO forum_indexer;
+GRANT SELECT ON conversations TO forum_indexer;
+GRANT UPDATE (last_message_id, low_read_id, high_read_id) ON conversations TO forum_indexer;
+GRANT SELECT, INSERT ON notifications TO forum_worker;
+GRANT SELECT ON notification_reads, messages, conversations, order_messages, escrow_orders TO forum_worker;
+
+-- 20261119000001_profiles_reputation_uploads：信誉与经验只认最终确认的订单
+GRANT SELECT, INSERT, UPDATE ON user_trade_stats, user_levels TO forum_indexer;
+GRANT SELECT, INSERT ON exp_ledger TO forum_indexer;
+GRANT SELECT ON level_thresholds TO forum_indexer;
+GRANT SELECT, INSERT, UPDATE ON user_trade_stats, user_levels, job_cursors, uploads TO forum_worker;
+GRANT SELECT, INSERT ON exp_ledger TO forum_worker;
+
+-- 20261125000001_arbitration
+GRANT SELECT, INSERT, UPDATE ON arbitration_cases TO forum_indexer;
+GRANT SELECT ON arbitration_rulings, staff_roles, users TO forum_indexer;
+GRANT INSERT ON admin_audit_logs TO forum_indexer;
+GRANT SELECT, UPDATE ON arbitration_cases TO forum_worker;
+GRANT SELECT, INSERT, UPDATE ON arbitration_assignments TO forum_worker;
+GRANT SELECT ON arbitration_rulings, staff_roles TO forum_worker;
+GRANT INSERT ON admin_audit_logs TO forum_worker;
+GRANT SELECT, UPDATE ON arbitration_cases, arbitration_assignments TO forum_api;
+GRANT SELECT, INSERT ON arbitration_rulings, arbitration_statements TO forum_api;
+REVOKE UPDATE, DELETE, TRUNCATE ON admin_audit_logs, arbitration_rulings, arbitration_statements,
+  order_messages, withdraw_credit_ledger FROM forum_api, forum_worker, forum_indexer, forum_sponsor;
+
+-- 20261128000001_staff_alert_dedupe：告警去重只读这三列（RETURNING id 与去重查询），读不到 payload
+GRANT SELECT (id, dedupe_key, created_at) ON outbox TO forum_indexer, forum_sponsor;
+
+-- 20261201000001_floor_social：合并点赞通知时读赞、推进水位
+GRANT SELECT ON post_likes, posts TO forum_worker;
+GRANT SELECT ON post_counters TO forum_worker;
+GRANT UPDATE (like_notify_pending, likes_notified_at) ON post_counters TO forum_worker;
+
+-- 序列（各表 id）
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO forum_api, forum_indexer, forum_sponsor;
+
+COMMIT;

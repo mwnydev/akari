@@ -87,9 +87,11 @@ describe("topic views", () => {
     expect(hotOrder([t(1, 2, 9), t(2, 5, 1), t(3, 2, 30)]).map((x) => x.id)).toEqual([2, 3, 1]);
   });
 
-  it("cycles board colours by position", () => {
+  it("uses the board's palette colour, else cycles by position", () => {
     expect(boardColor({ id: 9, position: 0 })).toBe("red");
     expect(boardColor({ id: 9, position: 6 })).toBe("red");
     expect(boardColor({ id: 9, position: 1 })).not.toBe("red");
+    expect(boardColor({ id: 9, position: 0, color: "#2e9d5c" })).toBe("green");
+    expect(boardColor({ id: 9, position: 0, color: "#123456" })).toBe("red");
   });
 });

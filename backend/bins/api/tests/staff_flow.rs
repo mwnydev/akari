@@ -39,6 +39,7 @@ async fn forum(db: &PgPool, slug: &str) -> i32 {
             post_min_level: 1,
             reply_min_level: 1,
             allow_trade: false,
+            color: None,
         },
     )
     .await

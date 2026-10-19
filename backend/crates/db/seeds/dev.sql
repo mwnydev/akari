@@ -11,3 +11,8 @@ INSERT INTO forums (slug, name, description, position, view_min_level, post_min_
 ON CONFLICT (slug) DO NOTHING;
 -- 交易帖只能发在交易区。
 UPDATE forums SET allow_trade = true WHERE slug = 'trade';
+-- 板块色块（固定色板，见迁移 20261202000001_forum_color）。
+UPDATE forums SET color = v.color FROM (VALUES
+  ('announcements', '#d1453b'), ('general', '#2f7fd8'), ('tech', '#8059c9'),
+  ('trade', '#2e9d5c'), ('help', '#1d9bb0'), ('lounge', '#e08e1b')
+) AS v (slug, color) WHERE forums.slug = v.slug AND forums.color IS NULL;

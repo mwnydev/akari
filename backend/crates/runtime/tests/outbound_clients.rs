@@ -92,7 +92,7 @@ const ALLOWED: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/chain/src/anvil.rs",
-        "connect_http(",
+        "RpcClient::new_http",
         1,
         "local Anvil (development and tests)",
     ),

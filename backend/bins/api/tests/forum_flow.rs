@@ -26,6 +26,7 @@ async fn forum(db: &PgPool, slug: &str, view: i16, post: i16) -> i32 {
             post_min_level: post,
             reply_min_level: 1,
             allow_trade: false,
+            color: None,
         },
     )
     .await
@@ -820,6 +821,46 @@ async fn forum_level_permissions(db: PgPool) {
             .await
             .status,
         StatusCode::OK
+    );
+}
+
+/// 板块色块只能取固定色板里的颜色（迁移里的 CHECK），列表原样返回；没设置的为空。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn forum_colors_come_from_the_palette(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    let new = |slug, color| NewForum {
+        parent_id: None,
+        slug,
+        name: slug,
+        description: "",
+        position: 0,
+        view_min_level: 0,
+        post_min_level: 1,
+        reply_min_level: 1,
+        allow_trade: false,
+        color,
+    };
+    forums::create(&db, &new("green", Some("#2e9d5c")))
+        .await
+        .unwrap();
+    forum(&db, "plain", 0, 1).await;
+    assert!(
+        forums::create(&db, &new("odd", Some("#123456")))
+            .await
+            .is_err()
+    );
+
+    let r = call(&app, "GET", "/api/v1/forums", None, &[]).await;
+    let colors: Vec<(&str, &Value)> = r
+        .body
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| (f["slug"].as_str().unwrap(), &f["color"]))
+        .collect();
+    assert_eq!(
+        colors,
+        [("green", &json!("#2e9d5c")), ("plain", &Value::Null)]
     );
 }
 

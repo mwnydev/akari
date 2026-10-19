@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO forums (parent_id, slug, name, description, position,\n                             view_min_level, post_min_level, reply_min_level, allow_trade)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
+  "query": "INSERT INTO forums (parent_id, slug, name, description, position,\n                             view_min_level, post_min_level, reply_min_level, allow_trade, color)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -25,12 +25,13 @@
         "Int2",
         "Int2",
         "Int2",
-        "Bool"
+        "Bool",
+        "Text"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "d9bf3f7871141a5be59edd49e6e82a60ef1c3d735a3524c413370503280b1d7e"
+  "hash": "75753a7b305b9f50f25fa8e56a29e46eb624f436296b610d4f98e4d4aacbda65"
 }
