@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(DISTINCT (s.sender, s.nonce)) AS \"n!\" FROM sponsored_calls c\n           JOIN sponsorships s ON s.id = c.sponsorship_id\n           WHERE c.contract = $1 AND c.order_id = $2::text::numeric AND c.method = $3 AND c.free\n             AND s.chain_id = $4 AND s.status <> 'expired'\n             AND ($5::bytea IS NULL OR s.sender = $5)\n             AND ($6::timestamptz IS NULL OR s.created_at > $6)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Text",
+        "Int8",
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "11fda65ad8ba83d69b35d2cd438b41ebbe59ebcd9b5faa08be62db555a95a3d6"
+}

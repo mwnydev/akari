@@ -504,3 +504,77 @@ async fn withdraw_address_queries_use_indexes(db: PgPool) {
         );
     }
 }
+
+/// 代付提币次数：1000 个用户、5 万笔代付签名（其中 2 万笔是提币，大多已结束），流水 3 万多行。
+/// 余额按主键读，当天次数按 (user_id, created_at) 部分索引，同 nonce 旧签名按待上链部分索引。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn withdraw_credit_usage_uses_indexes(db: PgPool) {
+    sqlx::raw_sql(
+        r"
+        INSERT INTO users (email) SELECT 'u' || g || '@example.com' FROM generate_series(1, 1000) g;
+        INSERT INTO sponsorships (user_id, chain_id, sender, nonce, user_op_hash, fee, valid_until, signed_block,
+                                  status, created_at)
+        SELECT 1 + g % 1000, 421614, decode(lpad(to_hex(1 + g % 1000), 40, '0'), 'hex'), g / 1000,
+               sha256(int4send(g)), 50000, now() - (g || ' minutes')::interval, g,
+               CASE WHEN g % 50 = 0 THEN 'signed' WHEN g % 7 = 0 THEN 'expired' ELSE 'included' END::sponsorship_status,
+               now() - (g || ' minutes')::interval
+        FROM generate_series(1, 50000) g;
+        INSERT INTO withdraw_credit_ledger (user_id, delta, reason) SELECT id, 1, 'starter' FROM users;
+        INSERT INTO withdraw_credit_ledger (user_id, delta, reason, sponsorship_id, created_at)
+        SELECT user_id, -1, 'withdraw', id, created_at FROM sponsorships WHERE id % 5 < 2;
+        INSERT INTO withdraw_credit_ledger (user_id, delta, reason, sponsorship_id, created_at)
+        SELECT user_id, 1, 'refund_expired', id, created_at FROM sponsorships WHERE id % 5 < 2 AND status = 'expired';
+        ANALYZE;
+        ",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+    let since: time::OffsetDateTime = sqlx::query_scalar("SELECT now() - interval '1 day'")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    let sender = {
+        let mut a = vec![0_u8; 18];
+        a.extend_from_slice(&7_u16.to_be_bytes());
+        a
+    };
+    let with_nonce = sqlx::query(q!("withdraw_credits_usage.sql"))
+        .bind(7_i64)
+        .bind(since)
+        .bind(Some(421614_i64))
+        .bind(Some(sender))
+        .bind(Some("3"));
+    let without = sqlx::query(q!("withdraw_credits_usage.sql"))
+        .bind(7_i64)
+        .bind(since)
+        .bind(None::<i64>)
+        .bind(None::<Vec<u8>>)
+        .bind(None::<String>);
+    // 不带 nonce 时同 nonce 那一项恒为 0，计划里不扫 sponsorships 的待上链索引。
+    let cases = [
+        ("with nonce", with_nonce, true),
+        ("balance only", without, false),
+    ];
+    for (name, q, by_nonce) in cases {
+        let (info, plan) = explain(&db, q).await;
+        assert!(
+            !info
+                .seq_scans
+                .iter()
+                .any(|t| t == "withdraw_credit_ledger" || t == "sponsorships"),
+            "{name}: seq scan\n{plan:#}"
+        );
+        let mut expected = vec!["withdraw_credits_pkey", "withdraw_credit_ledger_withdraws"];
+        if by_nonce {
+            expected.push("sponsorships_open");
+        }
+        for index in expected {
+            assert!(
+                info.indexes.iter().any(|i| i == index),
+                "{name}: expected index {index}, used {:?}\n{plan:#}",
+                info.indexes
+            );
+        }
+    }
+}

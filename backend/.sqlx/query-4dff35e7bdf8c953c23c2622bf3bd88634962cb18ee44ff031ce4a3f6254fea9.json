@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO withdraw_credit_ledger (user_id, delta, reason, order_id)\n         SELECT DISTINCT p.user_id, 1, 'order'::withdraw_credit_reason, o.id\n         FROM escrow_orders o CROSS JOIN LATERAL (VALUES (o.buyer_id), (o.seller_id)) AS p (user_id)\n         WHERE o.id = $1 AND o.state IN (3, 4, 5) AND o.level = 'finalized' AND p.user_id IS NOT NULL\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4dff35e7bdf8c953c23c2622bf3bd88634962cb18ee44ff031ce4a3f6254fea9"
+}

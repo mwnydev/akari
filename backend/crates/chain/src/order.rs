@@ -79,6 +79,11 @@ impl OrderState {
             Self::Settled => "settled",
         }
     }
+
+    /// 终态：已放款、已退款或已结算（含仲裁裁决与超时裁决），资金已分配完毕。
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Released | Self::Refunded | Self::Settled)
+    }
 }
 
 /// 订单所在的担保合约（`escrow_orders.mode`）。

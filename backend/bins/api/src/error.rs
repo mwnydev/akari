@@ -71,7 +71,8 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::WalletRequired
         | ErrorCode::SponsorNotAllowed
         | ErrorCode::SponsorSuspended
-        | ErrorCode::WithdrawAddressNotActive => StatusCode::FORBIDDEN,
+        | ErrorCode::WithdrawAddressNotActive
+        | ErrorCode::WithdrawCreditRequired => StatusCode::FORBIDDEN,
         ErrorCode::OfferUnavailable | ErrorCode::Conflict | ErrorCode::SponsorPending => {
             StatusCode::CONFLICT
         }

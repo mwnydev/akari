@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO withdraw_credit_ledger (user_id, delta, reason, sponsorship_id)\n         VALUES ($1, -1, 'withdraw', $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9e654ee2f04e3334a2b193a3d33a6f3ec838941b854bf699df36f3792cd1c420"
+}

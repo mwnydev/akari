@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 代付提币次数：余额、滚动窗口内已用的代付提币、同一账户同一 nonce 仍未结束的旧签名所扣的次数。\n-- 已用次数与免费额度一样只数可能或已经上链的签名：被取代、代发前作废的在对账确认过期前照算（validUntil 前仍可能经\n-- 第三方上链），同一 nonce 的多笔签名最多一笔能上链，只算一次；同一 nonce 待取代的旧签名不算，重签不会多占当天的次数。\n-- $3–$5 为空时（只看余额与当天次数）后两项按无同 nonce 签名处理。\nSELECT\n  coalesce((SELECT balance FROM withdraw_credits WHERE user_id = $1), 0)::bigint AS \"balance!\",\n  (SELECT count(DISTINCT (s.chain_id, s.sender, s.nonce)) FROM withdraw_credit_ledger l\n   JOIN sponsorships s ON s.id = l.sponsorship_id\n   WHERE l.user_id = $1 AND l.reason = 'withdraw' AND l.created_at > $2\n     AND s.status <> 'expired'\n     AND (s.chain_id = $3 AND s.sender = $4 AND s.nonce = $5::text::numeric\n          AND s.status IN ('signed', 'replaced', 'dropped')) IS NOT TRUE\n  ) AS \"today!\",\n  (SELECT count(*) FROM sponsorships s\n   JOIN withdraw_credit_ledger l ON l.sponsorship_id = s.id AND l.reason = 'withdraw'\n   WHERE s.sender = $4 AND s.chain_id = $3 AND s.nonce = $5::text::numeric\n     AND s.status IN ('signed', 'replaced', 'dropped')\n  ) AS \"held!\"\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "balance!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "today!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "held!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Int8",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "8930cc66da6ee099a58b0f4079b50336f87ab1063da952584df741e7e71c2572"
+}

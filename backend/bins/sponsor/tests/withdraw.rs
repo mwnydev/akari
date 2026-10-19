@@ -1,5 +1,5 @@
-//! 提回交易所的代付规则（plan 第 5 节「提币地址冷却」）：USDT `transfer` 只代付转到本人已生效的提币地址，
-//! 冷却中、已撤销的地址与别人的地址都拒绝；通过的照样收代付费。
+//! 提回交易所的代付规则（plan 第 5 节「提币地址冷却」「gas 规则」）：USDT `transfer` 只代付转到本人已生效的提币地址，
+//! 冷却中、已撤销的地址与别人的地址都拒绝；通过的照样收代付费。另需 1 次免费代付提币次数，每人滚动 24 小时最多 3 次。
 //!
 //! 只走 `pm_getPaymasterStubData` 的规则检查，不连链（RPC 指向一个不监听的端口）。需要 `DATABASE_URL`。
 
@@ -18,7 +18,7 @@ use forum_core::ErrorCode;
 use forum_db::PgPool;
 use forum_sponsor::chain::Chain;
 use forum_sponsor::config::Policy;
-use forum_sponsor::jsonrpc::Error;
+use forum_sponsor::jsonrpc::{Error, PAYMASTER_REJECTED, RpcError};
 use forum_sponsor::kernel::{self, Call};
 use forum_sponsor::policy::Contracts;
 use forum_sponsor::sponsor::Sponsor;
@@ -109,7 +109,7 @@ async fn add_address(db: &PgPool, user_id: i64, to: Address, active_in: i64, rev
     .unwrap();
 }
 
-fn transfer(to: Address) -> UserOperation {
+fn transfer(to: Address, nonce: u64) -> UserOperation {
     let call = Call {
         target: TOKEN,
         value: U256::ZERO,
@@ -122,19 +122,89 @@ fn transfer(to: Address) -> UserOperation {
     };
     UserOperation {
         sender: WALLET,
+        nonce: U256::from(nonce),
         call_data: kernel::encode(&[call]),
         ..UserOperation::default()
     }
 }
 
-async fn stub(s: &Sponsor, user_id: i64, to: Address) -> Result<u128, ErrorCode> {
+async fn stub_nonce(s: &Sponsor, user_id: i64, to: Address, nonce: u64) -> Result<u128, ErrorCode> {
     match s
-        .stub(user_id, &transfer(to), ENTRY_POINT, U64::from(CHAIN_ID))
+        .stub(
+            user_id,
+            &transfer(to, nonce),
+            ENTRY_POINT,
+            U64::from(CHAIN_ID),
+        )
         .await
     {
         Ok(f) => Ok(SponsorTerms::decode(&f.paymaster_data).unwrap().fee),
         Err(Error::Reject(r)) => Err(r.code),
         Err(Error::Internal(e)) => panic!("internal error: {e}"),
+    }
+}
+
+async fn stub(s: &Sponsor, user_id: i64, to: Address) -> Result<u128, ErrorCode> {
+    stub_nonce(s, user_id, to, 0).await
+}
+
+/// 一笔已经签过的代付提币（同 forum-sponsor 签名时写入的记录与扣减），`age_secs` 秒前签的。
+async fn withdrawn(db: &PgPool, user_id: i64, nonce: u64, status: &str, age_secs: i64) {
+    let hash = alloy::primitives::keccak256(format!("{user_id}:{nonce}:{status}:{age_secs}"));
+    sqlx::query(
+        "WITH s AS (
+           INSERT INTO sponsorships (user_id, chain_id, sender, nonce, user_op_hash, fee, valid_until, signed_block,
+                                     status, created_at)
+           VALUES ($1, $2, $3, $4, $5, 50000, now() + interval '2 minutes', 1, $6::sponsorship_status,
+                   now() - make_interval(secs => $7))
+           RETURNING id, created_at
+         )
+         INSERT INTO withdraw_credit_ledger (user_id, delta, reason, sponsorship_id, created_at)
+         SELECT $1, -1, 'withdraw', id, created_at FROM s",
+    )
+    .bind(user_id)
+    .bind(CHAIN_ID as i64)
+    .bind(WALLET.to_vec())
+    .bind(nonce as i64)
+    .bind(hash.to_vec())
+    .bind(status)
+    .bind(age_secs as f64)
+    .execute(db)
+    .await
+    .unwrap();
+}
+
+/// 给用户完成 `n` 笔已放款且最终确认的担保订单，每笔照 forum-indexer 的做法发次数。
+async fn finish_orders(db: &PgPool, user_id: i64, n: i64) {
+    sqlx::query(
+        "INSERT INTO chains (chain_id, name, escrow_address, config_address, token_address, token_symbol,
+                             token_decimals, start_block, safe_depth, finalized_depth)
+         VALUES ($1, 'test', '\\x0202020202020202020202020202020202020202', '\\x0707070707070707070707070707070707070707',
+                 '\\x0101010101010101010101010101010101010101', 'USDT', 6, 0, 1, 1)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(CHAIN_ID as i64)
+    .execute(db)
+    .await
+    .unwrap();
+    let ids: Vec<i64> = sqlx::query_scalar(
+        "INSERT INTO escrow_orders (chain_id, contract, chain_order_id, buyer, seller, buyer_id, token, amount,
+                                    instant, offer_hash, listing_hash, state, level, created_block, updated_block)
+         SELECT $1, '\\x0202020202020202020202020202020202020202', coalesce(
+                  (SELECT max(chain_order_id) FROM escrow_orders), 0) + g, $3, '\\x0909090909090909090909090909090909090909',
+                $2, '\\x0101010101010101010101010101010101010101', 5000000, false, '\\x01', '\\x02', 3, 'finalized', 1, 1
+         FROM generate_series(1, $4) g
+         RETURNING id",
+    )
+    .bind(CHAIN_ID as i64)
+    .bind(user_id)
+    .bind(WALLET.to_vec())
+    .bind(n)
+    .fetch_all(db)
+    .await
+    .unwrap();
+    for id in ids {
+        assert_eq!(forum_db::credits::award_order(db, id).await.unwrap(), 1);
     }
 }
 
@@ -149,6 +219,7 @@ async fn transfers_only_to_active_withdraw_addresses(db: PgPool) {
     add_address(&db, user, active, -60, false).await;
     add_address(&db, user, pending, 86_400, false).await;
     add_address(&db, user, revoked, -60, true).await;
+    forum_db::credits::award_starter(&db, user).await.unwrap();
 
     // 已生效：收代付费（付款前档位）。
     assert_eq!(stub(&s, user, active).await, Ok(FEE));
@@ -180,4 +251,75 @@ async fn transfers_only_to_active_withdraw_addresses(db: PgPool) {
         .await
         .unwrap();
     assert_eq!(stub(&s, user, pending).await, Ok(FEE));
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn withdrawals_consume_credits_under_a_daily_cap(db: PgPool) {
+    let s = sponsor(db.clone());
+    let user = user_with_wallet(&db).await;
+    let exchange = Address::repeat_byte(0x10);
+    add_address(&db, user, exchange, -60, false).await;
+
+    // 没有次数：拒绝，JSON-RPC 错误码是 Paymaster 拒绝，提示里有自付 ETH 的出路。
+    assert_eq!(
+        stub(&s, user, exchange).await,
+        Err(ErrorCode::WithdrawCreditRequired)
+    );
+    let Err(err) = s
+        .stub(
+            user,
+            &transfer(exchange, 0),
+            ENTRY_POINT,
+            U64::from(CHAIN_ID),
+        )
+        .await
+    else {
+        panic!("expected a rejection");
+    };
+    let rpc = RpcError::from(err);
+    assert_eq!(rpc.code, PAYMASTER_REJECTED);
+    assert_eq!(rpc.code, -32501);
+    assert!(rpc.message.contains("紧急取回"), "{}", rpc.message);
+
+    // 开通奖励只有一次。
+    assert!(forum_db::credits::award_starter(&db, user).await.unwrap());
+    assert!(!forum_db::credits::award_starter(&db, user).await.unwrap());
+    assert_eq!(stub(&s, user, exchange).await, Ok(FEE));
+
+    // 用掉之后（已上链）没有次数了；同一 nonce 还没提交的旧签名扣的那次可以给重签用。
+    withdrawn(&db, user, 0, "signed", 0).await;
+    assert_eq!(stub_nonce(&s, user, exchange, 0).await, Ok(FEE), "re-sign");
+    sqlx::query("UPDATE sponsorships SET status = 'included'")
+        .execute(&db)
+        .await
+        .unwrap();
+    assert_eq!(
+        stub_nonce(&s, user, exchange, 1).await,
+        Err(ErrorCode::WithdrawCreditRequired)
+    );
+
+    // 完成担保交易得到次数；滚动 24 小时内最多 3 次（25 小时前那次不算），有次数也不行。
+    finish_orders(&db, user, 4).await;
+    withdrawn(&db, user, 1, "included", 25 * 3600).await;
+    withdrawn(&db, user, 2, "failed", 60).await;
+    assert_eq!(stub_nonce(&s, user, exchange, 3).await, Ok(FEE));
+    withdrawn(&db, user, 3, "included", 60).await;
+    assert_eq!(
+        stub_nonce(&s, user, exchange, 4).await,
+        Err(ErrorCode::SponsorQuotaExceeded)
+    );
+    // 代发前作废的签名在过期对账前仍可能经第三方上链，照占当天次数；对账确认过期没上链后不占。
+    sqlx::query("UPDATE sponsorships SET status = 'dropped' WHERE nonce = 3")
+        .execute(&db)
+        .await
+        .unwrap();
+    assert_eq!(
+        stub_nonce(&s, user, exchange, 4).await,
+        Err(ErrorCode::SponsorQuotaExceeded)
+    );
+    sqlx::query("UPDATE sponsorships SET status = 'expired' WHERE nonce = 3")
+        .execute(&db)
+        .await
+        .unwrap();
+    assert_eq!(stub_nonce(&s, user, exchange, 4).await, Ok(FEE));
 }

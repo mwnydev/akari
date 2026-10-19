@@ -2,6 +2,7 @@
 
 pub mod audit;
 pub mod chain;
+pub mod credits;
 pub mod forums;
 pub mod orders;
 pub mod outbox;

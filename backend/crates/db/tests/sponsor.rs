@@ -202,6 +202,62 @@ async fn free_calls_count_live_and_settled_but_not_expired(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn dropped_and_replaced_hold_free_calls_until_they_expire(pool: PgPool) {
+    let u = user(&pool).await;
+    let count = || async {
+        db::count_free_calls(&pool, delivered_calls("9"))
+            .await
+            .unwrap()
+    };
+    // 同一 nonce 签两次（旧的被取代）：最多一笔能上链，只算一次。
+    let a = sign(&pool, u, "1", 1, Duration::minutes(2)).await;
+    mark_delivered(&pool, a, "9").await;
+    let b = sign(&pool, u, "1", 2, Duration::minutes(2)).await;
+    mark_delivered(&pool, b, "9").await;
+    db::replace_signed(&pool, CHAIN, &SENDER, "1", &[2; 32])
+        .await
+        .unwrap();
+    assert_eq!(count().await, 1);
+    // 新签名被代发器作废：两笔在 validUntil 前都仍可能经第三方上链，额度不释放。
+    db::close(&pool, &[2; 32], SponsorshipStatus::Dropped)
+        .await
+        .unwrap();
+    assert_eq!(
+        db::by_hash(&pool, &[2; 32]).await.unwrap().unwrap().status,
+        SponsorshipStatus::Dropped
+    );
+    assert_eq!(
+        count().await,
+        1,
+        "dropped and replaced still hold the quota"
+    );
+    // 都过期后才进入对账；对账没找到结果才释放。
+    sqlx::query("UPDATE sponsorships SET valid_until = now() - interval '1 minute'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let due = db::due_for_reconcile(&pool, 0.0, 10).await.unwrap();
+    assert_eq!(
+        due.len(),
+        2,
+        "replaced and dropped rows are both reconciled"
+    );
+    assert_eq!(count().await, 1, "held until reconciled");
+    for hash in [1, 2] {
+        db::close(&pool, &[hash; 32], SponsorshipStatus::Expired)
+            .await
+            .unwrap();
+    }
+    assert_eq!(count().await, 0);
+    assert!(
+        db::due_for_reconcile(&pool, 0.0, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn third_failure_suspends(pool: PgPool) {
     let u = user(&pool).await;
     for i in 1..=3 {

@@ -430,6 +430,16 @@ async fn updates(pool: &PgPool, chain_order_id: i64) -> Vec<Value> {
     .unwrap()
 }
 
+/// 订单奖励的免费代付提币次数：(订单行 id, 用户)。
+async fn order_credits(pool: &PgPool) -> Vec<(i64, i64)> {
+    sqlx::query_as(
+        "SELECT order_id, user_id FROM withdraw_credit_ledger WHERE reason = 'order' ORDER BY order_id, user_id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
 async fn count(pool: &PgPool, sql: &'static str) -> i64 {
     sqlx::query_scalar(sql).fetch_one(pool).await.unwrap()
 }
@@ -575,6 +585,10 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(status, "paid");
+    assert!(
+        order_credits(&pool).await.is_empty(),
+        "released but not finalized: no withdrawal credit yet"
+    );
     indexer.stop().await;
 
     // ── 阶段 2：重启（从游标继续），校对间隔 200 毫秒。WebSocket 已写入的订单事件不会重复，也不产生修正
@@ -748,6 +762,9 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
     )
     .await;
     assert!(before_finality <= 1, "checkpoints before finality pruned");
+    // 终态（订单 1 已放款）且最终确认：买卖双方各得 1 次免费代付提币；未到终态的订单 2 与分期订单不发。
+    let awarded = [(o1.id, buyer_id), (o1.id, seller_id)];
+    assert_eq!(order_credits(&pool).await, awarded);
     indexer.stop().await;
 
     // 同一条链只允许一个 indexer（第二个等待 10 秒后放弃）。
@@ -779,6 +796,11 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
         Err(forum_indexer::IndexerError::Locked(31_337))
     ));
     lock_holder.stop().await;
+    assert_eq!(
+        order_credits(&pool).await,
+        awarded,
+        "restarts and replays award once"
+    );
 }
 
 #[tokio::test]

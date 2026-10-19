@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT user_op_hash, signed_block FROM sponsorships\n           WHERE status IN ('signed', 'replaced', 'submitted')\n             AND valid_until < now() - make_interval(secs => $1)\n           ORDER BY valid_until\n           LIMIT $2",
+  "query": "SELECT user_op_hash, signed_block FROM sponsorships\n           WHERE status IN ('signed', 'replaced', 'submitted', 'dropped')\n             AND valid_until < now() - make_interval(secs => $1)\n           ORDER BY valid_until\n           LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -37,5 +37,5 @@
       false
     ]
   },
-  "hash": "3da5c7368b1cf7079f3067aecdf314059271aef9d6715dc8433d96deb9cb6412"
+  "hash": "e5085b92b891d0e93404ea734c3712b3add35d608b73b9e8c262e29945b2c8ca"
 }

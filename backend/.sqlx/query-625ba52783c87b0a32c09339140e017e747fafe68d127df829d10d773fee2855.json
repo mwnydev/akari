@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH closed AS (\n           UPDATE sponsorships SET status = $2, updated_at = now()\n           WHERE user_op_hash = $1 AND status IN ('signed', 'replaced', 'submitted', 'dropped')\n           RETURNING id, user_id, status\n         )\n         INSERT INTO withdraw_credit_ledger (user_id, delta, reason, sponsorship_id)\n         SELECT c.user_id, 1, 'refund_expired', c.id FROM closed c\n         JOIN withdraw_credit_ledger d ON d.sponsorship_id = c.id AND d.reason = 'withdraw'\n         WHERE c.status = 'expired'\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        {
+          "Custom": {
+            "name": "sponsorship_status",
+            "kind": {
+              "Enum": [
+                "signed",
+                "replaced",
+                "submitted",
+                "included",
+                "failed",
+                "expired",
+                "dropped"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "625ba52783c87b0a32c09339140e017e747fafe68d127df829d10d773fee2855"
+}

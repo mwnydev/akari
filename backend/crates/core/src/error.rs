@@ -92,6 +92,8 @@ pub enum ErrorCode {
     WithdrawAddressLimit,
     #[error("withdraw address not active")]
     WithdrawAddressNotActive,
+    #[error("no sponsored withdrawal credit left")]
+    WithdrawCreditRequired,
     #[error("chain read unavailable")]
     ChainUnavailable,
     #[error("internal error")]
@@ -144,6 +146,9 @@ impl ErrorCode {
             Self::WithdrawAddressForbidden => "不能使用本人钱包地址或平台合约地址",
             Self::WithdrawAddressLimit => "最多保存 10 个提币地址",
             Self::WithdrawAddressNotActive => "只能提到已生效的提币地址",
+            Self::WithdrawCreditRequired => {
+                "免费代付提币次数已用完：完成一笔担保交易后可再获得 1 次；也可在「紧急取回」页自付 ETH 提取"
+            }
             Self::ChainUnavailable => "暂时无法读取链上数据，请稍后再试",
             Self::Internal => "服务暂时不可用，请稍后再试",
         }

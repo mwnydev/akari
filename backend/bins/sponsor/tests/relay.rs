@@ -4,7 +4,8 @@
 //! FixedFeePaymaster，以及 `fixtures/TestKernelAccount.sol`（ECDSA 所有者、Kernel 同款 `execute` 入口）。
 //! 经 forum-sponsor 的 HTTP 接口走完 估算 → 代付签名 → 用户签名 → 提交 → 回执：
 //! 1. 首笔操作带 initCode 部署钱包，approve + cancelOffer：收 0.05 USDT，操作生效；
-//! 2. 签名后余额被转走、callData 在链上回滚：照样收费，记一次链上失败。
+//! 2. 提回交易所：先用掉开通送的 1 次免费代付提币（同一 nonce 重签不多扣），签名后余额被转走、callData 在链上回滚：
+//!    照样收费，记一次链上失败，提币次数不退；被取代的旧签名过期后退回，之后没有次数再提回被拒。
 //!
 //! 以及：别人的钱包、白名单外的调用、待上链时换 nonce 都被拒绝；余额告警写入发件箱且去重。
 //!
@@ -535,6 +536,15 @@ async fn status(db: &PgPool, hash: &Value) -> String {
         .unwrap()
 }
 
+/// 免费代付提币次数余额。
+async fn credits(db: &PgPool, user: i64) -> i64 {
+    let since = time::OffsetDateTime::now_utc() - time::Duration::days(1);
+    forum_db::credits::usage(db, user, since, None)
+        .await
+        .unwrap()
+        .balance
+}
+
 fn usdt_call(to: Address, data: impl SolCall) -> Call {
     Call {
         target: to,
@@ -757,7 +767,24 @@ async fn sponsors_and_relays_user_operations(db: PgPool) {
         )]),
         ..UserOperation::default()
     };
+    assert_eq!(
+        err_code(
+            &router,
+            user_a,
+            "pm_getPaymasterStubData",
+            json!([transfer, ep, chain, {}])
+        )
+        .await,
+        "WITHDRAW_CREDIT_REQUIRED",
+        "no credit yet"
+    );
+    assert!(forum_db::credits::award_starter(&db, user_a).await.unwrap());
+    let replaced_transfer = prepare(&router, user_a, &w, transfer.clone(), &owner).await;
+    assert_eq!(credits(&db, user_a).await, 0);
+    tokio::time::sleep(Duration::from_millis(1100)).await;
     let transfer = prepare(&router, user_a, &w, transfer, &owner).await;
+    let replaced_hash = json!(replaced_transfer.hash(w.entry_point, CHAIN_ID).unwrap());
+    assert_eq!(status(&db, &replaced_hash).await, "replaced");
     let drain = kernel::encode(&[usdt_call(
         w.usdt,
         MockUSDT::transferCall {
@@ -790,6 +817,11 @@ async fn sponsors_and_relays_user_operations(db: PgPool) {
             .await
             .unwrap();
     assert_eq!(failures, 1);
+    assert_eq!(
+        credits(&db, user_a).await,
+        -1,
+        "replaced signature still holds its credit until it expires"
+    );
 
     // 3. 过期对账：被取代的旧签名没上链 → expired；把已上链的第一笔改回「已提交、已过期」，
     //    对账从日志里找回它的结果。
@@ -800,18 +832,35 @@ async fn sponsors_and_relays_user_operations(db: PgPool) {
         .await
         .unwrap();
     sqlx::query(
-        "UPDATE sponsorships SET valid_until = now() - interval '1 minute' WHERE user_op_hash = $1",
+        "UPDATE sponsorships SET valid_until = now() - interval '1 minute' WHERE user_op_hash = ANY($1)",
     )
-    .bind(first_hash.to_vec())
+    .bind(vec![first_hash.to_vec(), hash_of(&replaced_hash).to_vec()])
     .execute(&db)
     .await
     .unwrap();
     let n = forum_sponsor::ledger::reconcile_once(&db, &app.chain, 2000)
         .await
         .unwrap();
-    assert_eq!(n, 2);
+    assert_eq!(n, 3);
     assert_eq!(status(&db, &old_hash).await, "expired");
+    assert_eq!(status(&db, &replaced_hash).await, "expired");
     assert_eq!(status(&db, &json!(included_hash)).await, "included");
+    // 被取代的提币签名没上链：退回 1 次；上链失败的那次不退，所以又用完了。
+    assert_eq!(credits(&db, user_a).await, 0);
+    let again = UserOperation {
+        nonce: U256::from(2),
+        ..transfer.clone()
+    };
+    assert_eq!(
+        err_code(
+            &router,
+            user_a,
+            "pm_getPaymasterStubData",
+            json!([again, ep, chain, {}])
+        )
+        .await,
+        "WITHDRAW_CREDIT_REQUIRED"
+    );
 
     // 3. 余额告警：告警线调高后写入发件箱，再查一次不重复写。
     let high = AlertConfig {

@@ -88,7 +88,8 @@ fn rpc_code(code: ErrorCode) -> i64 {
         ErrorCode::InvalidParameter => INVALID_PARAMS,
         ErrorCode::SponsorNotAllowed
         | ErrorCode::WalletRequired
-        | ErrorCode::WithdrawAddressNotActive => PAYMASTER_REJECTED,
+        | ErrorCode::WithdrawAddressNotActive
+        | ErrorCode::WithdrawCreditRequired => PAYMASTER_REJECTED,
         ErrorCode::SponsorQuotaExceeded
         | ErrorCode::SponsorPending
         | ErrorCode::SponsorSuspended

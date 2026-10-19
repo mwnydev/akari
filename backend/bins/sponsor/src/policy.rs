@@ -5,6 +5,8 @@
 //!   （plan 第 5 节「提币地址冷却」；冷却中或已撤销的地址不代付）。
 //! - 付款前的操作（下单、提回、超时取回退款、撤销报价、改签名者……）收代付费；付款后的操作免费，
 //!   由担保合约结算时扣固定 gas 费。免费额度用完的操作：标记发货、开始、领取直接拒绝，延长确认期与和解改收代付费。
+//! - 提回另需 1 次免费代付提币次数（开通钱包送 1 次、每完成一笔担保交易得 1 次），每人滚动 24 小时最多 3 次；
+//!   一笔操作最多提回一次。
 
 use std::collections::HashMap;
 
@@ -27,8 +29,10 @@ alloy::sol! {
 
 /// 一笔操作最多几次调用（下单是 approve + createAndFund 两次）。
 pub const MAX_CALLS: usize = 4;
-/// 「领取每天 1 次」的窗口。
+/// 「领取每天 1 次」「每天最多代付提币 3 次」的窗口。
 pub const DAY_SECS: i64 = 86_400;
+/// 每人滚动 [`DAY_SECS`] 秒内最多代付提币几次。
+pub const DAILY_WITHDRAWS: i64 = forum_db::credits::DAILY_LIMIT;
 
 /// 白名单涉及的合约地址。
 #[derive(Debug, Clone, Copy)]
@@ -378,6 +382,8 @@ pub struct OrderCall {
 pub struct Priced {
     /// 这笔操作是否收代付费（一笔操作最多收一次）。
     pub fee_due: bool,
+    /// 这笔操作是提回交易所：要消耗 1 次代付提币次数。
+    pub withdraw: bool,
     pub calls: Vec<OrderCall>,
 }
 
@@ -385,6 +391,7 @@ pub struct Priced {
 pub fn price(actions: &[Action], facts: &[Facts]) -> Result<Priced, Reject> {
     debug_assert_eq!(actions.len(), facts.len());
     let mut fee_due = false;
+    let mut withdraw = false;
     let mut calls = Vec::new();
     // 同一笔操作里重复调用同一订单的同一方法，也要占额度。
     let mut in_batch: HashMap<(Address, U256, Method), i64> = HashMap::new();
@@ -396,6 +403,12 @@ pub fn price(actions: &[Action], facts: &[Facts]) -> Result<Priced, Reject> {
             order_id,
         } = action
         else {
+            if matches!(action, Action::Transfer { .. }) {
+                if withdraw {
+                    return Err(Reject::not_allowed("one withdrawal per operation"));
+                }
+                withdraw = true;
+            }
             fee_due = true;
             continue;
         };
@@ -427,7 +440,29 @@ pub fn price(actions: &[Action], facts: &[Facts]) -> Result<Priced, Reject> {
             free,
         });
     }
-    Ok(Priced { fee_due, calls })
+    Ok(Priced {
+        fee_due,
+        withdraw,
+        calls,
+    })
+}
+
+/// 代付提币前的次数检查。`available` = 余额 + 同一 nonce 待取代的旧签名扣掉的次数（重签不用再多一次）；
+/// `today` = 滚动 24 小时内已用的代付提币次数。
+pub fn check_withdraw(available: i64, today: i64) -> Result<(), Reject> {
+    if available < 1 {
+        return Err(Reject::new(
+            ErrorCode::WithdrawCreditRequired,
+            "no sponsored withdrawal credit",
+        ));
+    }
+    if today >= DAILY_WITHDRAWS {
+        return Err(Reject::new(
+            ErrorCode::SponsorQuotaExceeded,
+            format!("at most {DAILY_WITHDRAWS} sponsored withdrawals per 24 hours"),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -644,6 +679,45 @@ mod tests {
                 "{a:?}"
             );
         }
+    }
+
+    #[test]
+    fn transfer_is_a_withdrawal_and_only_one_per_operation() {
+        let t = Action::Transfer { to: WITHDRAW_TO };
+        let p = price1(t.clone(), Facts::default()).unwrap();
+        assert!(p.withdraw && p.fee_due);
+        let with_approve = price(&[Action::Approve, t.clone()], &[Facts::default(); 2]).unwrap();
+        assert!(with_approve.withdraw);
+        let e = price(&[t.clone(), t], &[Facts::default(); 2]).unwrap_err();
+        assert_eq!(e.code, ErrorCode::SponsorNotAllowed);
+        for a in [
+            Action::Approve,
+            Action::SignerChange,
+            order(Market::Escrow, Method::Release, 1),
+        ] {
+            assert!(
+                !price1(a.clone(), Facts::default()).unwrap().withdraw,
+                "{a:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn withdrawals_need_a_credit_and_stay_under_the_daily_cap() {
+        assert!(check_withdraw(1, 0).is_ok());
+        assert!(check_withdraw(5, DAILY_WITHDRAWS - 1).is_ok());
+        for available in [0, -1] {
+            assert_eq!(
+                check_withdraw(available, 0).unwrap_err().code,
+                ErrorCode::WithdrawCreditRequired
+            );
+        }
+        // 有次数也不能超过每天上限。
+        assert_eq!(
+            check_withdraw(5, DAILY_WITHDRAWS).unwrap_err().code,
+            ErrorCode::SponsorQuotaExceeded
+        );
+        assert_eq!(DAILY_WITHDRAWS, 3);
     }
 
     #[test]

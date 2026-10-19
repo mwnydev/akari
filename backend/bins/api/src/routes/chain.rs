@@ -23,10 +23,12 @@ use forum_chain::ChainError;
 use forum_chain::rpc::FailoverRpc;
 use forum_core::ErrorCode;
 use forum_core::eip712::{Address, B256};
+use forum_db::credits;
 use forum_kv::{SlidingWindow, ephemeral};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use time::OffsetDateTime;
 use tower_sessions::Session;
 use utoipa::ToSchema;
 
@@ -316,7 +318,7 @@ pub async fn chain_rpc(
     Ok(respond(reply))
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct Balances {
     /// USDT 余额（最小单位，十进制字符串）。
     pub usdt: String,
@@ -324,9 +326,21 @@ pub struct Balances {
     pub eth: String,
     /// 读取余额时的区块号。
     pub block: u64,
+    /// 剩余免费代付提币次数：开通钱包送 1 次，每完成一笔担保交易（终态且最终确认）得 1 次，每次代付提币用 1 次。
+    pub withdraw_credits: i64,
+    /// 滚动 24 小时内还能代付提币几次（每天最多 3 次，与剩余次数取小者才是实际可用次数）。
+    pub withdraws_left_today: i64,
 }
 
-async fn read_balances(rpc: &FailoverRpc, token: Address, wallet: Address) -> ApiResult<Balances> {
+/// 链上余额部分（缓存 3 秒）；提币次数每次从库里读。
+#[derive(Debug, Serialize, Deserialize)]
+struct OnChain {
+    usdt: String,
+    eth: String,
+    block: u64,
+}
+
+async fn read_balances(rpc: &FailoverRpc, token: Address, wallet: Address) -> ApiResult<OnChain> {
     let token = alloy::primitives::Address::from(token.0);
     let wallet = alloy::primitives::Address::from(wallet.0);
     rpc.call("wallet balances", |p| async move {
@@ -341,7 +355,7 @@ async fn read_balances(rpc: &FailoverRpc, token: Address, wallet: Address) -> Ap
         let usdt: U256 = IERC20::balanceOfCall::abi_decode_returns(&out)
             .map_err(|e| ChainError::Decode(e.to_string()))?;
         let eth = p.get_balance(wallet).block_id(at).await?;
-        Ok(Balances {
+        Ok(OnChain {
             usdt: usdt.to_string(),
             eth: eth.to_string(),
             block,
@@ -351,7 +365,7 @@ async fn read_balances(rpc: &FailoverRpc, token: Address, wallet: Address) -> Ap
     .map_err(|e| unavailable(&e))
 }
 
-/// 我的钱包在本链上的 USDT 与 ETH 余额（同一区块读出，缓存 3 秒）。
+/// 我的钱包在本链上的 USDT 与 ETH 余额（同一区块读出，缓存 3 秒），以及免费代付提币次数。
 #[utoipa::path(
     get, path = "/api/v1/wallet/balances", tag = "wallet",
     responses(
@@ -370,16 +384,25 @@ pub async fn balances(
     let wallet =
         Address(<[u8; 20]>::try_from(wallet.address.as_slice()).map_err(ApiError::internal)?);
     let key = format!("{}chain-balances:{wallet}", state.cache.ns());
-    if let Some(hit) = ephemeral::get(&state.kv, &key).await? {
-        return Ok(Json(
-            serde_json::from_str(&hit).map_err(ApiError::internal)?,
-        ));
-    }
-    let rpc = rpc_of(&state)?;
-    let b = read_balances(rpc, state.wallet.usdt()?, wallet).await?;
-    let json = serde_json::to_string(&b).map_err(ApiError::internal)?;
-    ephemeral::put(&state.kv, &key, &json, BALANCES_TTL).await?;
-    Ok(Json(b))
+    let on_chain = match ephemeral::get(&state.kv, &key).await? {
+        Some(hit) => serde_json::from_str(&hit).map_err(ApiError::internal)?,
+        None => {
+            let rpc = rpc_of(&state)?;
+            let b = read_balances(rpc, state.wallet.usdt()?, wallet).await?;
+            let json = serde_json::to_string(&b).map_err(ApiError::internal)?;
+            ephemeral::put(&state.kv, &key, &json, BALANCES_TTL).await?;
+            b
+        }
+    };
+    let since = OffsetDateTime::now_utc() - time::Duration::days(1);
+    let credits = credits::usage(&state.db, user_id, since, None).await?;
+    Ok(Json(Balances {
+        usdt: on_chain.usdt,
+        eth: on_chain.eth,
+        block: on_chain.block,
+        withdraw_credits: credits.balance.max(0),
+        withdraws_left_today: (credits::DAILY_LIMIT - credits.today).max(0),
+    }))
 }
 
 #[cfg(test)]

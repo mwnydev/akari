@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO withdraw_credit_ledger (user_id, delta, reason) VALUES ($1, 1, 'starter')\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "816f3f4ce2c247fa3bc0744b8afd11730c6d0481a2d1d33f2bf792c35137146a"
+}

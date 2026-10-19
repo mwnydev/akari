@@ -510,8 +510,9 @@ pub async fn create_account(
     {
         return Err(ApiError(ErrorCode::WalletAddressMismatch));
     }
+    let mut tx = state.db.begin().await?;
     let wallet = db::insert_wallet(
-        &state.db,
+        &mut *tx,
         db::NewWallet {
             user_id,
             chain_id: w.chain_id(),
@@ -522,6 +523,9 @@ pub async fn create_account(
     )
     .await?
     .ok_or(ApiError(ErrorCode::Conflict))?;
+    // 开通钱包送 1 次免费代付提币（每人一次）。
+    forum_db::credits::award_starter(&mut *tx, user_id).await?;
+    tx.commit().await?;
     Ok((StatusCode::CREATED, Json(wallet.into())))
 }
 

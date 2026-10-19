@@ -198,6 +198,15 @@ async fn register_assert_and_bind_wallet(db: PgPool) {
     )
     .await;
     assert_eq!(r.status, StatusCode::CONFLICT);
+    // 开通钱包送 1 次免费代付提币，只送一次（重复登记被拒，不会多送）。
+    let starter: Vec<i16> = sqlx::query_scalar(
+        "SELECT delta FROM withdraw_credit_ledger WHERE user_id = $1 AND reason = 'starter'",
+    )
+    .bind(id)
+    .fetch_all(&db)
+    .await
+    .unwrap();
+    assert_eq!(starter, [1]);
 
     let r = wallet_call(&app, "GET", "/api/v1/wallet", None, &cookies).await;
     assert_eq!(r.body["enabled"], true);

@@ -1,5 +1,5 @@
 //! 把链上数据写进数据库：执行校对计划、写入 WebSocket 即时日志、升级确认级别，并在订单变化时写发件箱、
-//! 同步生成订单的报价卡片（成交次数用完即已付款）。
+//! 同步生成订单的报价卡片（成交次数用完即已付款）、终态最终确认后给买卖双方发免费代付提币次数。
 //!
 //! 所有写入都由一个任务串行执行（见 [`crate::run`]），并且同一条链只允许一个 indexer 进程（会话级咨询锁）。
 //! 因此读库、调 RPC、再开事务写库之间不会有别的写入者插进来。
@@ -14,6 +14,7 @@ use forum_chain::order::{self, Level, OrderEvent, OrderLog, OrderView};
 use forum_chain::reorg::{self, ChainSource, Plan, Progress, Stored};
 use forum_chain::snapshot::OrderSnapshot;
 use forum_db::chain::{self as db, OrderRef};
+use forum_db::credits;
 use forum_db::{PgPool, Postgres, Transaction, outbox};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -396,6 +397,13 @@ impl Engine {
             };
             let Some(row) = result else { continue };
             changed += 1;
+            // 终态且最终确认：买卖双方各得 1 次免费代付提币（每单每人一次，重放不重复）。
+            if view
+                .as_ref()
+                .is_some_and(|v| v.state.is_terminal() && v.level == Level::Finalized)
+            {
+                credits::award_order(&mut **tx, row.id).await?;
+            }
             db::sync_offer_fills(&mut **tx, self.chain_id, contract, &row.offer_hash).await?;
             let payload = json!({
                 "id": row.id,

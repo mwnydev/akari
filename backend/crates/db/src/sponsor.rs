@@ -22,7 +22,7 @@ pub enum SponsorshipStatus {
     Failed,
     /// 签名过期且没有上链
     Expired,
-    /// 代发前验证不通过，没有上链
+    /// 代发前验证不通过，没有代发；签名过期前仍可能经别处上链，过期后由对账改为链上结果或 `Expired`
     Dropped,
 }
 
@@ -113,16 +113,17 @@ pub struct FreeCalls<'a> {
     pub since: Option<OffsetDateTime>,
 }
 
-/// 已用掉的免费代付次数。过期未上链的签名不算；对账前的过期签名仍算（宁可少给一次）。
+/// 已用掉的免费代付次数。对账确认过期未上链的签名不算；被取代、代发前作废的签名在此之前仍可能经别处上链，照算
+/// （宁可少给一次）。同一 nonce 的多笔签名最多一笔能上链，只算一次。
 pub async fn count_free_calls(
     db: impl PgExecutor<'_>,
     q: FreeCalls<'_>,
 ) -> Result<i64, sqlx::Error> {
     let row = sqlx::query!(
-        r#"SELECT count(*) AS "n!" FROM sponsored_calls c
+        r#"SELECT count(DISTINCT (s.sender, s.nonce)) AS "n!" FROM sponsored_calls c
            JOIN sponsorships s ON s.id = c.sponsorship_id
            WHERE c.contract = $1 AND c.order_id = $2::text::numeric AND c.method = $3 AND c.free
-             AND s.chain_id = $4 AND s.status IN ('signed', 'submitted', 'included', 'failed')
+             AND s.chain_id = $4 AND s.status <> 'expired'
              AND ($5::bytea IS NULL OR s.sender = $5)
              AND ($6::timestamptz IS NULL OR s.created_at > $6)"#,
         q.contract,
@@ -283,15 +284,25 @@ pub async fn settle(db: impl PgExecutor<'_>, o: Outcome<'_>) -> Result<Option<i6
     Ok(row.filter(|_| !o.success).map(|r| r.user_id))
 }
 
-/// 没有上链就结束：`expired`（签名过期）或 `dropped`（代发前验证不通过）。已有链上结果的行不动。
+/// 标记没有上链：`dropped`（代发前验证不通过）或 `expired`（签名已过期，对账没找到）。已有链上结果的行不动。
+/// `dropped` 的签名过期前仍可能经第三方上链，免费额度与代付提币次数都不退，留给对账；
+/// `expired` 才释放免费额度、退回这笔签名扣掉的代付提币次数（只在这次真的结束它时退，退一次）。
 pub async fn close(
     db: impl PgExecutor<'_>,
     user_op_hash: &[u8],
     status: SponsorshipStatus,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "UPDATE sponsorships SET status = $2, updated_at = now()
-         WHERE user_op_hash = $1 AND status IN ('signed', 'replaced', 'submitted')",
+        "WITH closed AS (
+           UPDATE sponsorships SET status = $2, updated_at = now()
+           WHERE user_op_hash = $1 AND status IN ('signed', 'replaced', 'submitted', 'dropped')
+           RETURNING id, user_id, status
+         )
+         INSERT INTO withdraw_credit_ledger (user_id, delta, reason, sponsorship_id)
+         SELECT c.user_id, 1, 'refund_expired', c.id FROM closed c
+         JOIN withdraw_credit_ledger d ON d.sponsorship_id = c.id AND d.reason = 'withdraw'
+         WHERE c.status = 'expired'
+         ON CONFLICT DO NOTHING",
         user_op_hash,
         status as SponsorshipStatus
     )
@@ -346,7 +357,7 @@ pub struct Due {
     pub signed_block: i64,
 }
 
-/// 签名已过期超过 `grace_secs`、还没有结果的行：结果已经确定（EntryPoint 不会再接受它），可以对账。
+/// 签名已过期超过 `grace_secs`、还没有结果的行（含代发前作废的）：结果已经确定（EntryPoint 不会再接受它），可以对账。
 pub async fn due_for_reconcile(
     db: impl PgExecutor<'_>,
     grace_secs: f64,
@@ -355,7 +366,7 @@ pub async fn due_for_reconcile(
     sqlx::query_as!(
         Due,
         r#"SELECT user_op_hash, signed_block FROM sponsorships
-           WHERE status IN ('signed', 'replaced', 'submitted')
+           WHERE status IN ('signed', 'replaced', 'submitted', 'dropped')
              AND valid_until < now() - make_interval(secs => $1)
            ORDER BY valid_until
            LIMIT $2"#,

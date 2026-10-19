@@ -282,11 +282,46 @@ async fn wallet_balances_are_read_at_one_block_and_cached(db: PgPool) {
     assert_eq!(r.body["code"], "WALLET_REQUIRED");
 
     enable_trading(&app, &db, id, &cookies, WALLET).await;
+    let balances = |credits: i64, left: i64| {
+        json!({
+            "usdt": "1000000", "eth": "5", "block": 16,
+            "withdraw_credits": credits, "withdraws_left_today": left,
+        })
+    };
     for _ in 0..2 {
         let r = call(&app, "GET", path, None, &cookies).await;
         assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
-        assert_eq!(r.body, json!({"usdt": "1000000", "eth": "5", "block": 16}));
+        assert_eq!(
+            r.body,
+            balances(1, 3),
+            "starter credit from enabling trading"
+        );
     }
+    // 代付提币用掉 1 次：链上部分仍走缓存，次数立即更新。
+    sqlx::query(
+        "WITH s AS (
+           INSERT INTO sponsorships (user_id, chain_id, sender, nonce, user_op_hash, fee, valid_until, signed_block)
+           VALUES ($1, $2, decode(repeat('11', 20), 'hex'), 0, sha256('x'), 50000, now() + interval '2 minutes', 1)
+           RETURNING id
+         )
+         INSERT INTO withdraw_credit_ledger (user_id, delta, reason, sponsorship_id) SELECT $1, -1, 'withdraw', id FROM s",
+    )
+    .bind(id)
+    .bind(CHAIN_ID as i64)
+    .execute(&db)
+    .await
+    .unwrap();
+    let r = call(&app, "GET", path, None, &cookies).await;
+    assert_eq!(r.body, balances(0, 2));
+    let r = call(&app, "GET", "/api/v1/openapi.json", None, &[]).await;
+    let schemas = &r.body["components"]["schemas"];
+    let required = schemas["Balances"]["required"].as_array().unwrap();
+    for field in ["withdraw_credits", "withdraws_left_today"] {
+        assert!(required.contains(&json!(field)), "{field}");
+    }
+    let codes = schemas["ErrorCode"]["enum"].as_array().unwrap();
+    assert!(codes.contains(&json!("WITHDRAW_CREDIT_REQUIRED")));
+
     let seen = seen.lock().unwrap();
     assert_eq!(seen.len(), 3, "cached for 3s: {seen:?}");
     let (_, call_params) = seen.iter().find(|(m, _)| m == "eth_call").unwrap();

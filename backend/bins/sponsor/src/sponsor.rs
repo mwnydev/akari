@@ -1,8 +1,9 @@
 //! 代付签名（ERC-7677 `pm_getPaymasterStubData` / `pm_getPaymasterData`）与 gas 估算。
 //!
 //! 签名前依次检查：目标 EntryPoint 与链 → sender 是本人钱包 → 部署工厂在白名单 → callData 白名单（含提币地址）→
-//! 暂停 / 待上链 / 每单额度 → gas 上限 → 模拟。签名 2 分钟有效（`validAfter` = 当前时间），绑定这一笔操作。
-//! 额度、待上链检查与写入签名记录在同一事务里、按账户和订单加咨询锁，并发请求不会多拿免费次数。
+//! 暂停 / 待上链 / 每单额度 / 代付提币次数 → gas 上限 → 模拟。签名 2 分钟有效（`validAfter` = 当前时间），绑定这一笔操作。
+//! 额度、待上链与提币次数检查、写入签名记录与扣提币次数在同一事务里、按账户、用户和订单加咨询锁，
+//! 并发请求不会多拿免费次数。
 
 use std::sync::Arc;
 
@@ -13,6 +14,7 @@ use forum_chain::aa::{SponsorTerms, UserOperation};
 use forum_chain::config::AaConfig;
 use forum_core::ErrorCode;
 use forum_db::PgPool;
+use forum_db::credits::{self, Nonce};
 use forum_db::sponsor::{self as db, FreeCalls, NewCall, NewSponsorship, SponsorshipStatus};
 use serde::Serialize;
 use sqlx::PgConnection;
@@ -75,6 +77,11 @@ fn now_secs() -> u64 {
 
 fn sender_key(chain_id: u64, sender: Address) -> String {
     format!("sender:{chain_id}:{sender}")
+}
+
+/// 提币次数按用户计（不分链），不同链上的钱包也要互斥。
+fn credits_key(user_id: i64) -> String {
+    format!("credits:{user_id}")
 }
 
 impl Sponsor {
@@ -249,6 +256,31 @@ impl Sponsor {
         Ok(())
     }
 
+    /// 提回交易所要有代付提币次数，且不超过每天的上限。
+    async fn check_credits(
+        &self,
+        conn: &mut PgConnection,
+        user_id: i64,
+        op: &UserOperation,
+    ) -> Result<()> {
+        let chain_id = i64::try_from(self.chain_id()).map_err(anyhow::Error::from)?;
+        let since = OffsetDateTime::now_utc() - time::Duration::seconds(DAY_SECS);
+        let nonce = op.nonce.to_string();
+        let u = credits::usage(
+            &mut *conn,
+            user_id,
+            since,
+            Some(Nonce {
+                chain_id,
+                sender: op.sender.as_slice(),
+                nonce: &nonce,
+            }),
+        )
+        .await?;
+        policy::check_withdraw(u.balance + u.held, u.today)?;
+        Ok(())
+    }
+
     /// 白名单 + 额度定价（只读）。
     async fn evaluate(&self, user_id: i64, op: &UserOperation) -> Result<Evaluated> {
         self.check_wallet(user_id, op.sender).await?;
@@ -263,6 +295,9 @@ impl Sponsor {
             .used(&mut conn, op.sender, &actions, &delivered)
             .await?;
         let priced = policy::price(&actions, &facts)?;
+        if priced.withdraw {
+            self.check_credits(&mut conn, user_id, op).await?;
+        }
         Ok(Evaluated {
             actions,
             delivered,
@@ -386,6 +421,7 @@ impl Sponsor {
     }
 
     /// 在锁内重新检查暂停、待上链与额度，再写入签名记录。额度在模拟之后被别的请求用掉时要求重试。
+    /// 提回交易所在同一事务里检查并扣 1 次代付提币次数（同一 nonce 的旧签名先标为被取代，再数次数）。
     async fn record(
         &self,
         user_id: i64,
@@ -397,15 +433,20 @@ impl Sponsor {
     ) -> Result<()> {
         let chain_id = i64::try_from(self.chain_id()).map_err(anyhow::Error::from)?;
         let mut tx = self.db.begin().await?;
+        // 加锁顺序固定：账户 → 用户 → 订单（按键排序）。
         let mut keys = vec![sender_key(self.chain_id(), op.sender)];
-        keys.extend(
-            ev.priced
-                .calls
-                .iter()
-                .map(|c| format!("order:{}:{}:{}", self.chain_id(), c.contract, c.order_id)),
-        );
-        keys[1..].sort();
-        keys.dedup();
+        if ev.priced.withdraw {
+            keys.push(credits_key(user_id));
+        }
+        let mut orders: Vec<String> = ev
+            .priced
+            .calls
+            .iter()
+            .map(|c| format!("order:{}:{}:{}", self.chain_id(), c.contract, c.order_id))
+            .collect();
+        orders.sort();
+        orders.dedup();
+        keys.extend(orders);
         for k in &keys {
             db::lock(&mut tx, k).await?;
         }
@@ -426,6 +467,9 @@ impl Sponsor {
             user_op_hash,
         )
         .await?;
+        if ev.priced.withdraw {
+            self.check_credits(&mut tx, user_id, op).await?;
+        }
         let valid_until = OffsetDateTime::from_unix_timestamp(
             i64::try_from(terms.valid_until).map_err(anyhow::Error::from)?,
         )
@@ -450,6 +494,9 @@ impl Sponsor {
             tx.commit().await?;
             return Ok(());
         };
+        if ev.priced.withdraw {
+            credits::debit_withdraw(&mut *tx, user_id, id).await?;
+        }
         for c in &ev.priced.calls {
             let order_id = c.order_id.to_string();
             db::insert_call(
