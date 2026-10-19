@@ -9,7 +9,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 contracts="$here/../../../../contracts"
 (cd "$contracts" && forge build --quiet)
-for c in Escrow StreamEscrow EscrowConfig MockUSDT; do
+for c in Escrow EscrowConfig StreamEscrow FixedFeePaymaster MockUSDT; do
   jq '{abi: .abi, bytecode: {object: .bytecode.object}}' "$contracts/out/$c.sol/$c.json" > "$here/$c.json"
 done
 # alloy 的 sol! 元组最多 24 个字段，Escrow.Order（27 个）与 StreamEscrow.Order（29 个）都超了：

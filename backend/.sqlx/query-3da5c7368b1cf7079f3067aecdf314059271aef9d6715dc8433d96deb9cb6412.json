@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_op_hash, signed_block FROM sponsorships\n           WHERE status IN ('signed', 'replaced', 'submitted')\n             AND valid_until < now() - make_interval(secs => $1)\n           ORDER BY valid_until\n           LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_op_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "sponsorships",
+            "name": "user_op_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "signed_block",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "sponsorships",
+            "name": "signed_block"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "3da5c7368b1cf7079f3067aecdf314059271aef9d6715dc8433d96deb9cb6412"
+}

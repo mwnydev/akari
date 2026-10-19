@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sponsor_accounts\n           SET suspended_until = now() + make_interval(secs => $2), failures = 0, first_failure_at = NULL,\n               updated_at = now()\n           WHERE user_id = $1\n           RETURNING suspended_until AS \"until!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "until!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sponsor_accounts",
+            "name": "suspended_until"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "35aa8bb0f24cdfb8fc53b9f6174610afbb167bd47689b8d344a42315b6e4c1ed"
+}

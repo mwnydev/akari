@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sponsored_calls (sponsorship_id, contract, order_id, method, free)\n         VALUES ($1, $2, $3::text::numeric, $4, $5)\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b5ddd3e14bc599ab1b8d9d9039aeb9b139833253327887f8ad2a2f8cf53cbda7"
+}

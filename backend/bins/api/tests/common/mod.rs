@@ -65,6 +65,7 @@ pub fn wallet_state() -> WalletState {
         },
         limits: TradeLimits::default(),
         verifier: Arc::new(FakeVerifier),
+        sponsor: None,
     }
 }
 
@@ -79,7 +80,7 @@ pub fn build(db: PgPool) -> Option<Router> {
     build_with(db, wallet_state())
 }
 
-/// 同 [`build`]，但指定钱包状态（例如换成真实的链上地址校验）。
+/// 同 [`build`]，但指定钱包状态（例如换成真实的链上地址校验，或接上假的 forum-sponsor）。
 pub fn build_with(db: PgPool, wallet: WalletState) -> Option<Router> {
     let Ok(url) = std::env::var("VALKEY_URL") else {
         eprintln!("VALKEY_URL not set, skipping valkey-backed test");

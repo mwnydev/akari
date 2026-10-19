@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use axum_extra::extract::cookie::Key;
 use forum_api::config::Config;
+use forum_api::routes::aa::SponsorProxy;
 use forum_api::wallet::{AddressVerifier, ChainAddressVerifier, NoChainVerifier, WalletState};
 use forum_api::{AppState, app};
 use forum_auth::passkey::{UserHandles, wallet_webauthn, webauthn::Url};
@@ -50,6 +51,13 @@ async fn main() -> anyhow::Result<()> {
         chain: cfg.chain.clone(),
         limits: cfg.trade_limits,
         verifier,
+        sponsor: match (&cfg.sponsor_url, &cfg.sponsor_token) {
+            (Some(url), Some(token)) => Some(SponsorProxy::new(url, token.clone())?),
+            _ => {
+                tracing::warn!("SPONSOR_URL / SPONSOR_API_TOKEN not set: gas sponsorship disabled");
+                None
+            }
+        },
     };
     let state = AppState {
         db,

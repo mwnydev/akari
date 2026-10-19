@@ -17,6 +17,7 @@ use tower_sessions::Session;
 
 use crate::config::ChainConfig;
 use crate::error::{ApiError, ApiResult};
+use crate::routes::aa::SponsorProxy;
 use crate::state::AppState;
 
 /// 邮箱再验证有效 10 分钟（与验证码有效期一致）：只用于开通交易时注册第一个钱包 Passkey。
@@ -80,6 +81,8 @@ pub struct WalletState {
     pub chain: ChainConfig,
     pub limits: TradeLimits,
     pub verifier: Arc<dyn AddressVerifier>,
+    /// 本机 forum-sponsor（代付签名与代发）；未配置时 `/api/v1/aa/rpc` 返回 `SPONSOR_UNAVAILABLE`。
+    pub sponsor: Option<SponsorProxy>,
 }
 
 impl WalletState {

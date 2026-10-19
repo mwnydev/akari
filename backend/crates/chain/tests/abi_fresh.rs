@@ -19,7 +19,13 @@ fn committed_abi_matches_forge_artifacts() {
         eprintln!("skipped: contracts/out not built (cd contracts && forge build)");
         return;
     }
-    for name in ["Escrow", "StreamEscrow", "EscrowConfig", "MockUSDT"] {
+    for name in [
+        "Escrow",
+        "EscrowConfig",
+        "StreamEscrow",
+        "FixedFeePaymaster",
+        "MockUSDT",
+    ] {
         let forge = read(&out.join(format!("{name}.sol/{name}.json")));
         let Value::Array(mut abi) = forge["abi"].clone() else {
             panic!("{name}: no abi array");

@@ -6,6 +6,7 @@ pub mod forums;
 pub mod orders;
 pub mod outbox;
 pub mod posts;
+pub mod sponsor;
 pub mod staff;
 pub mod topics;
 pub mod trade;

@@ -36,3 +36,10 @@ alloy::sol!(
     MockUSDT,
     "abi/MockUSDT.json"
 );
+
+alloy::sol!(
+    /// 自写固定费 Paymaster（ADR 0004）。
+    #[sol(rpc, abi, all_derives)]
+    FixedFeePaymaster,
+    "abi/FixedFeePaymaster.json"
+);

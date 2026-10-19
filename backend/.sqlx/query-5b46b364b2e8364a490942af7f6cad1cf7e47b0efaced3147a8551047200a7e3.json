@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sponsorships SET status = 'submitted', user_op = $2, via_fallback = $3, updated_at = now()\n         WHERE id = $1 AND status = 'signed' AND valid_until > now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Jsonb",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5b46b364b2e8364a490942af7f6cad1cf7e47b0efaced3147a8551047200a7e3"
+}

@@ -414,6 +414,7 @@ fn anvil_chain(anvil: &forum_chain::anvil::Anvil) -> forum_chain::config::ChainC
         confirmation: ConfirmationPolicy::default(),
         indexer: IndexerPolicy::default(),
         wallet_init_versions: vec![forum_chain::anvil::dev_wallet_version()],
+        aa: None,
     }
 }
 

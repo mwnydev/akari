@@ -1,6 +1,6 @@
 # 链配置示例（单链 Arbitrum One）。RPC 地址带密钥，留空并用环境变量提供：
 #   CHAIN_RPC_PRIMARY_HTTP / CHAIN_RPC_PRIMARY_WS / CHAIN_RPC_BACKUP_HTTP / CHAIN_RPC_BACKUP_WS
-# forum-indexer 与 forum-api 用 CHAIN_CONFIG=<本文件路径> 指定。
+# forum-indexer、forum-api 与 forum-sponsor 用 CHAIN_CONFIG=<本文件路径> 指定。
 chain_id = 42161
 name = "Arbitrum One"
 
@@ -15,6 +15,12 @@ start_block = 0
 symbol = "USDT0"
 address = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
 decimals = 6
+
+# 账户抽象（ADR 0003、0004），forum-sponsor 使用。EntryPoint v0.7 与 Kernel v3.3 meta factory 是链上现成合约。
+[aa]
+entry_point = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
+paymaster = "0x0000000000000000000000000000000000000004"
+factories = ["0xd703aaE79538628d27099B8c4f621bE4CCd142d5"]
 
 [confirmation]
 use_block_tags = true

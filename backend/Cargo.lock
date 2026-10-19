@@ -2527,9 +2527,22 @@ dependencies = [
 name = "forum-sponsor"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
+ "axum",
+ "forum-chain",
+ "forum-core",
+ "forum-db",
  "forum-runtime",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.21",
+ "time",
  "tokio",
+ "tokio-util",
+ "tower",
  "tracing",
 ]
 

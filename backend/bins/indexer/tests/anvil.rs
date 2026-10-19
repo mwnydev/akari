@@ -369,6 +369,7 @@ impl World {
                 failback_secs: 3600,
             },
             wallet_init_versions: Vec::new(),
+            aa: None,
         }
     }
 }

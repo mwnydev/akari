@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO outbox (kind, payload, priority)\n         SELECT $1, $2, $3\n         WHERE $1 LIKE 'alert.%' AND NOT EXISTS (\n           SELECT 1 FROM outbox WHERE kind = $1 AND kind LIKE 'alert.%'\n             AND created_at > now() - make_interval(secs => $4))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb",
+        "Int2",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "226ccea0544139d46b96cfe38fde8f62f59323dfe4058bad298b35a70dd59a06"
+}

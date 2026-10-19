@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sponsorships SET status = 'replaced', updated_at = now()\n         WHERE sender = $1 AND chain_id = $2 AND nonce = $3::text::numeric AND status = 'signed'\n           AND user_op_hash <> $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2946d8617c6046e0cda98eccc28f65153021641232d4f13524e511cbd39385c8"
+}

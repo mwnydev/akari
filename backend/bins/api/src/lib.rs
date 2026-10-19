@@ -61,6 +61,7 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::wallet::assert_start))
         .routes(routes!(routes::wallet::assert_finish))
         .routes(routes!(routes::wallet::create_account))
+        .routes(routes!(routes::aa::rpc))
         .routes(routes!(routes::trade::params))
         .routes(routes!(routes::trade::create_listing))
         .routes(routes!(routes::trade::get_listing))

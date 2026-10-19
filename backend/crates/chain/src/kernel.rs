@@ -12,6 +12,7 @@ use alloy::sol_types::{SolCall, SolValue};
 
 use crate::ChainError;
 use crate::config::{ChainConfig, WalletInitVersion};
+use crate::rpc::FailoverRpc;
 
 alloy::sol! {
     interface IKernel {
@@ -134,15 +135,15 @@ pub async fn counterfactual_address(
     .await
 }
 
-/// 按链配置的主备节点推算钱包地址：失败就换下一个节点。
+/// 按链配置的主备节点推算钱包地址（主备切换见 [`FailoverRpc`]）。
 pub struct AddressResolver {
-    providers: Vec<(String, DynProvider)>,
+    rpc: FailoverRpc,
 }
 
 impl AddressResolver {
     pub fn new(cfg: &ChainConfig) -> Result<Self, ChainError> {
         Ok(Self {
-            providers: crate::rpc::http_providers(cfg)?,
+            rpc: FailoverRpc::from_config(cfg)?,
         })
     }
 
@@ -151,19 +152,15 @@ impl AddressResolver {
         v: &WalletInitVersion,
         key: &PasskeyPublicKey,
     ) -> Result<Address, ChainError> {
-        let mut last = ChainError::Rpc("no rpc endpoints".into());
-        for (name, provider) in &self.providers {
-            match counterfactual_address(provider, v, key).await {
-                Ok(a) => return Ok(a),
-                // 配置错误换节点也一样，直接返回。
-                Err(e @ ChainError::Config(_)) => return Err(e),
-                Err(e) => {
-                    tracing::warn!(endpoint = %name, error = %e, "kernel getAddress failed");
-                    last = e;
+        self.rpc
+            .call("kernel getAddress", |p| async move {
+                match counterfactual_address(&p, v, key).await {
+                    // 配置错误换节点也一样，不触发切换。
+                    Err(e @ ChainError::Config(_)) => Ok(Err(e)),
+                    r => r.map(Ok),
                 }
-            }
-        }
-        Err(last)
+            })
+            .await?
     }
 }
 

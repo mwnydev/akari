@@ -28,6 +28,8 @@ pub struct ChainConfig {
     /// 钱包初始化参数的各个版本（ADR 0008），按版本号升序、只增不改。
     #[serde(default)]
     pub wallet_init_versions: Vec<WalletInitVersion>,
+    /// 账户抽象（ADR 0003、0004）：forum-sponsor 必填，其他程序不用。
+    pub aa: Option<AaConfig>,
 }
 
 /// 两家 RPC 服务商（plan 第 2 节「每类至少两家」）。`ws` 只用于订阅即时事件，缺省时只靠定时补拉。
@@ -97,6 +99,16 @@ pub struct WalletInitVersion {
     pub approve_token: Address,
     /// 授权额度（十进制或 0x 十六进制字符串；通常为 uint256 最大值）。
     pub approve_amount: U256,
+}
+
+/// EntryPoint v0.7 与自有 Paymaster。`factories` 是首笔操作 `initCode` 允许使用的工厂
+/// （Kernel v3.3 meta factory，ADR 0003）：钱包只能按平台的初始化参数部署。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AaConfig {
+    pub entry_point: Address,
+    pub paymaster: Address,
+    pub factories: Vec<Address>,
 }
 
 /// 链上状态分级确认（plan 第 2、8 节）：latest 立即写入；safe / finalized 优先用 RPC 的同名区块标记，
@@ -247,6 +259,14 @@ impl ChainConfig {
                 return bad("wallet init version addresses must be non-zero");
             }
         }
+        if let Some(aa) = &self.aa
+            && (aa.entry_point.is_zero()
+                || aa.paymaster.is_zero()
+                || aa.factories.is_empty()
+                || aa.factories.iter().any(|f| f.is_zero()))
+        {
+            return bad("aa addresses must be non-zero and factories non-empty");
+        }
         if self.token.decimals > 36 {
             return bad("token decimals out of range");
         }
@@ -303,6 +323,8 @@ mod tests {
         };
         assert_eq!((v1.version, v1.approve_amount), (1, U256::MAX));
         assert_eq!(v1.approve_token, cfg.token.address);
+        let aa = cfg.aa.as_ref().unwrap();
+        assert_eq!(aa.factories.len(), 1);
     }
 
     #[test]
@@ -320,6 +342,24 @@ mod tests {
             cfg.wallet_init_versions[0].approve_amount,
             U256::from(1_000_000)
         );
+    }
+
+    #[test]
+    fn local_dev_sponsor_config_parses() {
+        let text = include_str!("../../../../deploy/dev/sponsor.chain.toml");
+        let cfg = ChainConfig::parse(text, |_| None).unwrap();
+        assert_eq!(cfg.chain_id, 31_337);
+        assert!(cfg.aa.is_some());
+    }
+
+    #[test]
+    fn zero_aa_addresses_are_rejected() {
+        let text = EXAMPLE.replace(
+            "factories = [\"0xd703aaE79538628d27099B8c4f621bE4CCd142d5\"]",
+            "factories = []",
+        );
+        let err = ChainConfig::parse(&text, env).unwrap_err();
+        assert!(err.to_string().contains("factories"), "{err}");
     }
 
     #[test]

@@ -1,3 +1,4 @@
+pub mod aa;
 pub mod auth;
 pub mod forums;
 pub mod health;

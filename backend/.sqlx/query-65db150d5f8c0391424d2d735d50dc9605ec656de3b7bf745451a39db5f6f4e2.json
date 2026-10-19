@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE sponsorships SET status = $2, tx_hash = $3, block_number = $4,\n           actual_gas_cost = $5::text::numeric, updated_at = now()\n         WHERE user_op_hash = $1 AND status NOT IN ('included', 'failed')\n         RETURNING user_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "sponsorships",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        {
+          "Custom": {
+            "name": "sponsorship_status",
+            "kind": {
+              "Enum": [
+                "signed",
+                "replaced",
+                "submitted",
+                "included",
+                "failed",
+                "expired",
+                "dropped"
+              ]
+            }
+          }
+        },
+        "Bytea",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "65db150d5f8c0391424d2d735d50dc9605ec656de3b7bf745451a39db5f6f4e2"
+}

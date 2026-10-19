@@ -68,12 +68,18 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::ExternalLinkForbidden
         | ErrorCode::ReverifyRequired
         | ErrorCode::PasskeyRequired
-        | ErrorCode::WalletRequired => StatusCode::FORBIDDEN,
-        ErrorCode::OfferUnavailable | ErrorCode::Conflict => StatusCode::CONFLICT,
-        ErrorCode::NotFound => StatusCode::NOT_FOUND,
-        ErrorCode::ResendTooSoon | ErrorCode::RateLimited | ErrorCode::TooManyAttempts => {
-            StatusCode::TOO_MANY_REQUESTS
+        | ErrorCode::WalletRequired
+        | ErrorCode::SponsorNotAllowed
+        | ErrorCode::SponsorSuspended => StatusCode::FORBIDDEN,
+        ErrorCode::OfferUnavailable | ErrorCode::Conflict | ErrorCode::SponsorPending => {
+            StatusCode::CONFLICT
         }
+        ErrorCode::SponsorUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+        ErrorCode::NotFound => StatusCode::NOT_FOUND,
+        ErrorCode::ResendTooSoon
+        | ErrorCode::RateLimited
+        | ErrorCode::TooManyAttempts
+        | ErrorCode::SponsorQuotaExceeded => StatusCode::TOO_MANY_REQUESTS,
         ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         ErrorCode::AmountOverflow
         | ErrorCode::AmountUnderflow
@@ -92,7 +98,8 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::UsernameRequired
         | ErrorCode::PasskeyFailed
         | ErrorCode::TooManyPasskeys
-        | ErrorCode::WalletAddressMismatch => StatusCode::BAD_REQUEST,
+        | ErrorCode::WalletAddressMismatch
+        | ErrorCode::SimulationFailed => StatusCode::BAD_REQUEST,
     }
 }
 

@@ -1,0 +1,63 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, nonce::text AS \"nonce!\", status AS \"status: SponsorshipStatus\"\n           FROM sponsorships\n           WHERE sender = $1 AND chain_id = $2\n             AND (status = 'submitted' OR (status = 'signed' AND valid_until > now()))\n           ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "sponsorships",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "nonce!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "status: SponsorshipStatus",
+        "type_info": {
+          "Custom": {
+            "name": "sponsorship_status",
+            "kind": {
+              "Enum": [
+                "signed",
+                "replaced",
+                "submitted",
+                "included",
+                "failed",
+                "expired",
+                "dropped"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "sponsorships",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false
+    ]
+  },
+  "hash": "ef1c85f2d0ebbb04701c47d52008df8c0ff7f73349aff900aec05775204e8cc8"
+}

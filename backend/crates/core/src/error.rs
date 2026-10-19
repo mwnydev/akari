@@ -72,6 +72,18 @@ pub enum ErrorCode {
     WalletRequired,
     #[error("wallet address does not match the passkey")]
     WalletAddressMismatch,
+    #[error("operation not eligible for sponsorship")]
+    SponsorNotAllowed,
+    #[error("sponsorship quota exceeded")]
+    SponsorQuotaExceeded,
+    #[error("another sponsored operation is pending")]
+    SponsorPending,
+    #[error("sponsorship suspended")]
+    SponsorSuspended,
+    #[error("operation simulation failed")]
+    SimulationFailed,
+    #[error("sponsor service unavailable")]
+    SponsorUnavailable,
     #[error("internal error")]
     Internal,
 }
@@ -112,6 +124,12 @@ impl ErrorCode {
             Self::TooManyPasskeys => "Passkey 数量已达上限",
             Self::WalletRequired => "请先开通交易",
             Self::WalletAddressMismatch => "钱包地址与 Passkey 不匹配，请刷新后重试",
+            Self::SponsorNotAllowed => "这项操作不在平台代付范围内",
+            Self::SponsorQuotaExceeded => "这项操作的代付次数已用完，请稍后再试",
+            Self::SponsorPending => "上一笔操作还在上链，请稍候再试",
+            Self::SponsorSuspended => "链上失败次数过多，代付已暂停 24 小时",
+            Self::SimulationFailed => "交易预演失败，请检查余额和订单状态",
+            Self::SponsorUnavailable => "代付服务暂时不可用，请稍后再试",
             Self::Internal => "服务暂时不可用，请稍后再试",
         }
     }

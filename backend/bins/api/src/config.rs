@@ -34,6 +34,9 @@ pub struct Config {
     /// `CHAIN_CONFIG` 指向的链配置文件（RPC 用于校验钱包地址）；未设置时钱包地址登记不可用。
     pub chain_file: Option<forum_chain::config::ChainConfig>,
     pub trade_limits: TradeLimits,
+    /// 本机 forum-sponsor，如 `http://127.0.0.1:8090`（`SPONSOR_URL`）；与 `SPONSOR_API_TOKEN` 同时设置才启用。
+    pub sponsor_url: Option<String>,
+    pub sponsor_token: Option<String>,
 }
 
 /// 担保合约所在链的公开参数。
@@ -174,6 +177,10 @@ impl Config {
             chain,
             chain_file,
             trade_limits: trade_limits()?,
+            sponsor_url: std::env::var("SPONSOR_URL").ok().filter(|s| !s.is_empty()),
+            sponsor_token: std::env::var("SPONSOR_API_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty()),
         })
     }
 }

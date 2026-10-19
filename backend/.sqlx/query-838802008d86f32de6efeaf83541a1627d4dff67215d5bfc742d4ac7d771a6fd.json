@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT suspended_until AS \"until!\" FROM sponsor_accounts\n           WHERE user_id = $1 AND suspended_until > now()",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "until!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sponsor_accounts",
+            "name": "suspended_until"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "838802008d86f32de6efeaf83541a1627d4dff67215d5bfc742d4ac7d771a6fd"
+}
