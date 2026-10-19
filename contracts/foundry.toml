@@ -15,6 +15,7 @@ remappings = [
   "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
   "solady/=lib/solady/src/",
   "forge-std/=lib/forge-std/src/",
+  "account-abstraction/=lib/account-abstraction/contracts/",
 ]
 
 [fuzz]
