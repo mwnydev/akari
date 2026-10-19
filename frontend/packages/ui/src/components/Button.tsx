@@ -2,7 +2,7 @@ import { Slot } from "@radix-ui/react-slot";
 import type { ButtonHTMLAttributes } from "react";
 import { cn } from "../cn";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "subtle" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -16,6 +16,8 @@ const variants: Record<ButtonVariant, string> = {
   primary: "bg-accent-fill text-accent-fg hover:brightness-110",
   secondary: "bg-surface-2 text-fg hover:brightness-95",
   ghost: "text-accent hover:bg-accent-soft",
+  /** 低调的次要操作（楼层下的赞、评论）：灰字，悬停才显出底色 */
+  subtle: "text-fg-muted hover:bg-surface-2 hover:text-fg aria-pressed:text-accent",
   danger: "bg-danger text-accent-fg hover:brightness-110",
 };
 

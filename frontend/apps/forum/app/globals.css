@@ -10,3 +10,93 @@
   pointer-events: none;
   color: var(--color-fg-muted);
 }
+
+/*
+ * 论坛扁平主题（设计稿 v2，站长要求的 Discourse 式观感，自有实现）：白底 / 深灰底、细分隔线、小圆角、不用玻璃与渐变。
+ * 只在页面里出现 [data-forum-theme="flat"] 时生效；写在 :root 上，Radix 弹层挂到 body 下也能拿到同一套令牌。
+ * 钱包、管理后台与论坛其余页面仍用 @akari/ui 的默认令牌。
+ */
+@theme {
+  /* 楼层评论块的浅灰底 */
+  --color-wash: #f6f6f6;
+  /* 回复数「热度」：越热越偏红，三档都满足白底 4.5:1 */
+  --color-heat-1: #a85a00;
+  --color-heat-2: #bd4b0f;
+  --color-heat-3: #c0261a;
+  /* 板块色块（装饰用，旁边总有板块名） */
+  --color-board-red: #d1453b;
+  --color-board-blue: #2f7fd8;
+  --color-board-green: #2e9d5c;
+  --color-board-orange: #e08e1b;
+  --color-board-purple: #8059c9;
+  --color-board-teal: #1d9bb0;
+
+  --animate-composer-in: composer-in 0.2s ease-out;
+
+  @keyframes composer-in {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+}
+
+:root:has([data-forum-theme="flat"]) {
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", "Noto Sans SC",
+    sans-serif;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+  --radius-pill: 3px;
+  /* 只有菜单、气泡卡片、弹窗与编辑器有一点阴影 */
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.08);
+  --shadow-sheet: 0 4px 14px rgb(0 0 0 / 0.14);
+
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-2: #efefef;
+  --color-fg: #222222;
+  --color-fg-muted: #646464;
+  --color-border: #e3e3e3;
+  --color-accent: #0f5fc7;
+  --color-accent-fill: #0f5fc7;
+  --color-accent-soft: rgb(15 95 199 / 0.1);
+
+  --color-glass: var(--color-surface);
+  --color-glass-strong: var(--color-surface);
+  --color-glass-border: var(--color-border);
+  --blur-glass: 0px;
+  --blur-overlay: 0px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:has([data-forum-theme="flat"]) {
+    --shadow-sheet: 0 4px 14px rgb(0 0 0 / 0.5);
+    --color-bg: #1f1f1f;
+    --color-surface: #1f1f1f;
+    --color-surface-2: #2e2e2e;
+    --color-fg: #e3e3e3;
+    --color-fg-muted: #a6a6a6;
+    --color-border: #383838;
+    --color-accent: #74aefc;
+    --color-accent-fill: #1d5fbf;
+    --color-accent-soft: rgb(116 174 252 / 0.14);
+    --color-wash: #2b2b2b;
+    --color-heat-1: #f0a243;
+    --color-heat-2: #f57d4b;
+    --color-heat-3: #ff6a5c;
+  }
+}
+
+:root:has([data-forum-theme="flat"]) body {
+  background-image: none;
+}
+
+:root:has([data-forum-theme="flat"]) :is(.glass, .glass-strong) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}

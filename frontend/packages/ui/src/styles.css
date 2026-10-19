@@ -50,11 +50,14 @@
   /* 弹窗与签名确认用更实的玻璃：动钱的信息必须清楚可读 */
   --color-glass-strong: rgb(255 255 255 / 0.9);
   --blur-glass: 24px;
+  /* 弹窗遮罩的轻微模糊 */
+  --blur-overlay: 3px;
 
   --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 
   --animate-sheet-in: sheet-in 0.32s var(--ease-glass);
   --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-drawer-in: drawer-in 0.32s var(--ease-glass);
   --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
 
   @keyframes sheet-in {
@@ -65,6 +68,14 @@
     to {
       opacity: 1;
       transform: translate(-50%, -50%) scale(1);
+    }
+  }
+  @keyframes drawer-in {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
     }
   }
   @keyframes fade-in {

@@ -1,10 +1,12 @@
 import type { HTMLAttributes } from "react";
 import { cn } from "../cn";
 
-export type BadgeTone = "neutral" | "accent" | "success" | "warning" | "danger";
+export type BadgeTone = "neutral" | "outline" | "accent" | "success" | "warning" | "danger";
 
 const tones: Record<BadgeTone, string> = {
   neutral: "bg-surface-2 text-fg-muted",
+  /** 类型标签（担保交易、拍卖）：描边不填色，和表达状态的彩色徽标区分开 */
+  outline: "border border-border text-fg",
   accent: "bg-accent-soft text-accent",
   success: "bg-success-soft text-success",
   warning: "bg-warning-soft text-warning",

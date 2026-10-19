@@ -58,9 +58,20 @@ export function formatCnyPerUsdt(rate: number): string {
   return (rate / 10 ** RATE_DECIMALS).toFixed(RATE_DECIMALS);
 }
 
-/** USDT 标价按卖家参考汇率折合的人民币参考价，如 "¥1,234.56"。 */
-export function cnyReference(usdt: string, rate: number): string {
-  const fen = usdtToCnyFen(BigInt(usdt), BigInt(rate));
+/** 解析用户输入的人民币金额（如 "1300"、"1300.5"）为分；格式不对返回 null。 */
+export function parseCnyFen(input: string): bigint | null {
+  const m = /^(\d{1,10})(?:\.(\d{0,2}))?$/.exec(input.trim());
+  if (!m) return null;
+  return BigInt(m[1] ?? "0") * 100n + BigInt((m[2] ?? "").padEnd(2, "0"));
+}
+
+/** 人民币金额（分）→ "¥1,234.56"。 */
+export function formatCnyFen(fen: bigint): string {
   const yuan = (fen / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `¥${yuan}.${(fen % 100n).toString().padStart(2, "0")}`;
+}
+
+/** USDT 标价按卖家参考汇率折合的人民币参考价，如 "¥1,234.56"。 */
+export function cnyReference(usdt: string, rate: number): string {
+  return formatCnyFen(usdtToCnyFen(BigInt(usdt), BigInt(rate)));
 }

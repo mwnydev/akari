@@ -23,7 +23,7 @@ export function DialogContent({
 }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-40 animate-fade-in bg-black/45 backdrop-blur-[3px]" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-40 animate-fade-in bg-black/45 backdrop-blur-(--blur-overlay)" />
       <DialogPrimitive.Content
         className={cn(
           "glass-strong fixed top-1/2 left-1/2 z-50 w-[calc(100vw-24px)] max-w-md -translate-x-1/2 -translate-y-1/2",
@@ -42,6 +42,42 @@ export function DialogContent({
           </div>
           <DialogPrimitive.Close
             className="-mt-1 -mr-1 inline-flex size-8 items-center justify-center rounded-full text-fg-muted hover:bg-surface-2"
+            aria-label="关闭"
+          >
+            <X size={18} aria-hidden />
+          </DialogPrimitive.Close>
+        </div>
+        {children}
+      </DialogPrimitive.Content>
+    </DialogPrimitive.Portal>
+  );
+}
+
+/** 左侧抽屉（移动端的板块导航等）：实底面板，同样是模态对话框，焦点锁在抽屉里，Esc 或点遮罩关闭。 */
+export function DrawerContent({
+  title,
+  children,
+  className,
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <DialogPrimitive.Portal>
+      <DialogPrimitive.Overlay className="fixed inset-0 z-40 animate-fade-in bg-black/45 backdrop-blur-(--blur-overlay)" />
+      <DialogPrimitive.Content
+        aria-describedby={undefined}
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-[min(20rem,85vw)] flex-col border-r border-border bg-surface",
+          "animate-drawer-in overflow-y-auto p-4 shadow-sheet focus:outline-none",
+          className,
+        )}
+      >
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <DialogPrimitive.Title className="font-semibold">{title}</DialogPrimitive.Title>
+          <DialogPrimitive.Close
+            className="inline-flex size-8 items-center justify-center rounded-full text-fg-muted hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent"
             aria-label="关闭"
           >
             <X size={18} aria-hidden />

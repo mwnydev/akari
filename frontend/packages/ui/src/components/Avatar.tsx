@@ -53,3 +53,35 @@ export function Avatar({ name, src, size = 40, online, badge, className }: Avata
     </span>
   );
 }
+
+/** 一排小头像（主题列表的参与者），不叠放；超出 `max` 的人数显示为「+N」。 */
+export function AvatarStack({
+  people,
+  max = 5,
+  size = 24,
+  className,
+}: {
+  people: { name: string; src?: string | undefined }[];
+  max?: number;
+  size?: number;
+  className?: string;
+}) {
+  const shown = people.slice(0, max);
+  const rest = people.length - shown.length;
+  return (
+    <span
+      role="img"
+      aria-label={`参与者：${people.map((p) => p.name).join("、")}`}
+      className={cn("inline-flex items-center gap-0.5", className)}
+    >
+      {shown.map((p, i) => (
+        <Avatar key={`${p.name}-${i}`} name={p.name} src={p.src} size={size} />
+      ))}
+      {rest > 0 ? (
+        <span className="amount ml-0.5 text-xs text-fg-muted" aria-hidden>
+          +{rest}
+        </span>
+      ) : null}
+    </span>
+  );
+}

@@ -16,12 +16,39 @@ const segmentItem =
   "data-[state=on]:bg-surface data-[state=on]:font-medium data-[state=on]:text-fg data-[state=active]:shadow-float data-[state=on]:shadow-float " +
   "focus-visible:outline-2 focus-visible:outline-accent";
 
-export function TabsList({ className, ...props }: ComponentProps<typeof TabsPrimitive.List>) {
-  return <TabsPrimitive.List className={cn(segmentList, className)} {...props} />;
+// 下划线样式（论坛列表顶部的「最新 / 热门」）：纯文字，选中项只换颜色和下划线，字重不变以免跳版
+const underlineList = "flex max-w-full items-center gap-1 overflow-x-auto";
+const underlineItem =
+  "-mb-px shrink-0 border-b-2 border-transparent px-3 py-1.5 text-fg-muted transition-colors duration-150 " +
+  "hover:text-fg data-[state=active]:border-accent-fill data-[state=active]:text-fg " +
+  "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent";
+
+export type TabsVariant = "segment" | "underline";
+
+export function TabsList({
+  variant = "segment",
+  className,
+  ...props
+}: ComponentProps<typeof TabsPrimitive.List> & { variant?: TabsVariant }) {
+  return (
+    <TabsPrimitive.List
+      className={cn(variant === "underline" ? underlineList : segmentList, className)}
+      {...props}
+    />
+  );
 }
 
-export function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsPrimitive.Trigger>) {
-  return <TabsPrimitive.Trigger className={cn(segmentItem, className)} {...props} />;
+export function TabsTrigger({
+  variant = "segment",
+  className,
+  ...props
+}: ComponentProps<typeof TabsPrimitive.Trigger> & { variant?: TabsVariant }) {
+  return (
+    <TabsPrimitive.Trigger
+      className={cn(variant === "underline" ? underlineItem : segmentItem, className)}
+      {...props}
+    />
+  );
 }
 
 export interface SegmentOption<T extends string> {

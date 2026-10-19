@@ -40,6 +40,14 @@ const colors = [
   "online",
 ];
 
+const v2Pages = [
+  ["/design/v2", "首页列表"],
+  ["/design/v2/board", "板块页"],
+  ["/design/v2/trade", "交易帖"],
+  ["/design/v2/auction", "拍卖帖"],
+  ["/design/v2/topic", "普通帖"],
+] as const;
+
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <Card>
@@ -55,6 +63,22 @@ export default function DesignPage() {
       <SiteNav active="/design" />
       <main className="mx-auto max-w-5xl space-y-4 px-4 py-5">
         <h1 className="text-2xl font-semibold">设计系统</h1>
+        <Card className="bg-accent-soft">
+          <CardTitle>论坛新版设计稿 v2（待站长确认）</CardTitle>
+          <p className="mt-1 text-sm text-fg-muted">
+            Discourse
+            式扁平观感：白底、细分隔线、小圆角；表格式主题列表、左侧板块栏、楼层时间轴、贴底编辑器；交易帖与拍卖帖；朋友圈式楼层评论。只用模拟数据。
+          </p>
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {v2Pages.map(([href, label]) => (
+              <li key={href}>
+                <Button asChild variant="secondary" size="sm">
+                  <a href={href}>{label}</a>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
         <p className="text-fg-muted">
           Liquid
           Glass：玻璃只用于导航、工具栏、弹窗；正文与金额实底高对比。系统开启「降低透明度」或「增强对比度」时玻璃退回实色。

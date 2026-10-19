@@ -29,11 +29,19 @@ export interface UserCardProps {
   className?: string;
 }
 
+/** 不满 10 笔不算成功率（plan 第 7 节）。 */
+const MIN_RATED_DEALS = 10;
+
+/** 列表里的短信誉：「成功率 98.6%」或「新卖家」。 */
+export function successRateLabel(r: TradeReputation): string {
+  if (r.deals < MIN_RATED_DEALS) return "新卖家";
+  return `成功率 ${Math.floor(r.successPermille / 10)}.${r.successPermille % 10}%`;
+}
+
 /** 信誉一行：不满 10 笔显示「新卖家」（plan 第 7 节）。 */
 export function reputationLine(r: TradeReputation): string {
-  if (r.deals < 10) return `新卖家 · 已成交 ${r.deals} 笔`;
-  const pct = `${Math.floor(r.successPermille / 10)}.${r.successPermille % 10}%`;
-  const parts = [`成功率 ${pct}`, `成交 ${r.deals} 笔`, `争议败诉 ${r.disputesLost} 次`];
+  if (r.deals < MIN_RATED_DEALS) return `新卖家 · 已成交 ${r.deals} 笔`;
+  const parts = [successRateLabel(r), `成交 ${r.deals} 笔`, `争议败诉 ${r.disputesLost} 次`];
   if (r.replyMinutes !== undefined) parts.push(`通常 ${r.replyMinutes} 分钟内回复`);
   return parts.join(" · ");
 }
