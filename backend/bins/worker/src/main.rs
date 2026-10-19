@@ -28,8 +28,9 @@ async fn main() -> anyhow::Result<()> {
 
     let db = forum_db::connect(&env("DATABASE_URL")?, 10).await?;
     let kv = forum_kv::pool(&env("VALKEY_URL")?)?;
-    let cache = forum_kv::ForumCache::new(kv.clone(), "");
-    let realtime = forum_kv::Realtime::new(kv, "");
+    let ns = forum_kv::namespace_from_env()?;
+    let cache = forum_kv::ForumCache::new(kv.clone(), ns.as_str());
+    let realtime = forum_kv::Realtime::new(kv, ns);
     let from = env("MAIL_FROM")?;
     // 主备通道可在配置里一键互换（plan 第 9 节）：MAIL_PRIMARY=resend MAIL_BACKUP=smtp。
     let primary = build_mailer(

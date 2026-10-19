@@ -19,7 +19,7 @@ tower-sessions-core.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
 
 [lints]
 workspace = true

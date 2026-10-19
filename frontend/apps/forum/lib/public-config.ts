@@ -1,7 +1,12 @@
 // 浏览器也能读的配置：NEXT_PUBLIC_* 在构建时内联。
 
-/** 钱包中心（独立域名，plan 第 5 节）：担保付款、开通交易都在那里完成。 */
-export const WALLET_ORIGIN = process.env.NEXT_PUBLIC_WALLET_ORIGIN ?? "http://localhost:3001";
+/**
+ * 钱包中心（独立域名，plan 第 5 节）：担保付款、开通交易都在那里完成。
+ * 生产构建默认 ADR 0012 正式域名（只经代码审查修改，不进后台在线配置），`next dev` 默认本机。
+ */
+export const WALLET_ORIGIN =
+  process.env.NEXT_PUBLIC_WALLET_ORIGIN ??
+  (process.env.NODE_ENV === "production" ? "https://wallet.akari.cc" : "http://localhost:3001");
 
 /** Cloudflare Turnstile site key；未设置时登录页不渲染人机验证（后端未配置 TURNSTILE_SECRET 时也不校验）。 */
 export const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";

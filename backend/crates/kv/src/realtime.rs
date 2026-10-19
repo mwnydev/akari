@@ -124,7 +124,7 @@ fn ttl_ms() -> u64 {
     u64::try_from(CONN_TTL.as_millis()).unwrap_or(u64::MAX)
 }
 
-/// 发布广播、登记连接、查询在线。`ns` 是键与频道前缀（测试隔离用，生产为空）。
+/// 发布广播、登记连接、查询在线。`ns` 是键与频道前缀（[`crate::namespace_from_env`]；测试用随机前缀隔离）。
 #[derive(Clone)]
 pub struct Realtime {
     pool: Pool,

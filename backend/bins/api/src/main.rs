@@ -83,10 +83,13 @@ async fn main() -> anyhow::Result<()> {
         device_key: Key::try_from(cfg.cookie_secret.as_slice())?,
         allowed_origins: Arc::from(cfg.allowed_origins.clone()),
         cookie_secure: cfg.cookie_secure,
-        cache: forum_kv::ForumCache::new(kv.clone(), ""),
+        cache: forum_kv::ForumCache::new(kv.clone(), cfg.kv_namespace.as_str()),
         internal_hosts: Arc::from(cfg.internal_hosts.clone()),
         wallet: Arc::new(wallet),
-        hub: Hub::new(Realtime::new(kv.clone(), ""), cfg.valkey_url.clone()),
+        hub: Hub::new(
+            Realtime::new(kv.clone(), cfg.kv_namespace.as_str()),
+            cfg.valkey_url.clone(),
+        ),
         media,
     };
     // 两个实例都订阅同一个广播频道；订阅断线自动重连。

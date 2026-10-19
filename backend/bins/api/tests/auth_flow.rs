@@ -7,8 +7,7 @@ mod common;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use common::{SECRET, build, call, jar, latest_code, login, unique_email};
-use forum_auth::CodeStore;
+use common::{build, call, clear_resend, jar, latest_code, login, unique_email};
 use forum_db::PgPool;
 use serde_json::json;
 use tower::ServiceExt;
@@ -119,20 +118,6 @@ async fn new_device_notification_only_for_unknown_device(db: PgPool) {
     assert_eq!(count(db.clone()).await, 1);
 }
 
-async fn clear_resend(email: &str) {
-    let url = std::env::var("VALKEY_URL").unwrap();
-    let kv = forum_kv::pool(&url).unwrap();
-    let tag = CodeStore::new(kv.clone(), &SECRET)
-        .unwrap()
-        .email_tag(&email.to_lowercase());
-    let mut conn = kv.get().await.unwrap();
-    let _: () = redis::cmd("DEL")
-        .arg(format!("auth:resend:{tag}"))
-        .query_async(&mut conn)
-        .await
-        .unwrap();
-}
-
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn wrong_code_and_errors(db: PgPool) {
     let Some(app) = build(db.clone()) else { return };
@@ -227,4 +212,89 @@ async fn openapi_lists_auth_endpoints(db: PgPool) {
         assert!(r.body["paths"].get(path).is_some(), "missing {path}");
     }
     assert!(r.body["components"]["schemas"].get("ErrorBody").is_some());
+}
+
+/// 一条 Set-Cookie 的名字与小写的属性列表。
+fn parse_set_cookie(c: &str) -> (&str, Vec<String>) {
+    let mut parts = c.split(';');
+    let name = parts.next().unwrap().split('=').next().unwrap().trim();
+    (name, parts.map(|a| a.trim().to_ascii_lowercase()).collect())
+}
+
+/// ADR 0012：论坛主站在可注册域名 `akari.cc` 本身上，Cookie 一旦带 `Domain` 就会发给钱包、后台等所有子域名。
+/// 论坛发出的每一条 Set-Cookie 都必须 host-only（没有 Domain 属性）、Path=/，带值的还必须 HttpOnly、
+/// Secure（测试状态与生产一样 `cookie_secure = true`）、SameSite=Lax。删除用的空 Cookie（`Max-Age=0`）
+/// 不带值，只要求域与路径和原 Cookie 一致。改动 Cookie 属性的 PR 需两人审查。
+fn assert_cookie_guard(set_cookies: &[String]) {
+    for c in set_cookies {
+        let (_, attrs) = parse_set_cookie(c);
+        assert!(!attrs.iter().any(|a| a.starts_with("domain")), "{c}");
+        assert!(attrs.iter().any(|a| a == "path=/"), "{c} missing path=/");
+        if attrs.iter().any(|a| a == "max-age=0") {
+            continue;
+        }
+        for want in ["httponly", "secure", "samesite=lax"] {
+            assert!(attrs.iter().any(|a| a == want), "{c} missing {want}");
+        }
+    }
+}
+
+fn cookie_value<'a>(set_cookies: &'a [String], name: &str) -> Option<&'a str> {
+    set_cookies
+        .iter()
+        .find_map(|c| c.split(';').next()?.strip_prefix(name)?.strip_prefix('='))
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn session_cookies_are_host_only_http_only_secure_lax(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    let email = unique_email();
+
+    // 登录：会话与设备 Cookie
+    let r = login(&app, &db, &email, &[]).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let names: Vec<_> = r.cookies.iter().map(|c| parse_set_cookie(c).0).collect();
+    assert!(
+        names.contains(&"sid") && names.contains(&"did"),
+        "{names:?}"
+    );
+    assert_cookie_guard(&r.cookies);
+    let cookies = jar(&r.cookies);
+    let sid = cookie_value(&r.cookies, "sid").unwrap().to_owned();
+
+    // 普通已登录请求不重发会话 Cookie；若重发（例如以后开启续期），属性与 ID 都不能变
+    let r = call(&app, "GET", "/api/v1/me", None, &cookies).await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_cookie_guard(&r.cookies);
+    assert!(cookie_value(&r.cookies, "sid").is_none_or(|v| v == sid));
+
+    // 改用户名不轮换、不清除会话
+    let r = call(
+        &app,
+        "PUT",
+        "/api/v1/me/username",
+        Some(json!({"username": "cookie_guard"})),
+        &cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_cookie_guard(&r.cookies);
+    assert!(cookie_value(&r.cookies, "sid").is_none_or(|v| v == sid));
+    let r = call(&app, "GET", "/api/v1/me", None, &cookies).await;
+    assert_eq!(r.body["username"], "cookie_guard");
+
+    // 再次登录（同一设备）轮换会话 ID
+    clear_resend(&email).await;
+    let r = login(&app, &db, &email, &cookies).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_cookie_guard(&r.cookies);
+    let rotated = cookie_value(&r.cookies, "sid").unwrap();
+    assert_ne!(rotated, sid);
+    let cookies = jar(&r.cookies);
+
+    // 退出：删除会话 Cookie 的那一条同样 host-only，否则浏览器删不掉原来的 Cookie
+    let r = call(&app, "POST", "/api/v1/auth/logout", None, &cookies).await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(cookie_value(&r.cookies, "sid"), Some(""), "{:?}", r.cookies);
+    assert_cookie_guard(&r.cookies);
 }

@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_BUILD } from "next/constants";
+import { API_BASE, FORUM_ORIGIN, RP_ID, domainProblems } from "./lib/wallet/domains";
 
 /** 本地 forum-api；只给 `next dev` 的同源转发用（静态导出没有服务端，生产直连 NEXT_PUBLIC_API_ORIGIN）。 */
 const API_ORIGIN = process.env.API_ORIGIN ?? "http://127.0.0.1:8080";
@@ -12,6 +13,11 @@ export default function nextConfig(phase: string): NextConfig {
   const devSponsor = process.env.NEXT_PUBLIC_DEV_SPONSOR === "1";
   if (devSponsor && phase === PHASE_PRODUCTION_BUILD) {
     throw new Error("NEXT_PUBLIC_DEV_SPONSOR=1 只能用于 next dev，禁止出现在构建产物里");
+  }
+  if (phase === PHASE_PRODUCTION_BUILD) {
+    const problems = domainProblems({ rpId: RP_ID, apiBase: API_BASE, forumOrigin: FORUM_ORIGIN });
+    if (problems.length > 0)
+      throw new Error(`钱包域名配置不合格（ADR 0012）：\n${problems.join("\n")}`);
   }
   const devSponsorModule =
     devSponsor && dev ? "./lib/wallet/dev-sponsor.ts" : "./lib/wallet/dev-sponsor.disabled.ts";

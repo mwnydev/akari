@@ -91,7 +91,7 @@ impl std::fmt::Debug for ForumCache {
 }
 
 impl ForumCache {
-    /// `ns` 是所有键的前缀：生产为空，测试用随机前缀隔离。
+    /// `ns` 是所有键的前缀（[`crate::namespace_from_env`]；测试用随机前缀隔离）。
     pub fn new(pool: Pool, ns: impl Into<Arc<str>>) -> Self {
         Self {
             pool,

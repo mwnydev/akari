@@ -1,11 +1,13 @@
 //! API 集成测试共用：组装应用、发请求、登录。
 //! 需要 PostgreSQL（`DATABASE_URL`，sqlx::test 每个用例建临时库）与 Valkey（`VALKEY_URL`，未设置则跳过）。
 //! 每个用例的 Valkey 键带随机前缀，临时库之间重复的 ID 不会互相影响。
+//! 登录验证码、限流等 Valkey 键不带前缀，所以邮箱与客户端 IP 也必须每个用例不同（见 [`unique`]）。
 
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used)] // 测试代码；各测试文件只用其中一部分
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -71,11 +73,16 @@ pub fn wallet_state() -> WalletState {
     }
 }
 
-fn nanos() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos()
+/// 本进程内绝不重复、跨进程（并行运行的其他测试程序、共用 Valkey 的其他检出）也几乎不可能重复的标识。
+/// 不能用时间戳：并行的测试线程会在同一纳秒取到同一个值，两个用例就用了同一个邮箱，
+/// 后登录的那个撞上 60 秒重发间隔（`RESEND_TOO_SOON`）。
+fn unique() -> String {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    format!(
+        "{:016x}{}",
+        rand::random::<u64>(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 pub fn build(db: PgPool) -> Option<Router> {
@@ -84,7 +91,7 @@ pub fn build(db: PgPool) -> Option<Router> {
 
 /// 同 [`build`]，但指定钱包状态（例如换成真实的链上地址校验，或接上假的 forum-sponsor）。
 pub fn build_with(db: PgPool, wallet: WalletState) -> Option<Router> {
-    state_with(db, wallet, &format!("test{}:", nanos())).map(router_of)
+    state_with(db, wallet, &namespace()).map(router_of)
 }
 
 /// 应用状态；`ns` 是 Valkey 键与推送频道前缀，同一个 `ns` 的两个状态相当于同一部署里的两个 forum-api 实例。
@@ -117,7 +124,7 @@ pub fn router_of(state: AppState) -> Router {
 
 /// 新的 Valkey 前缀。
 pub fn namespace() -> String {
-    format!("test{}:", nanos())
+    format!("test{}:", unique())
 }
 
 /// 在本机端口上启动一个实例（含推送订阅），返回地址。
@@ -137,13 +144,19 @@ pub fn media() -> Option<Arc<forum_media::Storage>> {
     Some(Arc::new(forum_media::Storage::new(&cfg).unwrap()))
 }
 
+/// 10.0.0.0/8 里的地址：本进程内依次分配（不重复），起点随机（与其他测试程序错开）。
 pub fn rand_ip() -> [u8; 4] {
-    let n = nanos() as u32;
-    [10, (n >> 16) as u8, (n >> 8) as u8, n as u8]
+    static BASE: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let n = BASE
+        .get_or_init(rand::random::<u32>)
+        .wrapping_add(NEXT.fetch_add(1, Ordering::Relaxed));
+    let [_, a, b, c] = n.to_be_bytes();
+    [10, a, b, c]
 }
 
 pub fn unique_email() -> String {
-    format!("User{}@Example.com", nanos())
+    format!("User{}@Example.com", unique())
 }
 
 pub struct Res {
@@ -401,7 +414,7 @@ pub async fn clear_resend(email: &str) {
     let kv = forum_kv::pool(&url).unwrap();
     let tag = CodeStore::new(kv.clone(), &SECRET)
         .unwrap()
-        .email_tag(email);
+        .email_tag(&forum_core::normalize_email(email).unwrap());
     let mut conn = kv.get().await.unwrap();
     redis::cmd("DEL")
         .arg(format!("auth:resend:{tag}"))

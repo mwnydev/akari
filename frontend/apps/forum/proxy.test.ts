@@ -1,0 +1,32 @@
+import { NextRequest } from "next/server";
+import { beforeAll, describe, expect, it } from "vitest";
+import { proxy } from "./proxy";
+
+// 会话 Cookie 只由 forum-api 签发（host-only，ADR 0012）；Next.js 这一层只读不写，任何响应都不能带 Set-Cookie。
+// 向量同 lib/signed-cookie.test.ts（COOKIE_SECRET = "ab" × 64）。
+const SID = "GEi62EMUlu28DVX+jSiSHeI4AZRsNAZ94oeYYxk/KWc=3oMsdeagrgd5OQIw1233bA";
+
+function request(cookie?: string): NextRequest {
+  return new NextRequest("https://akari.cc/t/1", cookie ? { headers: { cookie } } : {});
+}
+
+describe("proxy", () => {
+  beforeAll(() => {
+    process.env.COOKIE_SECRET = "ab".repeat(64);
+  });
+
+  it("never sets a cookie, for guests, forged and valid sessions", async () => {
+    for (const cookie of [undefined, "sid=forged", `sid=${SID}; did=x`]) {
+      const res = await proxy(request(cookie));
+      expect(res.headers.get("set-cookie"), cookie).toBeNull();
+      expect(res.cookies.getAll(), cookie).toEqual([]);
+    }
+  });
+
+  it("renders a valid session privately and a forged one as a cacheable guest", async () => {
+    const valid = await proxy(request(`sid=${SID}`));
+    expect(valid.headers.get("cache-control")).toBe("private, no-store");
+    const forged = await proxy(request("sid=forged"));
+    expect(forged.headers.get("cloudflare-cdn-cache-control")).toMatch(/^public/);
+  });
+});

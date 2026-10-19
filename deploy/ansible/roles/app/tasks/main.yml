@@ -52,6 +52,24 @@
     content: |
       {{ ansible_user }} ALL=(root) NOPASSWD: {{ app_root }}/bin/install-release *
 
+- name: Configuration directory
+  ansible.builtin.file:
+    path: /etc/akari
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deployment environment (AKARI_ENV; forum-api pins the production domains from it, ADR 0012)
+  ansible.builtin.copy:
+    dest: /etc/akari/deployment.env
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # {{ ansible_managed }}
+      AKARI_ENV={{ akari_env }}
+
 - name: Rust service units
   ansible.builtin.template:
     src: rust.service.j2

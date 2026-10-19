@@ -234,3 +234,47 @@ mod forum_cache {
         assert_eq!(c.cards_get(&[1]).await.unwrap(), vec![None]);
     }
 }
+
+/// 两个部署（不同 `KV_PREFIX`）共用一个 Valkey：各自只收到自己的推送。
+#[tokio::test]
+async fn realtime_channels_are_isolated_by_namespace() {
+    use forum_kv::Realtime;
+    use forum_kv::realtime::{Envelope, Route};
+
+    let Some(pool) = pool() else { return };
+    let url = std::env::var("VALKEY_URL").unwrap();
+    let ns = |tag: &str| forum_kv::namespace(Some(&format!("{tag}{}", unique()))).unwrap();
+    let (mine, other) = (
+        Realtime::new(pool.clone(), ns("a")),
+        Realtime::new(pool, ns("b")),
+    );
+    assert_ne!(mine.channel(), other.channel());
+
+    let (ready_tx, ready) = tokio::sync::oneshot::channel();
+    let (got_tx, mut got) = tokio::sync::mpsc::unbounded_channel();
+    let channel = mine.channel();
+    tokio::spawn(async move {
+        forum_kv::realtime::listen(
+            &url,
+            &channel,
+            || {
+                let _ = ready_tx.send(());
+            },
+            |e| {
+                let _ = got_tx.send(e);
+            },
+        )
+        .await
+    });
+    ready.await.unwrap();
+
+    let event = |n: i64| Envelope::new(Route::Users { ids: vec![n] }, &n).unwrap();
+    other.publish(&event(1)).await.unwrap();
+    mine.publish(&event(2)).await.unwrap();
+    // PUBLISH 返回前消息已进入订阅者的发送队列，所以若另一个前缀的那条串了过来，它会先到
+    let first = tokio::time::timeout(Duration::from_secs(5), got.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first, event(2));
+}

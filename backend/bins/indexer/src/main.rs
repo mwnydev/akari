@@ -17,7 +17,10 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
     let cache = match std::env::var("VALKEY_URL") {
-        Ok(url) if !url.is_empty() => Some(forum_kv::ForumCache::new(forum_kv::pool(&url)?, "")),
+        Ok(url) if !url.is_empty() => Some(forum_kv::ForumCache::new(
+            forum_kv::pool(&url)?,
+            forum_kv::namespace_from_env()?,
+        )),
         _ => {
             tracing::warn!("VALKEY_URL not set: user cards refresh only when their cache expires");
             None

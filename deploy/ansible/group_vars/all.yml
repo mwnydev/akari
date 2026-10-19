@@ -19,7 +19,6 @@ app_services:
   - { unit: forum-sponsor, user: forum-sponsor, bin: forum-sponsor, memory_max: 100M, credentials: [paymaster-signer, relayer-hot-wallet] }
 
 # Caddy：源站证书用 Cloudflare Origin CA；只接受带 Cloudflare 客户端证书的连接（Authenticated Origin Pulls）
-site_domain: forum.example.com # 占位，域名待站长确定
 caddy_origin_cert: /etc/caddy/certs/origin.pem
 caddy_origin_key: /etc/caddy/certs/origin.key
 caddy_cf_origin_pull_ca: /etc/caddy/certs/cloudflare-origin-pull-ca.pem

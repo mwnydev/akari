@@ -1,21 +1,16 @@
 import { localChain, type ChainConfig } from "@akari/contracts";
+import { API_BASE } from "./domains";
 
 // 构建期常量（Next 把 NEXT_PUBLIC_* 内联进产物）。本文件很轻，可以被首屏代码引用；钱包 SDK 在 ./sdk.ts，只能动态加载。
 
 /** 当前只有本地 AA 开发链（deploy/dev/aa.sh）；Arbitrum Sepolia / One 的配置接入时按 NEXT_PUBLIC_WALLET_CHAIN 选择。 */
 export const chain: ChainConfig = localChain;
 
-/** 钱包 Passkey 的 RP ID = 钱包中心域名（plan 第 5 节），绝不能是论坛主域名。本地开发为 localhost。 */
-export const RP_ID = process.env.NEXT_PUBLIC_WALLET_RP_ID ?? "localhost";
-
 /**
- * forum-api 所在源（ADR 0009：钱包子域名跨源调用论坛 API、带论坛会话 Cookie，后端只对 WALLET_ORIGINS 开 CORS）。
- * 留空 = 同源 `/api/v1`：`next dev` 由 next.config.ts 的 rewrite 转发到本地 forum-api。
+ * 钱包 Passkey 的 RP ID、forum-api 所在源（ADR 0009：钱包子域名跨源调用论坛 API、带论坛会话 Cookie，
+ * 后端只对 WALLET_ORIGINS 开 CORS）、论坛站点；生产默认值是 ADR 0012 正式域名，见 ./domains.ts。
  */
-export const API_BASE = process.env.NEXT_PUBLIC_API_ORIGIN ?? "";
-
-/** 论坛站点：钱包本身不做登录，未登录时引导到论坛登录页。 */
-export const FORUM_ORIGIN = process.env.NEXT_PUBLIC_FORUM_ORIGIN ?? "http://localhost:3000";
+export { API_BASE, FORUM_ORIGIN, RP_ID } from "./domains";
 
 /** ERC-7677 代付 + ERC-4337 bundler 的 JSON-RPC 入口（ADR 0009），forum-api 校验会话后转给 forum-sponsor。 */
 export const AA_RPC_URL = `${API_BASE}/api/v1/aa/rpc`;

@@ -31,13 +31,27 @@ ansible-playbook -i inventory/staging.yml site.yml      # 或 inventory/producti
 
 | 文件 | 关键变量 |
 | --- | --- |
-| `forum-api.env` | `DATABASE_URL`、`VALKEY_URL`（Unix socket）、`COOKIE_SECRET`（64 字节十六进制）、`AUTH_SECRET`、`ALLOWED_ORIGINS`、`INTERNAL_HOSTS`、`WALLET_RP_ID`（钱包中心域名）、`WALLET_ORIGINS`（钱包子域名列表，绝不含论坛主站）、`BRAND_NAME`；`CHAIN_CONFIG`（链配置文件路径，与 forum-indexer / forum-sponsor 同一份，格式见 `backend/crates/chain/chain.example.toml`；链 ID、合约、USDT 与钱包初始化参数版本都取自它，RPC 用 `CHAIN_RPC_PRIMARY_HTTP` / `CHAIN_RPC_BACKUP_HTTP` 提供，未设置时才用 `CHAIN_ID`、`ESCROW_ADDRESS`、`USDT_ADDRESS` 且钱包地址不能登记）；`SPONSOR_URL`（本机 forum-sponsor，如 `http://127.0.0.1:8090`）与 `SPONSOR_API_TOKEN`（与 forum-sponsor 相同的共享令牌，≥ 32 字符），两项都设置才开放 `/api/v1/aa/rpc` |
+| `forum-api.env` | `DATABASE_URL`、`VALKEY_URL`（Unix socket）、`COOKIE_SECRET`（64 字节十六进制）、`AUTH_SECRET`、`BRAND_NAME`；域名见下方「域名」，生产不在这里配置（设置了反而拒绝启动），测试服务器在这里设 `ALLOWED_ORIGINS`、`INTERNAL_HOSTS`、`WALLET_RP_ID`（钱包中心域名）、`WALLET_ORIGINS`（钱包子域名列表，绝不含论坛主站）；`CHAIN_CONFIG`（链配置文件路径，与 forum-indexer / forum-sponsor 同一份，格式见 `backend/crates/chain/chain.example.toml`；链 ID、合约、USDT 与钱包初始化参数版本都取自它，RPC 用 `CHAIN_RPC_PRIMARY_HTTP` / `CHAIN_RPC_BACKUP_HTTP` 提供，未设置时才用 `CHAIN_ID`、`ESCROW_ADDRESS`、`USDT_ADDRESS` 且钱包地址不能登记）；`SPONSOR_URL`（本机 forum-sponsor，如 `http://127.0.0.1:8090`）与 `SPONSOR_API_TOKEN`（与 forum-sponsor 相同的共享令牌，≥ 32 字符），两项都设置才开放 `/api/v1/aa/rpc` |
 | `forum-worker.env` | `DATABASE_URL`、`VALKEY_URL`、邮件通道（Resend / SMTP） |
 | `forum-indexer.env` | `DATABASE_URL`、`CHAIN_CONFIG`、`CHAIN_RPC_PRIMARY_HTTP` / `_WS`、`CHAIN_RPC_BACKUP_HTTP` / `_WS` |
 | `forum-sponsor.env` | `DATABASE_URL`、`CHAIN_CONFIG`（必须含 `[aa]`：EntryPoint、Paymaster、允许的 Kernel 工厂）、`CHAIN_RPC_*`、`SPONSOR_LISTEN`（只听本机，默认 `127.0.0.1:8090`）、`SPONSOR_API_TOKEN`；可选 `SPONSOR_FEE`、`SPONSOR_BATCH_WINDOW_MS`、`SPONSOR_MAX_OP_COST_WEI`、`SPONSOR_ALERT_DEPOSIT_WEI`、`SPONSOR_ALERT_HOT_WALLET_WEI`、`FALLBACK_BUNDLER_URL`（备用 bundler，带服务商密钥）。私钥不放这里：`paymaster-signer`、`relayer-hot-wallet` 走 systemd 凭据 |
 | `web.env` | `COOKIE_SIGNING_KEY` = `COOKIE_SECRET` 的**前 32 字节**（只给签名那一半，最小权限）、`API_ORIGIN` |
 
+`/etc/akari/deployment.env` 由 Ansible 写入（`AKARI_ENV`，取自 `group_vars/<环境>.yml` 的 `akari_env`），排在各程序的 `.env` 之后，手写的 `.env` 覆盖不了它。`KV_PREFIX` 只用于多个部署共用一个 Valkey（本机开发），生产不设。
+
+## 域名（ADR 0012）
+
+| 用途 | 地址 | 部署 |
+| --- | --- | --- |
+| 论坛主站 | `https://akari.cc` | 本服务器（Caddy `site_domain`，经 Cloudflare） |
+| 钱包（Passkey RP ID `wallet.akari.cc`） | `https://wallet.akari.cc` | Cloudflare Pages |
+| 后台（Passkey RP ID `administrator.akari.cc`） | `https://administrator.akari.cc` | Cloudflare Pages |
+
+- 只经代码审查与发布流程修改，不进环境变量、不进后台在线配置：forum-api 在 `AKARI_ENV=production` 下用代码里的常量（`backend/bins/api/src/config.rs` 的 `domains`）；前端构建时取各应用的 `.env.production`。
+- forum-api 启动检查：来源必须是 https（只有 `AKARI_ENV=development` 允许本机 http 与 `COOKIE_SECURE=false`）、钱包来源不能同时是论坛来源、钱包 / 后台的 Passkey RP ID 不能是论坛主站或其父域名（`akari.cc` 永远不行）；`AKARI_ENV` 只认 `production` / `staging` / `development`，拼错拒绝启动。
+- 会话 Cookie 保持 host-only，永远不设 `Domain`（`backend/bins/api/tests/auth_flow.rs` 有测试锁定）。
+
 ## 尚未完成
 
 - pgBackRest 归档到 R2（等 R2 凭据）、Prometheus / Grafana / Loki、AIDE 基线初始化。
-- 证书、域名、主机地址是占位值，域名确定后填写。
+- 证书、主机地址与测试服务器域名是占位值。

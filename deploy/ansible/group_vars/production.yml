@@ -1,3 +1,7 @@
+# ADR 0012：论坛主站。钱包 wallet.akari.cc 与后台 administrator.akari.cc 在 Cloudflare Pages，不经这台服务器。
+# forum-api 在 production 下的域名写在代码里（bins/api/src/config.rs 的 domains），改域名两处一起改。
+site_domain: akari.cc
+akari_env: production
 # plan 第 8 节 PostgreSQL 参数（8 核 32 GB NVMe）
 pg_settings:
   shared_buffers: 8GB
