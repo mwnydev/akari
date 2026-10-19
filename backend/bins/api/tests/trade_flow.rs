@@ -30,6 +30,7 @@ async fn market(db: &PgPool) {
             view_min_level: 0,
             post_min_level: 1,
             reply_min_level: 1,
+            allow_trade: true,
         },
     )
     .await
@@ -151,6 +152,43 @@ async fn params_expose_domain_and_bounds(db: PgPool) {
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn listing_only_on_trade_boards(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    forums::create(
+        &db,
+        &NewForum {
+            parent_id: None,
+            slug: "chat",
+            name: "chat",
+            description: "",
+            position: 0,
+            view_min_level: 0,
+            post_min_level: 1,
+            reply_min_level: 1,
+            allow_trade: false,
+        },
+    )
+    .await
+    .unwrap();
+    let seller = trader(&app, &db, SELLER).await;
+    let r = call(
+        &app,
+        "POST",
+        "/api/v1/forums/chat/listings",
+        Some(listing_body("45000000", 86_400)),
+        &seller.cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    assert_eq!(r.body["code"], "TRADE_NOT_ALLOWED");
+    let topics: i64 = sqlx::query_scalar("SELECT count(*) FROM topics")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(topics, 0);
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn listing_requires_wallet_and_valid_terms(db: PgPool) {
     let Some(app) = build(db.clone()) else { return };
     market(&db).await;
@@ -211,7 +249,7 @@ async fn listing_requires_wallet_and_valid_terms(db: PgPool) {
     assert_eq!(r.body["price"], "45000000");
     assert_eq!(r.body["content_hash"], hash);
     assert_eq!(r.body["terms"]["bond"], "0");
-    // 主题帖本身照常可读
+    // 主题帖本身照常可读；主题、板块列表、跨板块最新都带交易帖 ID 与价格
     let r = call(
         &app,
         "GET",
@@ -221,6 +259,17 @@ async fn listing_requires_wallet_and_valid_terms(db: PgPool) {
     )
     .await;
     assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.body["topic"]["listing_id"], listing_id);
+    assert_eq!(r.body["topic"]["price"], "45000000");
+    assert_eq!(r.body["forum"]["allow_trade"], true);
+    for path in ["/api/v1/forums/market/topics", "/api/v1/topics/latest"] {
+        let r = call(&app, "GET", path, None, &[]).await;
+        assert_eq!(r.status, StatusCode::OK, "{path}");
+        let t = &r.body["topics"][0];
+        assert_eq!(t["id"], topic_id, "{path}");
+        assert_eq!(t["listing_id"], listing_id, "{path}");
+        assert_eq!(t["price"], "45000000", "{path}");
+    }
     // 隐藏后交易帖也看不到
     sqlx::query("UPDATE topics SET flags = 8 WHERE id = $1")
         .bind(topic_id)

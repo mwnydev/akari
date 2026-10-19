@@ -1,7 +1,12 @@
-//! 发件箱投递（邮件、站内通知与实时推送）、浏览数回写、报价卡片过期、通知分区维护。
+//! 发件箱投递（邮件、站内通知与实时推送）、浏览数回写、报价卡片过期、通知分区维护、
+//! 发帖经验、每日信誉校对、图片转换。
 //!
 //! 现在是最小实现：轮询 `outbox`，`FOR UPDATE SKIP LOCKED` 锁一批、投递、标记，失败按指数退避重试。
 //! 发薪、超时处理等关键任务按 plan 第 2 节接入 apalis（PostgreSQL 队列）时，发件箱改为向 apalis 入队，这里只保留转发。
+
+pub mod exp;
+pub mod images;
+pub mod stats;
 
 use forum_core::chat::Event;
 use forum_db::notifications::{self, NewNotification};

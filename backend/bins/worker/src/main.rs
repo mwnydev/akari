@@ -1,5 +1,5 @@
-//! forum-worker：后台任务：发件箱投递（邮件、站内通知、实时推送）、浏览数回写、报价卡片过期、通知分区维护；
-//! 之后接入 apalis 队列（超时处理、发薪）与图片转换。
+//! forum-worker：后台任务：发件箱投递（邮件、站内通知、实时推送）、浏览数回写、报价卡片过期、通知分区维护、
+//! 发帖经验、每日信誉校对、图片转换；之后接入 apalis 队列（超时处理、发薪）。
 
 use std::time::Duration;
 
@@ -43,6 +43,38 @@ async fn main() -> anyhow::Result<()> {
     let mailer = Failover::new(primary, backup);
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "forum-worker started");
 
+    let images = match forum_media::StorageConfig::from_env()? {
+        Some(c) => {
+            let storage = forum_media::Storage::new(&c)?;
+            if std::env::var("MEDIA_S3_CREATE_BUCKET").is_ok_and(|v| v == "true") {
+                storage.ensure_bucket().await?;
+            }
+            let worker = forum_worker::images::ImageWorker {
+                db: db.clone(),
+                storage: std::sync::Arc::new(storage),
+                processor: std::sync::Arc::new(forum_media::RustProcessor),
+            };
+            Some(tokio::spawn(worker.run(shutdown.clone())))
+        }
+        None => {
+            tracing::warn!("MEDIA_S3_* not set: image processing disabled");
+            None
+        }
+    };
+    let exp = tokio::spawn(periodic(
+        "post exp",
+        forum_worker::exp::INTERVAL,
+        (db.clone(), cache.clone()),
+        shutdown.clone(),
+        |db, cache| async move { forum_worker::exp::award_posts(&db, &cache).await },
+    ));
+    let stats = tokio::spawn(periodic(
+        "trade stats audit",
+        forum_worker::stats::INTERVAL,
+        (db.clone(), cache.clone()),
+        shutdown.clone(),
+        |db, cache| async move { forum_worker::stats::audit_trade_stats(&db, &cache).await },
+    ));
     let views = tokio::spawn(view_flusher(db.clone(), cache, shutdown.clone()));
     let offers = tokio::spawn(offer_expirer(db.clone(), shutdown.clone()));
     let partitions = tokio::spawn(partition_keeper(db.clone(), shutdown.clone()));
@@ -64,8 +96,17 @@ async fn main() -> anyhow::Result<()> {
     if let Err(e) = offers.await {
         tracing::error!(error = %e, "offer expirer panicked");
     }
-    if let Err(e) = partitions.await {
-        tracing::error!(error = %e, "partition keeper panicked");
+    for (name, task) in [
+        ("partition keeper", partitions),
+        ("post exp", exp),
+        ("trade stats audit", stats),
+    ]
+    .into_iter()
+    .chain(images.map(|t| ("image worker", t)))
+    {
+        if let Err(e) = task.await {
+            tracing::error!(error = %e, task = name, "task panicked");
+        }
     }
     tracing::info!("forum-worker stopped");
     Ok(())
@@ -122,6 +163,32 @@ async fn partition_keeper(db: forum_db::PgPool, shutdown: tokio_util::sync::Canc
                 tracing::info!(?created, ?dropped, "notification partitions maintained")
             }
             Err(e) => tracing::error!(error = %e, "notification partition maintenance failed"),
+        }
+    }
+}
+
+/// 启动后立即跑一次，之后每隔 `every` 跑一次，直到 `shutdown`。任务返回处理条数（只用于日志）。
+async fn periodic<F, Fut>(
+    name: &'static str,
+    every: Duration,
+    (db, cache): (forum_db::PgPool, forum_kv::ForumCache),
+    shutdown: tokio_util::sync::CancellationToken,
+    job: F,
+) where
+    F: Fn(forum_db::PgPool, forum_kv::ForumCache) -> Fut,
+    Fut: std::future::Future<Output = Result<usize, sqlx::Error>>,
+{
+    let mut tick = tokio::time::interval(every);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            () = shutdown.cancelled() => break,
+            _ = tick.tick() => {}
+        }
+        match job(db.clone(), cache.clone()).await {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(task = name, count = n, "periodic task done"),
+            Err(e) => tracing::error!(task = name, error = %e, "periodic task failed"),
         }
     }
 }

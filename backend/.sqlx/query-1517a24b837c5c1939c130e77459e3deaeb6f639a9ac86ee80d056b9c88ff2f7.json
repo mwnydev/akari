@@ -1,0 +1,94 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 用户名片批量取（列表页一次取全，禁止 N+1）：用户名、头像、等级与交易信誉。$1 ids\nSELECT u.id AS \"id!\", u.username AS \"username?\", u.avatar_url AS \"avatar_url?\",\n  coalesce(l.level, 1::smallint) AS \"level!\",\n  coalesce(s.success, 0) AS \"success!\", coalesce(s.seller_fault_fail, 0) AS \"seller_fault_fail!\",\n  coalesce(s.buyer_fault_fail, 0) AS \"buyer_fault_fail!\", coalesce(s.disputes_lost, 0) AS \"disputes_lost!\",\n  coalesce(s.settled, 0) AS \"settled!\"\nFROM users u\nLEFT JOIN user_levels l ON l.user_id = u.id\nLEFT JOIN user_trade_stats s ON s.user_id = u.id\nWHERE u.id = ANY($1::bigint[])\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "username?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "avatar_url?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "avatar_url"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "level!",
+        "type_info": "Int2",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "success!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "seller_fault_fail!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "buyer_fault_fail!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "disputes_lost!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "settled!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "1517a24b837c5c1939c130e77459e3deaeb6f639a9ac86ee80d056b9c88ff2f7"
+}

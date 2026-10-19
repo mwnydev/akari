@@ -123,13 +123,14 @@ fn is_language_class(v: &str) -> bool {
     })
 }
 
-/// 过滤编辑器提交的 HTML。结果没有任何可见文字、图片时返回 `Empty`。
-pub fn clean(input: &str) -> Result<Cleaned, ContentError> {
+/// 过滤编辑器提交的 HTML。图片只保留 `image_hosts` 上的（本站图片 CDN / 存储桶，plan 第 12 节），
+/// 其余图片连同标签一起删掉。结果没有任何可见文字、图片时返回 `Empty`。
+pub fn clean(input: &str, image_hosts: &[String]) -> Result<Cleaned, ContentError> {
     if input.len() > MAX_HTML_BYTES {
         return Err(ContentError::TooLong);
     }
     let mut html = SANITIZER.clean(input).to_string();
-    let scan = scan(&html);
+    let scan = scan(&html, image_hosts);
     // 地址被过滤掉的 <img> 只剩空标签，去掉（从后往前删，前面的位置不变）
     for (start, end) in scan.dead_images.iter().rev() {
         html.replace_range(start..end, "");
@@ -164,6 +165,12 @@ pub fn has_external_link(links: &[String], internal_hosts: &[String]) -> bool {
     })
 }
 
+/// `https://` 且主机在本站图片主机列表里（ammonia 已保证只剩 https 地址）。
+fn is_own_image(src: &str, image_hosts: &[String]) -> bool {
+    src.starts_with("https://")
+        && host_of(src).is_some_and(|h| image_hosts.iter().any(|i| i.eq_ignore_ascii_case(h)))
+}
+
 fn host_of(url: &str) -> Option<&str> {
     let rest = url
         .strip_prefix("https://")
@@ -180,12 +187,12 @@ struct Scan {
     links: Vec<String>,
     mentions: Vec<i64>,
     images: usize,
-    /// 没有 src 的 <img> 标签在 HTML 中的字节范围。
+    /// 没有 src 或不是本站图片的 <img> 标签在 HTML 中的字节范围。
     dead_images: Vec<(usize, usize)>,
 }
 
 /// 扫描 ammonia 输出（结构已规范：属性一律双引号、文本里的 `<` 已转义），提取纯文本、链接与提及。
-fn scan(html: &str) -> Scan {
+fn scan(html: &str, image_hosts: &[String]) -> Scan {
     let mut out = Scan {
         text: String::with_capacity(html.len() / 2),
         links: Vec::new(),
@@ -197,7 +204,7 @@ fn scan(html: &str) -> Scan {
     while let Some(lt) = html[pos..].find('<').map(|i| pos + i) {
         push_text(&mut out.text, &html[pos..lt]);
         let end = lt + 1 + tag_end(&html[lt + 1..]);
-        if !handle_tag(&html[lt + 1..end], &mut out) {
+        if !handle_tag(&html[lt + 1..end], image_hosts, &mut out) {
             out.dead_images.push((lt, (end + 1).min(html.len())));
         }
         pos = (end + 1).min(html.len());
@@ -220,8 +227,8 @@ fn tag_end(s: &str) -> usize {
     s.len()
 }
 
-/// 处理一个标签；返回 `false` 表示这是一个应删除的无地址图片。
-fn handle_tag(tag: &str, out: &mut Scan) -> bool {
+/// 处理一个标签；返回 `false` 表示这是一个应删除的图片（无地址或不是本站图片）。
+fn handle_tag(tag: &str, image_hosts: &[String], out: &mut Scan) -> bool {
     let closing = tag.starts_with('/');
     let body = tag.trim_start_matches('/');
     let name_end = body
@@ -239,11 +246,11 @@ fn handle_tag(tag: &str, out: &mut Scan) -> bool {
     match name {
         "a" => out.links.extend(get("href")),
         "img" => match get("src") {
-            Some(src) => {
+            Some(src) if is_own_image(&src, image_hosts) => {
                 out.images += 1;
                 out.links.push(src);
             }
-            None => return false,
+            _ => return false,
         },
         "span" if get("data-type").as_deref() == Some("mention") => {
             if let Some(id) = get("data-id").and_then(|v| v.parse::<i64>().ok())
@@ -291,10 +298,14 @@ fn decode(s: &str) -> String {
 mod tests {
     use super::*;
 
+    fn clean_t(input: &str) -> Result<Cleaned, ContentError> {
+        clean(input, &["cdn.test".to_owned()])
+    }
+
     #[test]
     fn strips_scripts_and_handlers() {
         let c =
-            clean(r#"<p onclick="x()">hi<script>alert(1)</script></p><img src="javascript:1">"#)
+            clean_t(r#"<p onclick="x()">hi<script>alert(1)</script></p><img src="javascript:1">"#)
                 .unwrap();
         assert_eq!(c.html, "<p>hi</p>");
         assert_eq!(c.plain_text, "hi");
@@ -302,9 +313,10 @@ mod tests {
 
     #[test]
     fn links_get_rel_and_bad_schemes_dropped() {
-        let c =
-            clean(r#"<p><a href="https://ex.com/a">x</a><a href="javascript:alert(1)">y</a></p>"#)
-                .unwrap();
+        let c = clean_t(
+            r#"<p><a href="https://ex.com/a">x</a><a href="javascript:alert(1)">y</a></p>"#,
+        )
+        .unwrap();
         assert!(c.html.contains(r#"rel="nofollow ugc noopener noreferrer""#));
         assert!(!c.html.contains("javascript"));
         assert_eq!(c.links, vec!["https://ex.com/a".to_owned()]);
@@ -312,7 +324,7 @@ mod tests {
 
     #[test]
     fn images_https_only() {
-        let c = clean(
+        let c = clean_t(
             r#"<p><img src="http://a/x.png"><img src="https://cdn.test/y.webp" alt="y"></p>"#,
         )
         .unwrap();
@@ -321,31 +333,46 @@ mod tests {
     }
 
     #[test]
-    fn image_only_post_is_not_empty() {
-        assert!(clean(r#"<p><img src="https://cdn.test/y.webp"></p>"#).is_ok());
-        assert_eq!(clean("<p> </p><p></p>"), Err(ContentError::Empty));
+    fn images_only_from_own_hosts() {
+        let c = clean_t(concat!(
+            r#"<p>x<img src="https://evil.test/a.webp"><img src="https://cdn.test@evil.test/b.webp">"#,
+            r#"<img src="https://CDN.test/i/c.webp"></p>"#
+        ))
+        .unwrap();
+        assert_eq!(c.html, r#"<p>x<img src="https://CDN.test/i/c.webp"></p>"#);
+        assert_eq!(c.links, vec!["https://CDN.test/i/c.webp".to_owned()]);
         assert_eq!(
-            clean(r#"<p><img src="http://x/y.png"></p>"#),
+            clean(r#"<p><img src="https://cdn.test/y.webp"></p>"#, &[]),
+            Err(ContentError::Empty)
+        );
+    }
+
+    #[test]
+    fn image_only_post_is_not_empty() {
+        assert!(clean_t(r#"<p><img src="https://cdn.test/y.webp"></p>"#).is_ok());
+        assert_eq!(clean_t("<p> </p><p></p>"), Err(ContentError::Empty));
+        assert_eq!(
+            clean_t(r#"<p><img src="http://x/y.png"></p>"#),
             Err(ContentError::Empty)
         );
     }
 
     #[test]
     fn plain_text_breaks_blocks_and_decodes_entities() {
-        let c = clean("<p>a &amp; b &lt;c&gt;</p><p>第二段</p><ul><li>一</li><li>二</li></ul>")
+        let c = clean_t("<p>a &amp; b &lt;c&gt;</p><p>第二段</p><ul><li>一</li><li>二</li></ul>")
             .unwrap();
         assert_eq!(c.plain_text, "a & b <c>\n第二段\n一\n二");
     }
 
     #[test]
     fn quoted_gt_in_attribute_does_not_break_scan() {
-        let c = clean(r#"<p><a href="https://ex.com/?q=a>b">link</a> after</p>"#).unwrap();
+        let c = clean_t(r#"<p><a href="https://ex.com/?q=a>b">link</a> after</p>"#).unwrap();
         assert_eq!(c.plain_text, "link after");
     }
 
     #[test]
     fn code_language_class_and_mentions() {
-        let c = clean(concat!(
+        let c = clean_t(concat!(
             r#"<pre><code class="language-rust">fn main() {}</code></pre>"#,
             r#"<pre><code class="evil">x</code></pre>"#,
             r#"<p><span data-type="mention" data-id="42" data-label="lam">@lam</span>"#,
@@ -382,7 +409,7 @@ mod tests {
     #[test]
     fn too_long() {
         assert_eq!(
-            clean(&"a".repeat(MAX_HTML_BYTES + 1)),
+            clean_t(&"a".repeat(MAX_HTML_BYTES + 1)),
             Err(ContentError::TooLong)
         );
     }

@@ -12,6 +12,8 @@ pub mod posts;
 pub mod presence;
 pub mod topics;
 pub mod trade;
+pub mod uploads;
+pub mod users;
 pub mod wallet;
 pub mod withdraw;
 pub mod ws;

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 重建跨板块最新主题有序集合：全站最新的非置顶、非隐藏主题，走 topics_latest。$1 limit\nSELECT id, last_post_at\nFROM topics\nWHERE (flags & 9) = 0\nORDER BY last_post_at DESC, id DESC\nLIMIT $1\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "last_post_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "last_post_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "6fba8177e47042dd8e7eac9645aaa6f294d2cacd2769726773fed0b568590c3e"
+}

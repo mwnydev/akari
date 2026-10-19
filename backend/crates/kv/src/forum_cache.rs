@@ -5,8 +5,13 @@
 //!   与并发的发帖 / 回帖不会互相覆盖；读者按主键取回主题后再按标志与板块过滤，残留的隐藏 / 移走主题不会显示。
 //! - **版本化缓存**（主题第 1 页、置顶列表）：失效 = 版本号加一，值存在 `键:版本` 下。
 //!   读者拿着旧版本回源写回的值没人再读，避免「先读旧数据、后写回缓存」的竞态把旧页面留在缓存里。
+//! - **跨板块最新主题**：一个全站 ZSET，成员与分数同板块有序集合，在同样的时机（发帖、回帖、置顶、隐藏、移动）
+//!   与板块有序集合在同一个脚本里更新，也保留最新 [`BOARD_CAP`] 个、有自己的「已建好」标记。
 //! - **浏览数**：先 `HINCRBY` 记在一个哈希里，worker 每 10 秒原子取走并批量写库。
+//! - **用户名片**：每用户一个哈希（用户名、头像、等级、信誉），未命中回源后写回，带 TTL 兜底。
+//!   资料变化时删除并留一个几秒的「刚失效」标记，回源写回遇到标记就放弃，避免先读旧数据、后写回的竞态。
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,10 +30,31 @@ return {redis.call('ZCARD', KEYS[1]), redis.call('ZREVRANGE', KEYS[1], ARGV[1], 
 ";
 
 const BOARD_TOUCH: &str = r"
-redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
-redis.call('ZREMRANGEBYRANK', KEYS[1], 0, -(tonumber(ARGV[3]) + 1))
+for i = 1, 2 do
+  redis.call('ZADD', KEYS[i], ARGV[1], ARGV[2])
+  redis.call('ZREMRANGEBYRANK', KEYS[i], 0, -(tonumber(ARGV[3]) + 1))
+end
 return 1
 ";
+
+const LATEST_PAGE: &str = r"
+if redis.call('EXISTS', KEYS[2]) == 0 then return {-1, {}} end
+return {redis.call('ZCARD', KEYS[1]),
+        redis.call('ZREVRANGEBYSCORE', KEYS[1], ARGV[1], '-inf', 'WITHSCORES', 'LIMIT', 0, ARGV[2])}
+";
+
+const CARD_FILL: &str = r"
+if redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
+redis.call('DEL', KEYS[1])
+redis.call('HSET', KEYS[1], unpack(ARGV, 2))
+redis.call('EXPIRE', KEYS[1], ARGV[1])
+return 1
+";
+
+/// 名片缓存兜底过期时间。
+const CARD_TTL_SECS: u64 = 3600;
+/// 名片失效后多久内不接受回源写回（远长于一次回源查询）。
+const CARD_TOMBSTONE_SECS: u64 = 5;
 
 const VERSIONED_GET: &str = r"
 local v = redis.call('GET', KEYS[1]) or '0'
@@ -89,6 +115,22 @@ impl ForumCache {
         format!("{}board:{forum_id}:built", self.ns)
     }
 
+    fn latest_key(&self) -> String {
+        format!("{}latest:z", self.ns)
+    }
+
+    fn latest_built_key(&self) -> String {
+        format!("{}latest:built", self.ns)
+    }
+
+    fn card_key(&self, user_id: i64) -> String {
+        format!("{}card:{user_id}", self.ns)
+    }
+
+    fn card_tombstone_key(&self, user_id: i64) -> String {
+        format!("{}card:{user_id}:inv", self.ns)
+    }
+
     fn views_key(&self) -> String {
         format!("{}views:pending", self.ns)
     }
@@ -108,21 +150,7 @@ impl ForumCache {
             .arg(stop)
             .invoke_async(&mut conn)
             .await?;
-        let Ok(total) = u64::try_from(total) else {
-            return Ok(None);
-        };
-        let entries = flat
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .filter_map(|[id, score]| {
-                // 分数是微秒时间戳（< 2^53，f64 精确表示）
-                #[allow(clippy::cast_possible_truncation)]
-                let score = score.parse::<f64>().ok()? as i64;
-                Some((id.parse::<i64>().ok()?, score))
-            })
-            .collect();
-        Ok(Some(BoardPage { entries, total }))
+        Ok(board_page_of(total, &flat))
     }
 
     /// 合并写入重建结果并打上「已建好」标记。
@@ -143,7 +171,7 @@ impl ForumCache {
         Ok(())
     }
 
-    /// 新主题或新回复：写入（或更新分数）并裁剪到上限。标记不在时也写，重建时会合并。
+    /// 新主题或新回复：写入（或更新分数）板块与跨板块最新有序集合并裁剪到上限。标记不在时也写，重建时会合并。
     pub async fn board_touch(
         &self,
         forum_id: i32,
@@ -153,6 +181,7 @@ impl ForumCache {
         let mut conn = self.pool.get().await?;
         Script::new(BOARD_TOUCH)
             .key(self.board_key(forum_id))
+            .key(self.latest_key())
             .arg(score)
             .arg(topic_id)
             .arg(BOARD_CAP)
@@ -161,14 +190,120 @@ impl ForumCache {
         Ok(())
     }
 
-    /// 置顶、隐藏、移出板块时从有序集合移除。
+    /// 置顶、隐藏、移出板块时从板块与跨板块最新有序集合移除（移到别的板块时随后的 `board_touch` 会加回最新）。
     pub async fn board_remove(&self, forum_id: i32, topic_id: i64) -> Result<(), KvError> {
         let mut conn = self.pool.get().await?;
-        redis::cmd("ZREM")
-            .arg(self.board_key(forum_id))
-            .arg(topic_id)
-            .query_async::<i64>(&mut conn)
+        redis::pipe()
+            .atomic()
+            .zrem(self.board_key(forum_id), topic_id)
+            .ignore()
+            .zrem(self.latest_key(), topic_id)
+            .ignore()
+            .query_async::<()>(&mut conn)
             .await?;
+        Ok(())
+    }
+
+    /// 跨板块最新主题：分数不超过 `max_score` 的最多 `count` 个，新的在前。还没建好时返回 `None`。
+    /// 分数相同的成员按成员字符串排序，调用方按 `(分数, ID)` 游标过滤时要多取几个。
+    pub async fn latest_page(
+        &self,
+        max_score: Option<i64>,
+        count: usize,
+    ) -> Result<Option<BoardPage>, KvError> {
+        let mut conn = self.pool.get().await?;
+        let max = max_score.map_or_else(|| "+inf".to_owned(), |s| s.to_string());
+        let (total, flat): (i64, Vec<String>) = Script::new(LATEST_PAGE)
+            .key(self.latest_key())
+            .key(self.latest_built_key())
+            .arg(max)
+            .arg(count)
+            .invoke_async(&mut conn)
+            .await?;
+        Ok(board_page_of(total, &flat))
+    }
+
+    /// 合并写入跨板块最新的重建结果并打上「已建好」标记。
+    pub async fn latest_fill(&self, entries: &[(i64, i64)]) -> Result<(), KvError> {
+        let mut conn = self.pool.get().await?;
+        let key = self.latest_key();
+        let mut pipe = redis::pipe();
+        pipe.atomic();
+        for chunk in entries.chunks(1000) {
+            let items: Vec<(i64, i64)> = chunk.iter().map(|&(id, score)| (score, id)).collect();
+            pipe.zadd_multiple(&key, &items).ignore();
+        }
+        pipe.zremrangebyrank(&key, 0, -(BOARD_CAP as isize + 1))
+            .ignore()
+            .set(self.latest_built_key(), 1)
+            .ignore();
+        pipe.query_async::<()>(&mut conn).await?;
+        Ok(())
+    }
+
+    /// 批量读名片哈希，顺序与 `ids` 一致；未缓存的为 `None`。
+    pub async fn cards_get(
+        &self,
+        ids: &[i64],
+    ) -> Result<Vec<Option<HashMap<String, String>>>, KvError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut conn = self.pool.get().await?;
+        let mut pipe = redis::pipe();
+        for &id in ids {
+            pipe.hgetall(self.card_key(id));
+        }
+        let maps: Vec<HashMap<String, String>> = pipe.query_async(&mut conn).await?;
+        Ok(maps
+            .into_iter()
+            .map(|m| (!m.is_empty()).then_some(m))
+            .collect())
+    }
+
+    /// 回源后写回名片（每个至少一个字段）；刚失效的用户跳过。
+    pub async fn cards_put(&self, cards: &[(i64, Vec<(&str, String)>)]) -> Result<(), KvError> {
+        if cards.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.pool.get().await?;
+        // 管道里用 EVAL（EVALSHA 在脚本未加载时会整批失败）；脚本很短
+        let mut pipe = redis::pipe();
+        for (id, fields) in cards {
+            if fields.is_empty() {
+                continue;
+            }
+            let cmd = pipe
+                .cmd("EVAL")
+                .arg(CARD_FILL)
+                .arg(2)
+                .arg(self.card_key(*id))
+                .arg(self.card_tombstone_key(*id))
+                .arg(CARD_TTL_SECS);
+            for (k, v) in fields {
+                cmd.arg(*k).arg(v);
+            }
+            cmd.ignore();
+        }
+        pipe.query_async::<()>(&mut conn).await?;
+        Ok(())
+    }
+
+    /// 用户名、头像、等级或信誉变化后删除名片缓存。
+    pub async fn cards_invalidate(&self, ids: &[i64]) -> Result<(), KvError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.pool.get().await?;
+        let mut pipe = redis::pipe();
+        pipe.atomic();
+        for &id in ids {
+            pipe.del(self.card_key(id))
+                .ignore()
+                .set_ex(self.card_tombstone_key(id), 1, CARD_TOMBSTONE_SECS)
+                .ignore();
+        }
+        pipe.query_async::<()>(&mut conn).await?;
         Ok(())
     }
 
@@ -259,9 +394,31 @@ impl ForumCache {
     }
 }
 
+/// 解析 `{总数, [成员, 分数, …]}`；总数为 −1（还没建好）时返回 `None`。
+fn board_page_of(total: i64, flat: &[String]) -> Option<BoardPage> {
+    let total = u64::try_from(total).ok()?;
+    let entries = flat
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .filter_map(|[id, score]| {
+            // 分数是微秒时间戳（< 2^53，f64 精确表示）
+            #[allow(clippy::cast_possible_truncation)]
+            let score = score.parse::<f64>().ok()? as i64;
+            Some((id.parse::<i64>().ok()?, score))
+        })
+        .collect();
+    Some(BoardPage { entries, total })
+}
+
 /// 缓存名：主题第 1 页。
 pub fn topic_page1(topic_id: i64) -> String {
     format!("topic1:{topic_id}")
+}
+
+/// 缓存名：用户的主题数与帖子数（个人主页，只按 TTL 过期）。
+pub fn user_counts(user_id: i64) -> String {
+    format!("ucount:{user_id}")
 }
 
 /// 缓存名：板块置顶列表。

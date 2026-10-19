@@ -73,13 +73,17 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::SponsorSuspended
         | ErrorCode::WithdrawAddressNotActive
         | ErrorCode::WithdrawCreditRequired
-        | ErrorCode::UserBlocked => StatusCode::FORBIDDEN,
-        ErrorCode::OfferUnavailable | ErrorCode::Conflict | ErrorCode::SponsorPending => {
-            StatusCode::CONFLICT
-        }
-        ErrorCode::SponsorUnavailable | ErrorCode::ChainUnavailable => {
-            StatusCode::SERVICE_UNAVAILABLE
-        }
+        | ErrorCode::UserBlocked
+        | ErrorCode::TradeNotAllowed => StatusCode::FORBIDDEN,
+        ErrorCode::OfferUnavailable
+        | ErrorCode::Conflict
+        | ErrorCode::SponsorPending
+        | ErrorCode::UsernameTaken
+        | ErrorCode::UsernameChangeTooSoon => StatusCode::CONFLICT,
+        ErrorCode::SponsorUnavailable
+        | ErrorCode::ChainUnavailable
+        | ErrorCode::UploadsUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+        ErrorCode::ImageTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
         ErrorCode::NotFound => StatusCode::NOT_FOUND,
         ErrorCode::ResendTooSoon
         | ErrorCode::RateLimited
@@ -101,6 +105,8 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::FeeLimitInvalid
         | ErrorCode::OfferExpiryInvalid
         | ErrorCode::UsernameRequired
+        | ErrorCode::InvalidUsername
+        | ErrorCode::UnsupportedImage
         | ErrorCode::PasskeyFailed
         | ErrorCode::TooManyPasskeys
         | ErrorCode::WalletAddressMismatch

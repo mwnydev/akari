@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- worker 领取一张待处理图片：排队中的，或处理中但租约已过期的（上次处理的 worker 崩溃或暂时失败后退避）。\n-- 不在事务里持锁处理：领取即续租 $1 秒。走 uploads_due。\nUPDATE uploads u SET status = 'processing', attempts = u.attempts + 1,\n  lease_until = now() + make_interval(secs => $1), updated_at = now()\nWHERE u.id = (\n  SELECT id FROM uploads\n  WHERE status = 'queued' OR (status = 'processing' AND lease_until < now())\n  ORDER BY id\n  LIMIT 1\n  FOR UPDATE SKIP LOCKED\n)\nRETURNING u.id, u.user_id, u.tmp_key, u.size, u.attempts\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "uploads",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "uploads",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "tmp_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "uploads",
+            "name": "tmp_key"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "size",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "uploads",
+            "name": "size"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "attempts",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "uploads",
+            "name": "attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a05d7c87605eb2e8d1147cade05bb5aeee5ec5519f07138219be5918680d0219"
+}

@@ -1,6 +1,6 @@
 //! 板块列表、板块主题列表、发主题。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Duration;
 
 use axum::Json;
@@ -17,11 +17,12 @@ use time::OffsetDateTime;
 use tower_sessions::Session;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::access::Viewer;
+use crate::access::{Viewer, visible_forums};
+use crate::cards;
 use crate::error::{ApiError, ApiResult, ErrorBody};
 use crate::posting::{self, TOPIC_RATE, after_commit, micros};
 use crate::state::AppState;
-use crate::views::{BoardResponse, CreatedTopic, ForumView, TopicSummary, UserCardView};
+use crate::views::{BoardResponse, CreatedTopic, ForumView, TopicSummary};
 
 /// 每页主题数：前 200 页 × 50 = 有序集合上限 1 万。
 pub const TOPICS_PER_PAGE: usize = 50;
@@ -38,21 +39,8 @@ pub async fn list(
     session: Session,
 ) -> ApiResult<Json<Vec<ForumView>>> {
     let viewer = Viewer::load(&state, &session).await?;
-    let all = forum_db::forums::list_all(&state.db).await?;
-    let level = viewer.level();
-    // 等级不够的板块只有管理人员看得到；一次查出管理范围，不逐个板块查。
-    let (global, moderated) = match viewer.user {
-        Some(u) if all.iter().any(|f| f.view_min_level > level) => {
-            forum_db::staff::scope(&state.db, u.id).await?
-        }
-        _ => (false, Vec::new()),
-    };
-    Ok(Json(
-        all.iter()
-            .filter(|f| f.view_min_level <= level || global || moderated.contains(&f.id))
-            .map(ForumView::from)
-            .collect(),
-    ))
+    let forums = visible_forums(&state, &viewer).await?;
+    Ok(Json(forums.iter().map(ForumView::from).collect()))
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -63,7 +51,7 @@ pub struct BoardQuery {
     pub cursor: Option<String>,
 }
 
-fn parse_cursor(c: &str) -> ApiResult<(OffsetDateTime, i64)> {
+pub fn parse_cursor(c: &str) -> ApiResult<(OffsetDateTime, i64)> {
     let bad = || ApiError(ErrorCode::InvalidParameter);
     let (us, id) = c.split_once('_').ok_or_else(bad)?;
     let us: i128 = us.parse().map_err(|_| bad())?;
@@ -71,7 +59,7 @@ fn parse_cursor(c: &str) -> ApiResult<(OffsetDateTime, i64)> {
     Ok((at, id.parse().map_err(|_| bad())?))
 }
 
-fn cursor_of(at_micros: i64, id: i64) -> String {
+pub fn cursor_of(at_micros: i64, id: i64) -> String {
     format!("{at_micros}_{id}")
 }
 
@@ -190,23 +178,23 @@ async fn respond(
     next_page: Option<u32>,
     next_cursor: Option<String>,
 ) -> ApiResult<Json<BoardResponse>> {
-    let user_ids: Vec<i64> = pinned
-        .iter()
-        .chain(&normal)
-        .flat_map(|t| [Some(t.author_id), t.last_poster_id])
-        .flatten()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-    let users = forum_db::users::cards(&state.db, &user_ids).await?;
+    let user_ids = topic_user_ids(pinned.iter().chain(&normal));
     Ok(Json(BoardResponse {
         forum: forum.into(),
         pinned: pinned.iter().map(TopicSummary::from).collect(),
         topics: normal.iter().map(TopicSummary::from).collect(),
-        users: users.into_iter().map(UserCardView::from).collect(),
+        users: cards::load(state, &user_ids).await?,
         next_page,
         next_cursor,
     }))
+}
+
+/// 主题列表里出现的作者与最后回复者。
+pub fn topic_user_ids<'a>(topics: impl Iterator<Item = &'a Topic>) -> Vec<i64> {
+    topics
+        .flat_map(|t| [Some(t.author_id), t.last_poster_id])
+        .flatten()
+        .collect()
 }
 
 /// 置顶帖 ID（版本化缓存，置顶 / 隐藏 / 移动时失效）。
@@ -252,7 +240,7 @@ pub async fn create_topic(
     Path(slug): Path<String>,
     Json(req): Json<NewTopicRequest>,
 ) -> ApiResult<(StatusCode, Json<CreatedTopic>)> {
-    let p = prepare_topic(&state, &session, &slug, &req).await?;
+    let p = prepare_topic(&state, &session, &slug, &req, topics::KIND_NORMAL).await?;
     let created = topics::create(&state.db, p.new_topic(&req, topics::KIND_NORMAL)).await?;
     p.after_create(&state, &created).await;
     Ok((
@@ -300,12 +288,13 @@ impl PreparedTopic {
     }
 }
 
-/// 发主题前的检查：登录、板块权限、标题与内容过滤、新用户限制与限流。
+/// 发主题前的检查：登录、板块权限（交易帖只能发在允许交易的板块）、标题与内容过滤、新用户限制与限流。
 pub async fn prepare_topic(
     state: &AppState,
     session: &Session,
     slug: &str,
     req: &NewTopicRequest,
+    kind: i16,
 ) -> ApiResult<PreparedTopic> {
     let viewer = Viewer::load(state, session).await?;
     let actor = viewer.require()?;
@@ -320,6 +309,9 @@ pub async fn prepare_topic(
         if !staff {
             return Err(ApiError(ErrorCode::Forbidden));
         }
+    }
+    if kind == topics::KIND_TRADE && !forum.allow_trade {
+        return Err(ApiError(ErrorCode::TradeNotAllowed));
     }
     let title = forum_content::clean_title(&req.title)?;
     let cleaned = posting::clean(state, &actor, &req.html, &req.source)?;

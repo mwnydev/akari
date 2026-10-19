@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 累加经验并按门槛升级；等级不降（plan 第 7 节）。$1 user_id, $2 经验变化\nUPDATE user_levels SET\n  exp = exp + $2,\n  level = greatest(level, (SELECT coalesce(max(t.level), 1::smallint) FROM level_thresholds t WHERE t.min_exp <= exp + $2)),\n  updated_at = now()\nWHERE user_id = $1\nRETURNING level\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "level",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "user_levels",
+            "name": "level"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0a2d8201490be659daf0cb98b690e0c60f320bab4bae1099b0a594e4b66f5592"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO job_cursors (name) VALUES ($1) ON CONFLICT (name) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "05a6f128ac1a48f0c94286ed69cda96e71af6f5e4f658dc2cf6aaf4269443e52"
+}

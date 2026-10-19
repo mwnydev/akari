@@ -25,6 +25,9 @@ const BIG_TABLES: &[&str] = &[
     "conversations",
     "messages",
     "order_messages",
+    "exp_ledger",
+    "uploads",
+    "user_trade_stats",
 ];
 
 #[derive(Debug, Default)]
@@ -63,6 +66,16 @@ async fn explain(db: &PgPool, q: Query<'_, Postgres, PgArguments>) -> (PlanInfo,
 
 /// 断言：大表无顺序扫描，并且用到了 `expect_index`。
 async fn check(db: &PgPool, name: &str, q: Query<'_, Postgres, PgArguments>, expect_index: &str) {
+    check_any(db, name, q, &[expect_index]).await;
+}
+
+/// 同 [`check`]，用到其中任一索引即可（等价的索引由规划器按统计信息选）。
+async fn check_any(
+    db: &PgPool,
+    name: &str,
+    q: Query<'_, Postgres, PgArguments>,
+    expect_any: &[&str],
+) {
     let (info, plan) = explain(db, q).await;
     // 有数据的通知月分区同样不能顺序扫描（未来月份的空分区扫一下没有代价）。
     let partitions: Vec<String> = sqlx::query_scalar(
@@ -79,8 +92,10 @@ async fn check(db: &PgPool, name: &str, q: Query<'_, Postgres, PgArguments>, exp
         .collect();
     assert!(bad.is_empty(), "{name}: seq scan on {bad:?}\n{plan:#}");
     assert!(
-        info.indexes.iter().any(|i| i == expect_index),
-        "{name}: expected index {expect_index}, used {:?}\n{plan:#}",
+        info.indexes
+            .iter()
+            .any(|i| expect_any.contains(&i.as_str())),
+        "{name}: expected one of {expect_any:?}, used {:?}\n{plan:#}",
         info.indexes
     );
 }
@@ -91,6 +106,17 @@ async fn seed(db: &PgPool) {
         INSERT INTO forums (slug, name) SELECT 'f' || g, 'forum ' || g FROM generate_series(1, 3) g;
         INSERT INTO users (email) SELECT 'u' || g || '@example.com' FROM generate_series(1, 1000) g;
         INSERT INTO user_levels (user_id, level) SELECT id, 2 FROM users WHERE id % 3 = 0;
+        -- 另 2 万个有交易信誉的用户；9 成用户设置了用户名
+        INSERT INTO users (email) SELECT 'v' || g || '@example.com' FROM generate_series(1, 20000) g;
+        UPDATE users SET username = 'user_' || id WHERE id % 10 <> 0;
+        INSERT INTO user_trade_stats (user_id, success) SELECT id, id % 7 FROM users WHERE id % 2 = 0;
+        -- 2 万条经验流水、2 万张上传（1% 待处理）
+        INSERT INTO exp_ledger (user_id, reason, amount, ref_id, day, dedupe)
+        SELECT 1 + g % 1000, 1 + g % 5, 2, g, current_date - (g % 30), 'post:' || g FROM generate_series(1, 20000) g;
+        INSERT INTO uploads (user_id, status, content_type, size, tmp_key)
+        SELECT 1 + g % 1000, CASE WHEN g % 100 = 0 THEN 'queued' ELSE 'done' END::upload_status, 'image/jpeg', 1000,
+               'tmp/' || g FROM generate_series(1, 20000) g;
+
         -- 5 万主题，分到 3 个板块；1% 置顶、1% 隐藏
         INSERT INTO topics (forum_id, author_id, title, flags, last_floor, last_post_at, created_at)
         SELECT 1 + g % 3, 1 + g % 1000, 'topic ' || g,
@@ -566,6 +592,223 @@ async fn hot_queries_use_indexes(db: PgPool) {
         "topics_pkey",
     )
     .await;
+
+    // ───── 第 5 轮论坛缺口：交易帖价格、跨板块最新、个人主页、名片、信誉、经验、图片上传 ─────
+
+    let sql = q!("topics_latest_rebuild.sql");
+    check(
+        &db,
+        "topics_latest_rebuild",
+        sqlx::query(sql).bind(10_000_i64),
+        "topics_latest",
+    )
+    .await;
+
+    let sql = q!("topics_latest_cursor.sql");
+    check(
+        &db,
+        "topics_latest_cursor",
+        sqlx::query(sql)
+            .bind(vec![1_i32, 2, 3])
+            .bind(before)
+            .bind(i64::MAX)
+            .bind(50_i64),
+        "topics_latest",
+    )
+    .await;
+
+    let sql = q!("users_search.sql");
+    check(
+        &db,
+        "users_search",
+        sqlx::query(sql).bind("User_12").bind(10_i64),
+        "users_username_prefix",
+    )
+    .await;
+
+    // 小写用户名上的两个索引都能做等值查找
+    let sql = q!("users_id_by_name.sql");
+    check_any(
+        &db,
+        "users_id_by_name",
+        sqlx::query(sql).bind("USER_77"),
+        &["users_username", "users_username_prefix"],
+    )
+    .await;
+
+    let sql = q!("users_profile.sql");
+    check(
+        &db,
+        "users_profile",
+        sqlx::query(sql).bind(7_i64),
+        "users_pkey",
+    )
+    .await;
+
+    let sql = q!("username_set.sql");
+    check(
+        &db,
+        "username_set",
+        sqlx::query(sql).bind(7_i64).bind("new_name"),
+        "users_pkey",
+    )
+    .await;
+
+    let sql = q!("user_posts.sql");
+    check(
+        &db,
+        "user_posts",
+        sqlx::query(sql)
+            .bind(5_i64)
+            .bind(i64::MAX)
+            .bind(vec![1_i32, 2, 3])
+            .bind(20_i64),
+        "posts_author",
+    )
+    .await;
+
+    let sql = q!("user_post_counts.sql");
+    check(
+        &db,
+        "user_post_counts",
+        sqlx::query(sql).bind(5_i64),
+        "posts_author",
+    )
+    .await;
+
+    for index in ["escrow_orders_buyer", "escrow_orders_seller"] {
+        check(
+            &db,
+            "user_trade_stats_refresh",
+            sqlx::query(q!("user_trade_stats_refresh.sql"))
+                .bind(vec![7_i64, 8])
+                .bind(10_i32),
+            index,
+        )
+        .await;
+    }
+
+    let sql = q!("trade_outcomes_by_ids.sql");
+    check(
+        &db,
+        "trade_outcomes_by_ids",
+        sqlx::query(sql).bind(&order_ids).bind(20_i32),
+        "escrow_orders_pkey",
+    )
+    .await;
+
+    let today: time::Date = sqlx::query_scalar("SELECT current_date")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    let sql = q!("exp_insert.sql");
+    check(
+        &db,
+        "exp_insert",
+        sqlx::query(sql)
+            .bind(7_i64)
+            .bind(1_i16)
+            .bind(2_i32)
+            .bind(Some(99_i64))
+            .bind(today)
+            .bind(Some("post:99"))
+            .bind(Some(5_i32)),
+        "exp_ledger_user_day",
+    )
+    .await;
+
+    let sql = q!("exp_net.sql");
+    check(
+        &db,
+        "exp_net",
+        sqlx::query(sql).bind(7_i64).bind(3_i16).bind(77_i64),
+        "exp_ledger_ref",
+    )
+    .await;
+
+    let sql = q!("exp_lock.sql");
+    check(
+        &db,
+        "exp_lock",
+        sqlx::query(sql).bind(9_i64),
+        "user_levels_pkey",
+    )
+    .await;
+
+    let sql = q!("exp_apply.sql");
+    check(
+        &db,
+        "exp_apply",
+        sqlx::query(sql).bind(9_i64).bind(2_i64),
+        "user_levels_pkey",
+    )
+    .await;
+
+    let sql = q!("exp_posts_due.sql");
+    check(
+        &db,
+        "exp_posts_due",
+        sqlx::query(sql).bind(40_000_i64).bind(500_i64),
+        "posts_pkey",
+    )
+    .await;
+
+    // job_cursor_lock：job_cursors 每个后台任务一行，不需要计划断言。
+
+    let sql = q!("upload_claim.sql");
+    check(
+        &db,
+        "upload_claim",
+        sqlx::query(sql).bind(120.0_f64),
+        "uploads_due",
+    )
+    .await;
+
+    let sql = q!("uploads_by_id.sql");
+    check(
+        &db,
+        "uploads_by_id",
+        sqlx::query(sql).bind(77_i64),
+        "uploads_pkey",
+    )
+    .await;
+
+    let sql = q!("upload_queue.sql");
+    check_any(
+        &db,
+        "upload_queue",
+        sqlx::query(sql).bind(77_i64).bind(78_i64),
+        &["uploads_pkey", "uploads_user"],
+    )
+    .await;
+
+    // 处理中的行也在部分索引 uploads_due 里，按主键定位哪个都行
+    let due_or_pkey = ["uploads_pkey", "uploads_due"];
+    let sql = q!("upload_done.sql");
+    check_any(
+        &db,
+        "upload_done",
+        sqlx::query(sql)
+            .bind(77_i64)
+            .bind(10_i32)
+            .bind(10_i32)
+            .bind(json!([])),
+        &due_or_pkey,
+    )
+    .await;
+
+    for name in ["upload_failed.sql", "upload_retry_later.sql"] {
+        let q = match name {
+            "upload_failed.sql" => sqlx::query(q!("upload_failed.sql"))
+                .bind(77_i64)
+                .bind("corrupt"),
+            _ => sqlx::query(q!("upload_retry_later.sql"))
+                .bind(77_i64)
+                .bind(30.0_f64)
+                .bind("storage"),
+        };
+        check_any(&db, name, q, &due_or_pkey).await;
+    }
 }
 
 /// 提币地址：1000 个用户各有 5 个地址（其中 3 个已撤销）。代付检查、列表与添加前检查都按用户走索引。

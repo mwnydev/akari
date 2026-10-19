@@ -27,6 +27,18 @@ pub struct AppState {
     pub wallet: Arc<WalletState>,
     /// WebSocket 连接表与实时推送（plan 第 7 节）。
     pub hub: Arc<Hub>,
+    /// 图片存储（plan 第 12 节）；未配置时图片上传不可用，帖子里也不允许任何图片。
+    pub media: Option<Arc<forum_media::Storage>>,
+}
+
+impl AppState {
+    /// 帖子里允许的图片主机：只有本站图片的公开主机。
+    pub fn image_hosts(&self) -> Vec<String> {
+        self.media
+            .iter()
+            .map(|m| m.public_host().to_owned())
+            .collect()
+    }
 }
 
 impl FromRef<AppState> for Key {

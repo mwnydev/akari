@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 用户发的主题数与帖子数（未删除），走 posts_author。$1 author_id\nSELECT count(*) FILTER (WHERE floor = 1) AS \"topics!\", count(*) AS \"posts!\"\nFROM posts\nWHERE author_id = $1 AND status = 0\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "topics!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "posts!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "11d758f2c8f8351c82e9e78e5735a03a258cc45ed9885a4acc4f0fc471ecc4ed"
+}

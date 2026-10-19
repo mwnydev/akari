@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 浏览器直传完成：待上传 → 排队处理（只有上传者本人能确认，重复确认不再排队）。$1 id, $2 user_id\nUPDATE uploads SET status = 'queued', updated_at = now()\nWHERE id = $1 AND user_id = $2 AND status = 'pending'\nRETURNING id\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "uploads",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1acf409ca63e6b3fb76d724d158c1557d197ee5bb58b38bbf77d55dd8278226f"
+}

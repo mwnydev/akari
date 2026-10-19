@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 取后台任务进度并加锁：另一个 worker 正在处理时跳过（不返回行）。调用前已确保行存在。$1 name\nSELECT position FROM job_cursors WHERE name = $1 FOR UPDATE SKIP LOCKED\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "position",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "job_cursors",
+            "name": "position"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "aae695ec11318d92dec6e03194ecdc4166549d8e4d0508aa3e8468ae99e9ce47"
+}

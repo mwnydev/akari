@@ -2,7 +2,7 @@
 //!
 //! WebSocket 订阅合约日志即时写入（latest），每 `reconcile_interval_ms`（默认 5 秒）按区块范围批量补拉校对、
 //! 处理区块回滚，每隔几轮按 RPC 的 safe / finalized 标记升级确认级别。订单每次变化写一条
-//! `order.updated` 发件箱消息，由 worker 投递。
+//! `order.updated` 发件箱消息，由 worker 投递；订单最终确认后在同一事务里更新双方交易信誉与经验。
 
 pub mod chat;
 pub mod engine;
@@ -26,9 +26,11 @@ const LOCK_WAIT: Duration = Duration::from_secs(10);
 const LIVE_BUFFER: usize = 1024;
 
 /// 运行到 `shutdown`。同一条链已有 indexer 在运行（等待 [`LOCK_WAIT`] 仍未释放）时返回 [`IndexerError::Locked`]。
+/// `cache` 用于订单最终确认后失效用户名片。
 pub async fn run(
     pool: PgPool,
     cfg: ChainConfig,
+    cache: Option<forum_kv::ForumCache>,
     shutdown: CancellationToken,
 ) -> Result<(), IndexerError> {
     let chain_id = i64::try_from(cfg.chain_id)
@@ -37,7 +39,7 @@ pub async fn run(
         return Err(IndexerError::Locked(cfg.chain_id));
     };
     let src = RpcSource::new(&cfg)?;
-    let mut engine = Engine::open(pool, &cfg).await?;
+    let mut engine = Engine::open(pool, &cfg, cache).await?;
     tracing::info!(chain_id, cursor = ?engine.progress().cursor.map(|c| c.number), "indexer started");
 
     let (tx, mut live) = mpsc::channel(LIVE_BUFFER);

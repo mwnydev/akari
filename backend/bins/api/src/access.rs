@@ -53,6 +53,22 @@ impl Viewer {
     }
 }
 
+/// 访问者能看到的全部板块：等级够的，加上自己管理的（管理范围一次查出，不逐个板块查）。
+pub async fn visible_forums(state: &AppState, viewer: &Viewer) -> ApiResult<Vec<Forum>> {
+    let all = forum_db::forums::list_all(&state.db).await?;
+    let level = viewer.level();
+    let (global, moderated) = match viewer.user {
+        Some(u) if all.iter().any(|f| f.view_min_level > level) => {
+            forum_db::staff::scope(&state.db, u.id).await?
+        }
+        _ => (false, Vec::new()),
+    };
+    Ok(all
+        .into_iter()
+        .filter(|f| f.view_min_level <= level || global || moderated.contains(&f.id))
+        .collect())
+}
+
 /// 注册不满 24 小时。
 pub fn is_new_user(actor: &Actor) -> bool {
     OffsetDateTime::now_utc() - actor.created_at < NEW_USER_PERIOD

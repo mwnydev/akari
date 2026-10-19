@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, parent_id, slug, name, description, position,\n                view_min_level, post_min_level, reply_min_level\n         FROM forums WHERE slug = $1",
+  "query": "SELECT id, parent_id, slug, name, description, position,\n                view_min_level, post_min_level, reply_min_level, allow_trade\n         FROM forums WHERE slug = $1",
   "describe": {
     "columns": [
       {
@@ -101,6 +101,17 @@
             "name": "reply_min_level"
           }
         }
+      },
+      {
+        "ordinal": 9,
+        "name": "allow_trade",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "allow_trade"
+          }
+        }
       }
     ],
     "parameters": {
@@ -117,8 +128,9 @@
       false,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "887072d9cd09b080c4a39ce33ce7f263a6cb0a6cb95ffcd717a0632babb52865"
+  "hash": "cb0d986bbb4f621cdfaf287f63f3c0c4248912fa822f8bcf296df8071c1b31e4"
 }

@@ -67,6 +67,13 @@ async fn main() -> anyhow::Result<()> {
             }
         },
     };
+    let media = match forum_media::StorageConfig::from_env()? {
+        Some(c) => Some(Arc::new(forum_media::Storage::new(&c)?)),
+        None => {
+            tracing::warn!("MEDIA_S3_* not set: image uploads disabled");
+            None
+        }
+    };
     let state = AppState {
         db,
         kv: kv.clone(),
@@ -80,6 +87,7 @@ async fn main() -> anyhow::Result<()> {
         internal_hosts: Arc::from(cfg.internal_hosts.clone()),
         wallet: Arc::new(wallet),
         hub: Hub::new(Realtime::new(kv.clone(), ""), cfg.valkey_url.clone()),
+        media,
     };
     // 两个实例都订阅同一个广播频道；订阅断线自动重连。
     state.hub.spawn();

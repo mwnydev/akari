@@ -1,6 +1,7 @@
 //! forum-api：论坛 HTTP API 与 WebSocket（`GET /api/v1/ws`，协议见 [`routes::ws`]）。
 
 pub mod access;
+pub mod cards;
 pub mod config;
 pub mod error;
 pub mod middleware;
@@ -46,8 +47,18 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::auth::verify))
         .routes(routes!(routes::auth::logout))
         .routes(routes!(routes::me::me))
+        .routes(routes!(routes::me::set_username))
+        .routes(routes!(routes::me::set_avatar))
+        .routes(routes!(routes::users::user_profile))
+        .routes(routes!(routes::users::user_posts))
+        .routes(routes!(routes::users::search_users))
+        .routes(routes!(routes::users::user_cards))
+        .routes(routes!(routes::uploads::create_upload))
+        .routes(routes!(routes::uploads::complete_upload))
+        .routes(routes!(routes::uploads::get_upload))
         .routes(routes!(routes::forums::list))
         .routes(routes!(routes::forums::board, routes::forums::create_topic))
+        .routes(routes!(routes::topics::latest_topics))
         .routes(routes!(routes::topics::get))
         .routes(routes!(routes::topics::reply))
         .routes(routes!(routes::topics::moderate))

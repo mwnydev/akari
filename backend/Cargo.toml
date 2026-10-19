@@ -18,6 +18,7 @@ forum-auth = { path = "crates/auth" }
 forum-kv = { path = "crates/kv" }
 forum-mail = { path = "crates/mail" }
 forum-content = { path = "crates/content" }
+forum-media = { path = "crates/media" }
 
 tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "signal", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -58,6 +59,14 @@ alloy = { version = "=2.5.0", default-features = false, features = ["std", "sol-
 # forum-core 的 EIP-712 报价哈希只需要 keccak256；与 alloy 用同一个版本。
 alloy-primitives = { version = "=1.7.3", default-features = false }
 toml = "=1.1.5"
+# 图片处理（plan 第 12 节）：系统里没有 libvips 8.18，且 libvips + glib 无法做 musl 静态链接，先用 image（纯 Rust 解码）
+# + webp（libwebp 源码随 libwebp-sys 由 cc 编译，musl 下用 musl-gcc，不需要 cmake）实现，接口见 forum-media 的 ImageProcessor。
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+webp = { version = "=0.3.1", default-features = false }
+# S3 / R2 预签名（无 I/O、只做 SigV4 签名），HTTP 用已有的 reqwest；比 aws-sdk-s3、rust-s3 依赖少得多。
+# 测试里解析 EXIF，确认输入带 GPS、输出不带。
+kamadak-exif = "=0.6.1"
+rusty-s3 = { version = "=0.10.2", default-features = false, features = ["rustcrypto"] }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 
 [workspace.lints.rust]

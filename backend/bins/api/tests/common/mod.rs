@@ -106,6 +106,7 @@ pub fn state_with(db: PgPool, wallet: WalletState, ns: &str) -> Option<AppState>
         internal_hosts: Arc::from(vec!["forum.test".to_owned()]),
         wallet: Arc::new(wallet),
         hub: forum_api::realtime::Hub::new(forum_kv::Realtime::new(kv, ns), url),
+        media: media(),
     })
 }
 
@@ -128,6 +129,12 @@ pub async fn serve(state: AppState) -> SocketAddr {
     let app = app(state, &SECRET).into_make_service_with_connect_info::<SocketAddr>();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     addr
+}
+
+/// 设置了 `MEDIA_S3_*`（本地 S3 兼容服务）时启用图片上传，否则为空（上传接口返回不可用）。
+pub fn media() -> Option<Arc<forum_media::Storage>> {
+    let cfg = forum_media::StorageConfig::from_env().unwrap()?;
+    Some(Arc::new(forum_media::Storage::new(&cfg).unwrap()))
 }
 
 pub fn rand_ip() -> [u8; 4] {

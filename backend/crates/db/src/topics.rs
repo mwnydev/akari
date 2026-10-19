@@ -29,6 +29,9 @@ pub struct Topic {
     pub last_post_at: OffsetDateTime,
     pub created_at: OffsetDateTime,
     pub view_count: i64,
+    /// 交易帖（kind = 交易）的交易帖 ID 与价格（USDT 最小单位，十进制字符串）。
+    pub listing_id: Option<i64>,
+    pub price: Option<String>,
 }
 
 impl Topic {
@@ -108,6 +111,36 @@ pub async fn list_before(
     )
     .fetch_all(db)
     .await
+}
+
+/// 跨板块最新主题超出有序集合之后的深分页，只取 `forum_ids` 里的板块。
+pub async fn latest_before(
+    db: impl PgExecutor<'_>,
+    forum_ids: &[i32],
+    before: (OffsetDateTime, i64),
+    limit: i64,
+) -> Result<Vec<Topic>, sqlx::Error> {
+    sqlx::query_file_as!(
+        Topic,
+        "queries/topics_latest_cursor.sql",
+        forum_ids,
+        before.0,
+        before.1,
+        limit
+    )
+    .fetch_all(db)
+    .await
+}
+
+/// 重建跨板块最新主题有序集合用：全站最新 `limit` 个普通主题的 `(id, last_post_at)`。
+pub async fn latest_listed_all(
+    db: impl PgExecutor<'_>,
+    limit: i64,
+) -> Result<Vec<(i64, OffsetDateTime)>, sqlx::Error> {
+    let rows = sqlx::query_file!("queries/topics_latest_rebuild.sql", limit)
+        .fetch_all(db)
+        .await?;
+    Ok(rows.into_iter().map(|r| (r.id, r.last_post_at)).collect())
 }
 
 /// 重建板块有序集合用：最新 `limit` 个普通主题的 `(id, last_post_at)`。

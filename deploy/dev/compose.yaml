@@ -35,6 +35,23 @@ services:
   mailpit:
     image: axllent/mailpit:v1.31.6
     ports: ["127.0.0.1:1025:1025", "127.0.0.1:8025:8025"]
+  # 本地 R2 替身（S3 兼容）：图片上传与处理（plan 第 12 节）。MinIO 已停止发布社区版镜像，改用 SeaweedFS。
+  # 开发凭据见 backend/.env.example 的 MEDIA_S3_*；匿名身份只读，模拟 R2 公开域名（CDN）读取正式目录。
+  s3:
+    image: chrislusf/seaweedfs:3.97
+    command:
+      - server
+      - -dir=/data
+      - -s3
+      - -s3.port=8333
+      - -s3.config=/etc/seaweedfs/s3.json
+      - -master.volumeSizeLimitMB=64
+      - -volume.max=8
+    configs:
+      - source: s3-identities
+        target: /etc/seaweedfs/s3.json
+    ports: ["127.0.0.1:${S3_PORT:-8333}:8333"]
+    volumes: [s3data:/data]
   # ── 本地 AA 开发链（profile `aa`，用法见 README-aa.md；由 aa.sh 编排，不随默认 `up` 启动）──
   # 两个服务都用宿主机网络：容器里能直接用宿主机上的 HTTP(S)_PROXY（127.0.0.1:*）去 fork 公共 RPC，
   # 浏览器、forge、Playwright 都按 127.0.0.1 访问。端口只监听 127.0.0.1。
@@ -76,6 +93,15 @@ services:
       - --enable-cors=true
       - --block-time=1000
       - --log-level=info
+configs:
+  s3-identities:
+    content: |
+      {"identities": [
+        {"name": "anonymous", "actions": ["Read"]},
+        {"name": "dev", "credentials": [{"accessKey": "akari-dev", "secretKey": "akari-dev-only-secret"}],
+         "actions": ["Admin", "Read", "Write", "List", "Tagging"]}
+      ]}
 volumes:
   pgdata:
   valkeydata:
+  s3data:

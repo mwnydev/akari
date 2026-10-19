@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 锁住用户的等级行（同一用户的经验变动串行，每日上限计数不会被并发绕过）。调用前已确保行存在。$1 user_id\nSELECT level, exp FROM user_levels WHERE user_id = $1 FOR UPDATE\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "level",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "user_levels",
+            "name": "level"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "exp",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_levels",
+            "name": "exp"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "29cc2f12b0f54192e11fadf096d1d62a92f1600261c9559ec99ddf681c6a0f41"
+}

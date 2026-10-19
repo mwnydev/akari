@@ -78,21 +78,197 @@ pub async fn actor(db: impl PgExecutor<'_>, id: i64) -> Result<Option<Actor>, sq
         .await
 }
 
+/// 交易信誉计数（plan 第 7 节；只来自最终确认的订单，见 `reputation`）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TradeCounts {
+    pub success: i32,
+    pub seller_fault_fail: i32,
+    pub buyer_fault_fail: i32,
+    pub disputes_lost: i32,
+    pub settled: i32,
+}
+
 /// 用户名片（列表页批量取）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Card {
     pub id: i64,
     pub username: Option<String>,
+    pub avatar_url: Option<String>,
     pub level: i16,
+    pub trade: TradeCounts,
 }
 
 pub async fn cards(db: impl PgExecutor<'_>, ids: &[i64]) -> Result<Vec<Card>, sqlx::Error> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
-    sqlx::query_file_as!(Card, "queries/users_cards.sql", ids)
+    let rows = sqlx::query_file!("queries/users_cards.sql", ids)
+        .fetch_all(db)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| Card {
+            id: r.id,
+            username: r.username,
+            avatar_url: r.avatar_url,
+            level: r.level,
+            trade: TradeCounts {
+                success: r.success,
+                seller_fault_fail: r.seller_fault_fail,
+                buyer_fault_fail: r.buyer_fault_fail,
+                disputes_lost: r.disputes_lost,
+                settled: r.settled,
+            },
+        })
+        .collect())
+}
+
+/// 个人主页。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Profile {
+    pub id: i64,
+    pub username: Option<String>,
+    pub avatar_url: Option<String>,
+    pub created_at: OffsetDateTime,
+    pub last_seen_at: Option<OffsetDateTime>,
+    pub show_online: bool,
+    pub level: i16,
+    pub exp: i64,
+    pub trade: TradeCounts,
+    /// 成功订单金额合计（USDT 最小单位，十进制字符串）。
+    pub volume: String,
+    pub avg_reply_secs: Option<i32>,
+}
+
+pub async fn profile(db: impl PgExecutor<'_>, id: i64) -> Result<Option<Profile>, sqlx::Error> {
+    let row = sqlx::query_file!("queries/users_profile.sql", id)
+        .fetch_optional(db)
+        .await?;
+    Ok(row.map(|r| Profile {
+        id: r.id,
+        username: r.username,
+        avatar_url: r.avatar_url,
+        created_at: r.created_at,
+        last_seen_at: r.last_seen_at,
+        show_online: r.show_online,
+        level: r.level,
+        exp: r.exp,
+        trade: TradeCounts {
+            success: r.success,
+            seller_fault_fail: r.seller_fault_fail,
+            buyer_fault_fail: r.buyer_fault_fail,
+            disputes_lost: r.disputes_lost,
+            settled: r.settled,
+        },
+        volume: r.volume,
+        avg_reply_secs: r.avg_reply_secs,
+    }))
+}
+
+/// 用户名（不区分大小写）对应的用户 ID。
+pub async fn id_by_name(db: impl PgExecutor<'_>, name: &str) -> Result<Option<i64>, sqlx::Error> {
+    let row = sqlx::query_file!("queries/users_id_by_name.sql", name)
+        .fetch_optional(db)
+        .await?;
+    Ok(row.map(|r| r.id))
+}
+
+/// 设置用户名的结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetUsername {
+    Done,
+    /// 30 天内已改过。
+    TooSoon,
+    /// 已被别人使用（不区分大小写）。
+    Taken,
+}
+
+pub async fn set_username(
+    db: impl PgExecutor<'_>,
+    id: i64,
+    name: &str,
+) -> Result<SetUsername, sqlx::Error> {
+    match sqlx::query_file!("queries/username_set.sql", id, name)
+        .fetch_optional(db)
+        .await
+    {
+        Ok(Some(_)) => Ok(SetUsername::Done),
+        Ok(None) => Ok(SetUsername::TooSoon),
+        Err(sqlx::Error::Database(e)) if e.constraint() == Some("users_username") => {
+            Ok(SetUsername::Taken)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+pub async fn set_avatar(db: impl PgExecutor<'_>, id: i64, url: &str) -> Result<(), sqlx::Error> {
+    sqlx::query!("UPDATE users SET avatar_url = $2 WHERE id = $1", id, url)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// @提及候选：用户名以 `prefix` 开头（不区分大小写）的用户，按用户名排序。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mention {
+    pub id: i64,
+    pub username: String,
+    pub avatar_url: Option<String>,
+    pub level: i16,
+}
+
+pub async fn search_prefix(
+    db: impl PgExecutor<'_>,
+    prefix: &str,
+    limit: i64,
+) -> Result<Vec<Mention>, sqlx::Error> {
+    sqlx::query_file_as!(Mention, "queries/users_search.sql", prefix, limit)
         .fetch_all(db)
         .await
+}
+
+/// 用户主页的一条帖子。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserPost {
+    pub id: i64,
+    pub topic_id: i64,
+    pub floor: i32,
+    /// 纯文本前 200 字。
+    pub excerpt: String,
+    pub created_at: OffsetDateTime,
+    pub title: String,
+    pub forum_id: i32,
+}
+
+/// 用户的帖子（游标：上一页最后一个帖子 ID），只含 `forum_ids` 里的板块。
+pub async fn posts(
+    db: impl PgExecutor<'_>,
+    author_id: i64,
+    before_id: i64,
+    forum_ids: &[i32],
+    limit: i64,
+) -> Result<Vec<UserPost>, sqlx::Error> {
+    sqlx::query_file_as!(
+        UserPost,
+        "queries/user_posts.sql",
+        author_id,
+        before_id,
+        forum_ids,
+        limit
+    )
+    .fetch_all(db)
+    .await
+}
+
+/// `(主题数, 帖子数)`，均不含已删除的。
+pub async fn post_counts(
+    db: impl PgExecutor<'_>,
+    author_id: i64,
+) -> Result<(i64, i64), sqlx::Error> {
+    let r = sqlx::query_file!("queries/user_post_counts.sql", author_id)
+        .fetch_one(db)
+        .await?;
+    Ok((r.topics, r.posts))
 }
 
 /// 在线状态需要的资料：是否公开在线状态、最近活跃时间。

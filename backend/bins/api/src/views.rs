@@ -1,6 +1,7 @@
 //! 论坛接口的响应结构。时间一律 RFC 3339（UTC）。
 
-use forum_db::{forums::Forum, posts::Post, topics, users::Card};
+use forum_db::users::{Card, TradeCounts};
+use forum_db::{forums::Forum, posts::Post, topics};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use utoipa::ToSchema;
@@ -17,6 +18,8 @@ pub struct ForumView {
     pub view_min_level: i16,
     pub post_min_level: i16,
     pub reply_min_level: i16,
+    /// 能否发交易帖。
+    pub allow_trade: bool,
 }
 
 impl From<&Forum> for ForumView {
@@ -31,6 +34,7 @@ impl From<&Forum> for ForumView {
             view_min_level: f.view_min_level,
             post_min_level: f.post_min_level,
             reply_min_level: f.reply_min_level,
+            allow_trade: f.allow_trade,
         }
     }
 }
@@ -72,6 +76,9 @@ pub struct TopicSummary {
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
     pub views: i64,
+    /// 交易帖的交易帖 ID 与价格（USDT 最小单位，十进制字符串）；普通主题为空。
+    pub listing_id: Option<i64>,
+    pub price: Option<String>,
 }
 
 impl From<&topics::Topic> for TopicSummary {
@@ -89,16 +96,54 @@ impl From<&topics::Topic> for TopicSummary {
             last_post_at: t.last_post_at,
             created_at: t.created_at,
             views: t.view_count,
+            listing_id: t.listing_id,
+            price: t.price.clone(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+/// 成功率至少要有多少笔计入的订单才显示（plan 第 7 节：不满 10 笔显示「新卖家 · 已成交 N 笔」）。
+pub const MIN_RATED_TRADES: i32 = 10;
+
+/// 名片上的交易信誉（plan 第 7 节；只统计最终确认的链上订单）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ReputationView {
+    /// 成交笔数（成功订单，卖家或买家身份）。
+    pub success: i32,
+    /// 本人责任的失败笔数（作为卖家 + 作为买家）。
+    pub failed: i32,
+    pub disputes_lost: i32,
+    /// 协商和解等不计入成功率的次数。
+    pub settled: i32,
+    /// 成功率（万分比）= 成功 ÷（成功 + 本人责任失败）；不满 10 笔为空。
+    pub success_rate_bps: Option<u32>,
+}
+
+impl From<TradeCounts> for ReputationView {
+    fn from(t: TradeCounts) -> Self {
+        let failed = t.seller_fault_fail + t.buyer_fault_fail;
+        let rated = t.success + failed;
+        Self {
+            success: t.success,
+            failed,
+            disputes_lost: t.disputes_lost,
+            settled: t.settled,
+            success_rate_bps: (rated >= MIN_RATED_TRADES)
+                .then(|| u32::try_from(i64::from(t.success) * 10_000 / i64::from(rated)).ok())
+                .flatten(),
+        }
+    }
+}
+
+/// 用户名片：名字、头像、等级、信誉（plan 第 14 节「用户名片」组件的数据）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct UserCardView {
     pub id: i64,
     /// 还没设置用户名时为空，前端显示「用户 {id}」。
     pub username: Option<String>,
+    pub avatar_url: Option<String>,
     pub level: i16,
+    pub reputation: ReputationView,
 }
 
 impl From<Card> for UserCardView {
@@ -106,7 +151,9 @@ impl From<Card> for UserCardView {
         Self {
             id: c.id,
             username: c.username,
+            avatar_url: c.avatar_url,
             level: c.level,
+            reputation: c.trade.into(),
         }
     }
 }
@@ -153,19 +200,30 @@ pub struct BoardResponse {
     pub next_cursor: Option<String>,
 }
 
-/// 主题页里与访问者无关、可以缓存的部分。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct LatestResponse {
+    /// 全站最新回复的普通主题（不含置顶与隐藏），只来自访问者看得到的板块。
+    pub topics: Vec<TopicSummary>,
+    /// 这些主题所在的板块。
+    pub forums: Vec<ForumView>,
+    pub users: Vec<UserCardView>,
+    pub next_cursor: Option<String>,
+}
+
+/// 主题页里与访问者无关、可以缓存的部分。名片不在里面：名片有自己的缓存，改名、升级后立即可见。
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TopicPageBody {
     pub forum: ForumView,
     pub topic: TopicSummary,
     pub posts: Vec<PostView>,
-    pub users: Vec<UserCardView>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TopicPage {
     #[serde(flatten)]
     pub body: TopicPageBody,
+    /// 主题作者与本页各楼层作者。
+    pub users: Vec<UserCardView>,
     pub page: i32,
     pub total_pages: i32,
     pub can_reply: bool,

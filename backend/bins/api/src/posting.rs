@@ -59,7 +59,7 @@ pub fn clean(state: &AppState, actor: &Actor, html: &str, source: &Value) -> Api
     if source_len > MAX_SOURCE_BYTES {
         return Err(ApiError(ErrorCode::ContentTooLong));
     }
-    let mut cleaned = forum_content::clean(html)?;
+    let mut cleaned = forum_content::clean(html, &state.image_hosts())?;
     if is_new_user(actor) && forum_content::has_external_link(&cleaned.links, &state.internal_hosts)
     {
         return Err(ApiError(ErrorCode::ExternalLinkForbidden));

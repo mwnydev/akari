@@ -1,26 +1,33 @@
 //! 主题页、回帖、主题管理（置顶 / 精华 / 锁定 / 隐藏 / 移动）。
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::time::Duration;
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use forum_core::ErrorCode;
+use forum_db::forums::Forum;
 use forum_db::posts::{self, PAGE_SIZE};
+use forum_db::topics::Topic;
 use forum_db::topics::{self, FLAG_FEATURED, FLAG_HIDDEN, FLAG_LOCKED, FLAG_PINNED};
-use forum_kv::forum_cache;
+use forum_kv::BoardPage;
+use forum_kv::forum_cache::{self, BOARD_CAP};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use time::OffsetDateTime;
 use tower_sessions::Session;
 use utoipa::{IntoParams, ToSchema};
 
-use crate::access::Viewer;
+use crate::access::{Viewer, visible_forums};
+use crate::cards;
 use crate::error::{ApiError, ApiResult, ErrorBody};
 use crate::posting::{self, REPLY_RATE, after_commit, micros};
+use crate::routes::forums::{TOPICS_PER_PAGE, cursor_of, parse_cursor, topic_user_ids};
 use crate::state::AppState;
 use crate::views::{
-    CreatedPost, ModerationResult, PostView, TopicPage, TopicPageBody, UserCardView,
+    CreatedPost, ForumView, LatestResponse, ModerationResult, PostView, TopicPage, TopicPageBody,
+    TopicSummary,
 };
 
 /// 主题第 1 页缓存时长；内容变化时立即失效，这只是兜底。
@@ -45,19 +52,10 @@ async fn build_body(
         return Ok(None);
     };
     let rows = posts::page(&state.db, topic_id, page).await?;
-    let user_ids: Vec<i64> = rows
-        .iter()
-        .map(|p| p.author_id)
-        .chain([topic.author_id])
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-    let users = forum_db::users::cards(&state.db, &user_ids).await?;
     Ok(Some(TopicPageBody {
         forum: (&forum).into(),
         topic: (&topic).into(),
         posts: rows.into_iter().map(PostView::from).collect(),
-        users: users.into_iter().map(UserCardView::from).collect(),
     }))
 }
 
@@ -112,14 +110,146 @@ pub async fn get(
     let can_reply =
         viewer.user.is_some() && (staff || (!flags.locked && level >= body.forum.reply_min_level));
     let total_pages = (body.topic.last_floor + PAGE_SIZE - 1) / PAGE_SIZE;
+    let user_ids: Vec<i64> = [body.topic.author_id]
+        .into_iter()
+        .chain(body.posts.iter().map(|p| p.author_id))
+        .collect();
+    let users = cards::load(&state, &user_ids).await?;
     after_commit("add_view", state.cache.add_view(id)).await;
     Ok(Json(TopicPage {
         body,
+        users,
         page,
         total_pages,
         can_reply,
         can_moderate: staff,
     }))
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct LatestQuery {
+    /// 上一页的 `next_cursor`。
+    pub cursor: Option<String>,
+}
+
+/// 每次从有序集合多取一些：要按可见板块过滤掉一部分。
+const LATEST_FETCH: usize = 2 * TOPICS_PER_PAGE;
+/// 一次请求最多读几轮有序集合（看不到的板块主题很多时，返回不满一页也给出游标）。
+const LATEST_ROUNDS: usize = 5;
+
+/// 跨板块最新主题（按最后回复时间）。最新 1 万个取自 Valkey 有序集合（发帖、回帖时维护，与板块列表同一脚本），
+/// 更早的按 `(last_post_at, id)` 游标走部分索引 `topics_latest`。
+#[utoipa::path(
+    get, path = "/api/v1/topics/latest", tag = "forum",
+    params(LatestQuery),
+    responses((status = 200, body = LatestResponse), (status = 400, body = ErrorBody))
+)]
+pub async fn latest_topics(
+    State(state): State<AppState>,
+    session: Session,
+    Query(q): Query<LatestQuery>,
+) -> ApiResult<Json<LatestResponse>> {
+    let viewer = Viewer::load(&state, &session).await?;
+    let forums: HashMap<i32, Forum> = visible_forums(&state, &viewer)
+        .await?
+        .into_iter()
+        .map(|f| (f.id, f))
+        .collect();
+    // 扫描位置（不含）：上一页最后一个主题，之后是本次最后检查过的有序集合成员
+    let mut pos = q
+        .cursor
+        .as_deref()
+        .map(parse_cursor)
+        .transpose()?
+        .map(|(at, id)| (micros(at), id));
+    let mut out: Vec<Topic> = Vec::new();
+    // None：有序集合还没读完；Some(true)：读完了且数据库里还有更早的；Some(false)：全部读完
+    let mut zset_end: Option<bool> = None;
+    for _ in 0..LATEST_ROUNDS {
+        let page = latest_zset(&state, pos.map(|p| p.0)).await?;
+        // 分数相同的成员按字符串排序：取回后按 (分数, ID) 重新排序并按游标过滤
+        let mut entries: Vec<(i64, i64)> = page
+            .entries
+            .iter()
+            .map(|&(id, score)| (score, id))
+            .filter(|&e| pos.is_none_or(|p| e < p))
+            .collect();
+        entries.sort_unstable_by(|a, b| b.cmp(a));
+        let ids: Vec<i64> = entries.iter().map(|&(_, id)| id).collect();
+        let mut rows: HashMap<i64, Topic> = topics::by_ids(&state.db, &ids)
+            .await?
+            .into_iter()
+            .map(|t| (t.id, t))
+            .collect();
+        for e in entries {
+            pos = Some(e);
+            // 有序集合可能残留刚隐藏、置顶或移走的主题：按当前状态过滤
+            if let Some(t) = rows
+                .remove(&e.1)
+                .filter(|t| t.listed() && forums.contains_key(&t.forum_id))
+            {
+                out.push(t);
+                if out.len() == TOPICS_PER_PAGE {
+                    break;
+                }
+            }
+        }
+        if page.entries.len() < LATEST_FETCH || ids.is_empty() {
+            zset_end = Some(page.total >= BOARD_CAP as u64);
+        }
+        if out.len() == TOPICS_PER_PAGE || zset_end.is_some() {
+            break;
+        }
+    }
+    let mut more = out.len() == TOPICS_PER_PAGE || zset_end.is_none();
+    if out.len() < TOPICS_PER_PAGE
+        && zset_end == Some(true)
+        && let Some((score, id)) = pos
+    {
+        let before = OffsetDateTime::from_unix_timestamp_nanos(i128::from(score) * 1000)
+            .map_err(|_| ApiError(ErrorCode::InvalidParameter))?;
+        let ids: Vec<i32> = forums.keys().copied().collect();
+        let need = TOPICS_PER_PAGE - out.len();
+        let rows = topics::latest_before(&state.db, &ids, (before, id), need as i64).await?;
+        more = rows.len() == need;
+        if let Some(t) = rows.last() {
+            pos = Some((micros(t.last_post_at), t.id));
+        }
+        out.extend(rows);
+    }
+    let next_cursor = pos.filter(|_| more).map(|(s, id)| cursor_of(s, id));
+    let mut forum_ids: Vec<i32> = out.iter().map(|t| t.forum_id).collect();
+    forum_ids.sort_unstable();
+    forum_ids.dedup();
+    let user_ids = topic_user_ids(out.iter());
+    Ok(Json(LatestResponse {
+        topics: out.iter().map(TopicSummary::from).collect(),
+        forums: forum_ids
+            .iter()
+            .filter_map(|id| forums.get(id))
+            .map(ForumView::from)
+            .collect(),
+        users: cards::load(&state, &user_ids).await?,
+        next_cursor,
+    }))
+}
+
+/// 读一批跨板块最新有序集合；还没建好时从数据库重建（合并写入，与并发的发帖不会互相覆盖）。
+async fn latest_zset(state: &AppState, max_score: Option<i64>) -> ApiResult<BoardPage> {
+    if let Some(p) = state.cache.latest_page(max_score, LATEST_FETCH).await? {
+        return Ok(p);
+    }
+    let rows = topics::latest_listed_all(&state.db, BOARD_CAP as i64).await?;
+    let entries: Vec<(i64, i64)> = rows.iter().map(|&(id, at)| (id, micros(at))).collect();
+    state.cache.latest_fill(&entries).await?;
+    Ok(state
+        .cache
+        .latest_page(max_score, LATEST_FETCH)
+        .await?
+        .unwrap_or(BoardPage {
+            entries: Vec::new(),
+            total: 0,
+        }))
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -342,6 +472,15 @@ pub async fn moderate(
             json!({ "old_flags": old, "new_flags": new }),
         )
     };
+    // 精华经验（plan 第 7 节）：设精华 +50、撤销扣回，与标志位同一事务。
+    let featured_now = new_flags & FLAG_FEATURED != 0;
+    let level_changed = if featured_now != (old_flags & FLAG_FEATURED != 0) {
+        let day = OffsetDateTime::now_utc().date();
+        forum_db::exp::set_featured(&mut tx, topic.author_id, id, featured_now, day).await?
+            == Some(true)
+    } else {
+        false
+    };
     forum_db::audit::append(
         &mut *tx,
         actor.id,
@@ -352,6 +491,9 @@ pub async fn moderate(
     )
     .await?;
     tx.commit().await?;
+    if level_changed {
+        cards::invalidate(&state, &[topic.author_id]).await;
+    }
 
     // 缓存：有序集合成员关系、置顶列表、第 1 页
     let was_listed = old_flags & topics::FLAGS_NOT_LISTED == 0;

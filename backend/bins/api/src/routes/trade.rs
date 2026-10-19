@@ -233,7 +233,7 @@ struct ListingSnapshot<'a> {
     terms: &'a ListingTerms,
 }
 
-/// 发交易帖：主题（kind = 交易）+ 交易条款同一事务写入。需要已开通交易（本链有钱包）。
+/// 发交易帖：主题（kind = 交易）+ 交易条款同一事务写入。需要已开通交易（本链有钱包），板块允许交易帖。
 #[utoipa::path(
     post, path = "/api/v1/forums/{slug}/listings", tag = "trade",
     params(("slug" = String, Path)),
@@ -272,7 +272,7 @@ pub async fn create_listing(
         ..t.clone()
     };
 
-    let p = prepare_topic(&state, &session, &slug, &req.topic).await?;
+    let p = prepare_topic(&state, &session, &slug, &req.topic, topics::KIND_TRADE).await?;
     let snapshot = ListingSnapshot {
         v: 1,
         title: &p.title,

@@ -1,0 +1,98 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 用户主页的帖子，新的在前，游标分页，走 posts_author。只含未删除、所在主题未隐藏、访问者看得到的板块里的楼层。\n-- $1 author_id, $2 before_id, $3 可见板块, $4 limit\nSELECT p.id, p.topic_id, p.floor, left(p.plain_text, 200) AS \"excerpt!\", p.created_at,\n       t.title, t.forum_id\nFROM posts p\nJOIN topics t ON t.id = p.topic_id\nWHERE p.author_id = $1 AND p.id < $2 AND p.status = 0\n  AND (t.flags & 8) = 0 AND t.forum_id = ANY($3::int[])\nORDER BY p.id DESC\nLIMIT $4\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "topic_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "topic_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "floor",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "floor"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "excerpt!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "forum_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "forum_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f160ab743bc98fee13b3aa5b102c50736920c1e62d1ffb80604e8121b27b6aca"
+}

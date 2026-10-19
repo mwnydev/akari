@@ -25,6 +25,7 @@ async fn forum(db: &PgPool, slug: &str, view: i16, post: i16) -> i32 {
             view_min_level: view,
             post_min_level: post,
             reply_min_level: 1,
+            allow_trade: false,
         },
     )
     .await

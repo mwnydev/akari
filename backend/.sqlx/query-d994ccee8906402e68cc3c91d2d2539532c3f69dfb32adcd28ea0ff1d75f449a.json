@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 账号交易信誉（plan 第 7 节）：从这些用户最终确认的订单结果重算并写入，只返回实际变化的用户\n-- （indexer 据此失效名片缓存；worker 每日全量重算时，返回的就是与链上结果不一致、已被修正的用户）。\n-- 防刷：只计 ≥ $2 USDT 的订单；同一对用户（不分买卖方向）每个 30 天窗口（按建单时间对齐）只计 ID 最小的一笔；\n-- 自己和自己、钱包不属于本站用户的订单不计。用户的全部订单都在结果里，所以同一对用户的订单一定完整。\n-- $1 user ids, $2 计入的最低金额（整 USDT）\nWITH o AS (\n  SELECT o.id, o.buyer_id, o.seller_id, o.amount,\n    escrow_outcome(o.state, o.mode, o.confirm_deadline, o.started_at, o.ruling_to_buyer_bps) AS outcome,\n    row_number() OVER (\n      PARTITION BY least(o.buyer_id, o.seller_id), greatest(o.buyer_id, o.seller_id),\n                   floor(extract(epoch FROM o.created_at) / 2592000)\n      ORDER BY o.id\n    ) AS nth\n  FROM escrow_orders o\n  JOIN chains c ON c.chain_id = o.chain_id\n  WHERE (o.buyer_id = ANY($1::bigint[]) OR o.seller_id = ANY($1::bigint[]))\n    AND o.level = 'finalized' AND o.state IN (3, 4, 5) AND o.buyer_id <> o.seller_id\n    AND o.amount >= $2::int * power(10::numeric, c.token_decimals)\n), part AS (\n  -- 每单拆成卖家、买家两份：(用户, 成功, 本人责任失败为卖家, 为买家, 争议败诉, 和解, 成交额)\n  SELECT seller_id AS user_id, outcome IN (1, 4) AS ok, outcome IN (2, 3) AS sf, false AS bf,\n         outcome = 3 AS lost, outcome = 5 AS settled, amount\n  FROM o WHERE nth = 1\n  UNION ALL\n  SELECT buyer_id, outcome = 1, false, outcome = 4, outcome = 4, outcome = 5, amount\n  FROM o WHERE nth = 1\n), agg AS (\n  SELECT u.id AS user_id,\n    count(*) FILTER (WHERE p.ok)::int AS success,\n    count(*) FILTER (WHERE p.sf)::int AS seller_fault_fail,\n    count(*) FILTER (WHERE p.bf)::int AS buyer_fault_fail,\n    count(*) FILTER (WHERE p.lost)::int AS disputes_lost,\n    count(*) FILTER (WHERE p.settled)::int AS settled,\n    coalesce(sum(p.amount) FILTER (WHERE p.ok), 0) AS volume\n  FROM (SELECT DISTINCT unnest($1::bigint[]) AS id) u\n  LEFT JOIN part p ON p.user_id = u.id\n  GROUP BY u.id\n  -- 没有任何计入订单、也还没有统计行的用户不写（每日全量重算按用户表分批，大多数用户没有订单）\n  HAVING count(p.user_id) > 0 OR EXISTS (SELECT 1 FROM user_trade_stats t WHERE t.user_id = u.id)\n)\nINSERT INTO user_trade_stats AS s\n  (user_id, success, seller_fault_fail, buyer_fault_fail, disputes_lost, settled, volume)\nSELECT user_id, success, seller_fault_fail, buyer_fault_fail, disputes_lost, settled, volume FROM agg\nON CONFLICT (user_id) DO UPDATE SET\n  success = EXCLUDED.success, seller_fault_fail = EXCLUDED.seller_fault_fail,\n  buyer_fault_fail = EXCLUDED.buyer_fault_fail, disputes_lost = EXCLUDED.disputes_lost,\n  settled = EXCLUDED.settled, volume = EXCLUDED.volume, updated_at = now()\nWHERE (s.success, s.seller_fault_fail, s.buyer_fault_fail, s.disputes_lost, s.settled, s.volume)\n  IS DISTINCT FROM (EXCLUDED.success, EXCLUDED.seller_fault_fail, EXCLUDED.buyer_fault_fail,\n                    EXCLUDED.disputes_lost, EXCLUDED.settled, EXCLUDED.volume)\nRETURNING user_id\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_trade_stats",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d994ccee8906402e68cc3c91d2d2539532c3f69dfb32adcd28ea0ff1d75f449a"
+}

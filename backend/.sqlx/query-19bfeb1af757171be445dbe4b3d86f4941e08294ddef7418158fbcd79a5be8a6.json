@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 设置用户名：首次设置不限，之后 30 天只能改一次（条件 UPDATE，并发下不会绕过）。重名由唯一索引 users_username 拒绝。\n-- $1 id, $2 username\nUPDATE users SET username = $2, username_changed_at = now()\nWHERE id = $1\n  AND (username IS NULL OR username_changed_at IS NULL OR username_changed_at <= now() - interval '30 days')\nRETURNING id\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "19bfeb1af757171be445dbe4b3d86f4941e08294ddef7418158fbcd79a5be8a6"
+}

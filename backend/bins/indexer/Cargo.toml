@@ -18,6 +18,7 @@ alloy.workspace = true
 anyhow.workspace = true
 forum-chain.workspace = true
 forum-db.workspace = true
+forum-kv.workspace = true
 forum-runtime.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

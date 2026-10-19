@@ -1,4 +1,4 @@
-//! forum-indexer 程序入口：读链配置（`CHAIN_CONFIG`）与 `DATABASE_URL`，运行索引循环。
+//! forum-indexer 程序入口：读链配置（`CHAIN_CONFIG`）、`DATABASE_URL` 与可选的 `VALKEY_URL`，运行索引循环。
 
 use anyhow::Context;
 use forum_chain::config::ChainConfig;
@@ -16,7 +16,14 @@ async fn main() -> anyhow::Result<()> {
         4,
     )
     .await?;
+    let cache = match std::env::var("VALKEY_URL") {
+        Ok(url) if !url.is_empty() => Some(forum_kv::ForumCache::new(forum_kv::pool(&url)?, "")),
+        _ => {
+            tracing::warn!("VALKEY_URL not set: user cards refresh only when their cache expires");
+            None
+        }
+    };
     tracing::info!(version = env!("CARGO_PKG_VERSION"), chain = %cfg.name, "forum-indexer starting");
-    forum_indexer::run(db, cfg, shutdown).await?;
+    forum_indexer::run(db, cfg, cache, shutdown).await?;
     Ok(())
 }

@@ -25,6 +25,7 @@ forum-content.workspace = true
 forum-core = { workspace = true, features = ["openapi"] }
 forum-db.workspace = true
 forum-kv.workspace = true
+forum-media.workspace = true
 forum-runtime.workspace = true
 futures-util = { workspace = true, features = ["sink"] }
 hex.workspace = true

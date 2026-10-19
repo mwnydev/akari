@@ -19,19 +19,22 @@ forum-core.workspace = true
 forum-db.workspace = true
 forum-kv.workspace = true
 forum-mail.workspace = true
+forum-media.workspace = true
 forum-runtime.workspace = true
+hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+time.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
 tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+reqwest.workspace = true
 serde_json.workspace = true
-time.workspace = true
-tokio = { workspace = true, features = ["sync", "time"] }
 
 [lints]
 workspace = true

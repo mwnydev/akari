@@ -382,7 +382,7 @@ struct Running {
 impl Running {
     fn start(pool: &PgPool, cfg: ChainConfig) -> Self {
         let stop = CancellationToken::new();
-        let task = tokio::spawn(forum_indexer::run(pool.clone(), cfg, stop.clone()));
+        let task = tokio::spawn(forum_indexer::run(pool.clone(), cfg, None, stop.clone()));
         Self { stop, task }
     }
 
@@ -571,6 +571,11 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
         })
         .collect();
     assert_eq!(states, ["funded/event", "funded/event", "released/event"]);
+    // 信誉与交易经验只认最终确认的订单
+    assert_eq!(
+        count(&pool, "SELECT count(*) FROM user_trade_stats").await,
+        0
+    );
     let (fee, gas, confirm, to_seller, snapshot_amount): (String, String, bool, String, String) = sqlx::query_as(
         "SELECT buyer_fee::text, buyer_gas::text, confirm_deadline IS NOT NULL, settled_to_seller::text,
                 snapshot->>'amount'
@@ -830,6 +835,27 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
             (Some("finalized"), Some("confirmation"))
         );
     }
+    // 订单 1（50 USDT 确认放款）最终确认：双方各成功 1 笔、+10 经验；订单 2 未结束不计
+    let stats: Vec<(i64, i32, String)> = sqlx::query_as(
+        "SELECT user_id, success, volume::text FROM user_trade_stats ORDER BY user_id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let mut expect = vec![
+        (buyer_id, 1, "50000000".to_owned()),
+        (seller_id, 1, "50000000".to_owned()),
+    ];
+    expect.sort_unstable();
+    assert_eq!(stats, expect);
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) FROM exp_ledger WHERE reason = 4 AND amount = 10"
+        )
+        .await,
+        2
+    );
     let (safe, finalized): (i64, i64) =
         sqlx::query_as("SELECT safe_block, finalized_block FROM indexer_cursors")
             .fetch_one(&pool)
@@ -866,6 +892,7 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
         forum_indexer::run(
             pool.clone(),
             w.config(&anvil, 200),
+            None,
             CancellationToken::new(),
         ),
     )

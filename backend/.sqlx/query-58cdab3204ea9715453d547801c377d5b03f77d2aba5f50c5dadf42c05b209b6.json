@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 暂时失败（存储不可用等）：保持处理中，租约改为 $2 秒后到期，到期后重新领取。$1 id, $2 秒, $3 error\nUPDATE uploads SET lease_until = now() + make_interval(secs => $2), error = $3, updated_at = now()\nWHERE id = $1 AND status = 'processing'\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "58cdab3204ea9715453d547801c377d5b03f77d2aba5f50c5dadf42c05b209b6"
+}

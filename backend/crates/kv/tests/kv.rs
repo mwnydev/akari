@@ -189,4 +189,48 @@ mod forum_cache {
         again.sort_unstable();
         assert_eq!(again, vec![(10, 4), (11, 1)]);
     }
+
+    #[tokio::test]
+    async fn latest_follows_board_touch_and_remove() {
+        let Some(c) = cache() else { return };
+        assert_eq!(c.latest_page(None, 10).await.unwrap(), None);
+        // 两个板块的发帖都进同一个最新有序集合；未建好前的写入在重建时合并
+        c.board_touch(1, 10, 1000).await.unwrap();
+        c.latest_fill(&[(5, 500)]).await.unwrap();
+        c.board_touch(2, 20, 2000).await.unwrap();
+        c.board_touch(1, 10, 3000).await.unwrap(); // 新回复：分数更新
+        let page = c.latest_page(None, 10).await.unwrap().unwrap();
+        assert_eq!(page.entries, vec![(10, 3000), (20, 2000), (5, 500)]);
+        assert_eq!(page.total, 3);
+        // 分数上限（含）之下的一页
+        let page = c.latest_page(Some(2000), 1).await.unwrap().unwrap();
+        assert_eq!(page.entries, vec![(20, 2000)]);
+        // 隐藏 / 置顶：从板块与最新都移除
+        c.board_remove(2, 20).await.unwrap();
+        let page = c.latest_page(None, 10).await.unwrap().unwrap();
+        assert_eq!(page.entries, vec![(10, 3000), (5, 500)]);
+        assert_eq!(
+            c.board_page(2, 0, 9).await.unwrap(),
+            None,
+            "board 2 not built"
+        );
+    }
+
+    #[tokio::test]
+    async fn cards_roundtrip_and_invalidation_blocks_stale_fill() {
+        let Some(c) = cache() else { return };
+        assert_eq!(c.cards_get(&[1, 2]).await.unwrap(), vec![None, None]);
+        c.cards_put(&[(1, vec![("u", "alice".to_owned()), ("l", "2".to_owned())])])
+            .await
+            .unwrap();
+        let got = c.cards_get(&[1, 2]).await.unwrap();
+        assert_eq!(got[0].as_ref().unwrap()["u"], "alice");
+        assert_eq!(got[1], None);
+        // 失效后几秒内，拿着旧数据的回源写回被拒绝
+        c.cards_invalidate(&[1]).await.unwrap();
+        c.cards_put(&[(1, vec![("u", "stale".to_owned())])])
+            .await
+            .unwrap();
+        assert_eq!(c.cards_get(&[1]).await.unwrap(), vec![None]);
+    }
 }

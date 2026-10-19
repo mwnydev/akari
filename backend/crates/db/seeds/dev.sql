@@ -9,3 +9,5 @@ INSERT INTO forums (slug, name, description, position, view_min_level, post_min_
   ('help',          '帮助',     '使用问题与反馈', 4, 0, 1, 1),
   ('lounge',        '会员茶馆', '3 级以上可见', 5, 3, 3, 3)
 ON CONFLICT (slug) DO NOTHING;
+-- 交易帖只能发在交易区。
+UPDATE forums SET allow_trade = true WHERE slug = 'trade';

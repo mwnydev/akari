@@ -60,6 +60,20 @@ pub enum ErrorCode {
     Conflict,
     #[error("username required")]
     UsernameRequired,
+    #[error("invalid username")]
+    InvalidUsername,
+    #[error("username taken")]
+    UsernameTaken,
+    #[error("username changed too recently")]
+    UsernameChangeTooSoon,
+    #[error("board does not allow trade listings")]
+    TradeNotAllowed,
+    #[error("unsupported image")]
+    UnsupportedImage,
+    #[error("image too large")]
+    ImageTooLarge,
+    #[error("image uploads unavailable")]
+    UploadsUnavailable,
     #[error("email re-verification required")]
     ReverifyRequired,
     #[error("passkey verification required")]
@@ -132,6 +146,15 @@ impl ErrorCode {
             Self::OfferUnavailable => "报价已失效",
             Self::Conflict => "已经存在，不能重复创建",
             Self::UsernameRequired => "请先设置用户名",
+            Self::InvalidUsername => {
+                "用户名需为 2–20 个字，只能包含汉字、字母、数字和下划线，不能是纯数字或保留名"
+            }
+            Self::UsernameTaken => "用户名已被使用",
+            Self::UsernameChangeTooSoon => "用户名 30 天内只能修改一次",
+            Self::TradeNotAllowed => "这个板块不能发交易帖",
+            Self::UnsupportedImage => "只支持 JPG、PNG、GIF、WebP、HEIC 图片",
+            Self::ImageTooLarge => "图片不能超过 10 MB",
+            Self::UploadsUnavailable => "图片上传暂时不可用，请稍后再试",
             Self::ReverifyRequired => "请先完成邮箱验证",
             Self::PasskeyRequired => "请先用钱包 Passkey 确认",
             Self::PasskeyFailed => "Passkey 验证失败，请重试",

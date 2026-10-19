@@ -1,6 +1,6 @@
 //! 把链上数据写进数据库：执行校对计划、写入 WebSocket 即时日志、升级确认级别，并在订单变化时写发件箱、
 //! 同步生成订单的报价卡片（成交次数用完即已付款），并把状态变化写进订单聊天与私信（见 [`crate::chat`]）；
-//! 终态最终确认后给买卖双方发免费代付提币次数。
+//! 终态最终确认后给买卖双方发免费代付提币次数、计入双方信誉与交易经验。
 //!
 //! 所有写入都由一个任务串行执行（见 [`crate::run`]），并且同一条链只允许一个 indexer 进程（会话级咨询锁）。
 //! 因此读库、调 RPC、再开事务写库之间不会有别的写入者插进来。
@@ -17,6 +17,7 @@ use forum_chain::snapshot::OrderSnapshot;
 use forum_db::chain::{self as db, OrderRef};
 use forum_db::credits;
 use forum_db::{PgPool, Postgres, Transaction, outbox};
+use forum_kv::ForumCache;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
@@ -53,6 +54,14 @@ impl Cause {
     }
 }
 
+/// 一次重新折叠的结果。
+struct Recomputed {
+    /// 行有变化的订单数。
+    changed: usize,
+    /// 名片需要失效的用户。
+    cards: Vec<i64>,
+}
+
 /// 一轮执行的统计（日志与测试用）。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Applied {
@@ -69,6 +78,8 @@ pub struct Engine {
     max_range: u64,
     policy: forum_chain::config::ConfirmationPolicy,
     progress: Progress,
+    /// 用户名片缓存（`VALKEY_URL`）；未配置时只靠缓存 TTL。
+    cache: Option<ForumCache>,
 }
 
 fn db_i64(v: u64) -> Result<i64, IndexerError> {
@@ -95,7 +106,11 @@ fn timestamp(secs: u64) -> Option<OffsetDateTime> {
 
 impl Engine {
     /// 写入链配置并读取索引进度。
-    pub async fn open(pool: PgPool, cfg: &ChainConfig) -> Result<Self, IndexerError> {
+    pub async fn open(
+        pool: PgPool,
+        cfg: &ChainConfig,
+        cache: Option<ForumCache>,
+    ) -> Result<Self, IndexerError> {
         let chain_id = db_i64(cfg.chain_id)?;
         db::upsert_chain(
             &pool,
@@ -122,6 +137,7 @@ impl Engine {
             max_range: cfg.indexer.max_block_range,
             policy: cfg.confirmation.clone(),
             progress: Progress::default(),
+            cache,
         };
         engine.reload().await?;
         Ok(engine)
@@ -253,8 +269,10 @@ impl Engine {
             )
             .await?;
         }
-        applied.orders_changed = self.recompute(&mut tx, &touched).await?;
+        let r = self.recompute(&mut tx, &touched).await?;
+        applied.orders_changed = r.changed;
         tx.commit().await?;
+        self.invalidate_cards(&r.cards).await;
         Ok(applied)
     }
 
@@ -286,8 +304,9 @@ impl Engine {
                 mark(&mut touched, [r], Cause::Event);
             }
         }
-        self.recompute(&mut tx, &touched).await?;
+        let r = self.recompute(&mut tx, &touched).await?;
         tx.commit().await?;
+        self.invalidate_cards(&r.cards).await;
         Ok(false)
     }
 
@@ -317,8 +336,9 @@ impl Engine {
         let sf = db::promote(&mut *tx, self.chain_id, db_i64(safe)?, Level::Safe.as_str()).await?;
         mark(&mut touched, sf, Cause::Confirmation);
         db::set_confirmations(&mut *tx, self.chain_id, db_i64(safe)?, db_i64(finalized)?).await?;
-        self.recompute(&mut tx, &touched).await?;
+        let r = self.recompute(&mut tx, &touched).await?;
         tx.commit().await?;
+        self.invalidate_cards(&r.cards).await;
         self.reload().await?;
         Ok((safe, finalized))
     }
@@ -357,13 +377,15 @@ impl Engine {
         .await?)
     }
 
-    /// 重新折叠受影响的订单；行有变化的写一条发件箱消息，并同步生成它的报价卡片。返回变化的订单数。
+    /// 重新折叠受影响的订单；行有变化的写一条发件箱消息，并同步生成它的报价卡片、订单聊天系统消息。
+    /// 变为最终确认并已结束的订单在同一事务里发免费代付提币次数、计入双方信誉与交易经验（plan 第 7 节）。
     async fn recompute(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         touched: &BTreeMap<OrderRef, Cause>,
-    ) -> Result<usize, IndexerError> {
+    ) -> Result<Recomputed, IndexerError> {
         let mut changed = 0;
+        let mut finalized = Vec::new();
         for ((contract, order_id), cause) in touched {
             let address = Address::try_from(contract.as_slice())
                 .map_err(|_| ChainError::Decode("expected 20-byte address".into()))?;
@@ -432,6 +454,10 @@ impl Engine {
             {
                 credits::award_order(&mut **tx, row.id).await?;
             }
+            // 是否已结束由 apply_finalized 判断（只认 escrow_outcome 有结果的订单）
+            if view.as_ref().is_some_and(|v| v.level == Level::Finalized) {
+                finalized.push(row.id);
+            }
             let payload = json!({
                 "id": row.id,
                 "chain_id": self.chain_id,
@@ -448,7 +474,16 @@ impl Engine {
             });
             outbox::enqueue(&mut **tx, ORDER_UPDATED, &payload, outbox::PRIORITY_NORMAL).await?;
         }
-        Ok(changed)
+        let cards = forum_db::reputation::apply_finalized(tx, &finalized).await?;
+        Ok(Recomputed { changed, cards })
+    }
+
+    /// 提交后失效信誉或等级变化的用户名片；Valkey 不可用时只记日志（名片缓存有 TTL 兜底）。
+    async fn invalidate_cards(&self, users: &[i64]) {
+        let Some(cache) = &self.cache else { return };
+        if let Err(e) = cache.cards_invalidate(users).await {
+            tracing::warn!(error = %e, users = users.len(), "user card invalidation failed");
+        }
     }
 
     fn row<'a>(

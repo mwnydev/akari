@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE job_cursors SET position = $2, updated_at = now() WHERE name = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b20e8a6133c083f427b78b78e40eb893bf034f1e0fb6cd57a3fb5c90ed9887f9"
+}

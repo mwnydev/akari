@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 用户名（不区分大小写）→ ID，走唯一索引 users_username。$1 username\nSELECT id FROM users WHERE lower(username) = lower($1) AND username IS NOT NULL\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "73cee84b5aa88bd40e25f7eb2180f60907d41b80b4e86a64fc93cc22e29cc8a1"
+}
