@@ -12,6 +12,7 @@ import {
   LoadingState,
   NetworkBadge,
   cn,
+  useCountdown,
 } from "@akari/ui";
 import { useMutation } from "@tanstack/react-query";
 import { KeyRound, LoaderCircle, MailCheck } from "lucide-react";
@@ -74,17 +75,6 @@ function Steps({ current }: { current: number }) {
       ))}
     </ol>
   );
-}
-
-/** 每秒减 1 的倒计时（重发验证码）。 */
-function useCountdown() {
-  const [left, setLeft] = useState(0);
-  useEffect(() => {
-    if (left <= 0) return;
-    const t = setTimeout(() => setLeft((n) => n - 1), 1000);
-    return () => clearTimeout(t);
-  }, [left]);
-  return [left, setLeft] as const;
 }
 
 /** 第 1 步：开通交易专用的邮箱验证码（与登录码分开，10 分钟内注册 Passkey 有效）。 */

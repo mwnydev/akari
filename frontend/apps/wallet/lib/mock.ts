@@ -2,7 +2,6 @@
 import { DEFAULT_PARAMS, orderCost, streamNet, streamUnlocked } from "@akari/fees";
 
 export const ESCROW = "0x7a3b91c04e2d5f68a9b1c3d5e7f9a1b3c5d7e9f1";
-export const STREAM_ESCROW = "0x5c2e8a1f3b4d6e7a9c0b1d2e3f4a5b6c7d8e9f0a";
 export const MY_WALLET = "0x3f9a6c21d84b07e5a1c2d3e4f5a6b7c8d9e0b1c2";
 
 export const wallet = {

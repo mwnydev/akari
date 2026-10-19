@@ -15,6 +15,17 @@ export function formatRemaining(seconds: number): string {
   return `${pad(m)}:${pad(s % 60)}`;
 }
 
+/** 每秒减 1 的倒计时秒数（重发验证码）；`set(n)` 重新开始。 */
+export function useCountdown() {
+  const [left, setLeft] = useState(0);
+  useEffect(() => {
+    if (left <= 0) return;
+    const t = setTimeout(() => setLeft((n) => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [left]);
+  return [left, setLeft] as const;
+}
+
 /**
  * 倒计时：服务端按 `seconds` 渲染首帧，挂载后每秒递减；首帧与水合结果一致，等宽数字不跳版。
  * 不设 aria-live，屏幕阅读器不会每秒播报。

@@ -12,12 +12,17 @@
     "test": "turbo run test",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
+    "knip": "knip",
+    "dup": "cd .. && jscpd",
     "e2e:aa": "pnpm --filter @akari/wallet e2e:aa"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "24.19.2",
     "eslint": "10.12.0",
+    "jscpd": "5.4.1",
+    "knip": "6.41.0",
+    "lefthook": "2.1.9",
     "prettier": "3.9.10",
     "turbo": "2.11.8",
     "typescript": "7.0.2",

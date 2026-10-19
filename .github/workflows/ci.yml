@@ -42,13 +42,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
-          components: clippy, rustfmt
+          components: clippy, rustfmt, llvm-tools
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-nextest,cargo-deny,cargo-audit,sqlx-cli@0.9.0
+          tool: cargo-nextest,cargo-deny,cargo-audit,sqlx-cli@0.9.0,cargo-llvm-cov@0.9.1
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo deny check
@@ -59,7 +59,21 @@ jobs:
           psql "$DATABASE_URL" -c "ALTER SYSTEM SET random_page_cost = 1.1" -c "ALTER SYSTEM SET effective_io_concurrency = 200" -c "SELECT pg_reload_conf()"
       - run: sqlx migrate run --source crates/db/migrations
       - run: SQLX_OFFLINE=false cargo sqlx prepare --workspace --check -- --all-targets
-      - run: cargo nextest run --workspace --locked
+      # 测试只跑一遍（插桩构建），顺带产出行覆盖率；合约绑定（sol! 宏）与测试代码不计入
+      # 门槛：全部 ≥ 88%（引入时 89.8% 减 1 个百分点取整），core 与 db 层各 ≥ 80%（plan 第 14 节）
+      - run: >-
+          cargo llvm-cov nextest --workspace --locked --lcov --output-path lcov.info
+          --ignore-filename-regex '(/tests/|crates/chain/src/bindings\.rs)' --fail-under-lines 88
+      - run: |
+          awk -F'[:,]' '/^SF:/{c=""; if ($2 ~ /\/crates\/(core|db)\/src\//) {c=$2; sub(/.*\/crates\//, "", c); sub(/\/.*/, "", c)}}
+            /^LF:/{if (c) lf[c]+=$2} /^LH:/{if (c) lh[c]+=$2}
+            END{if (length(lf) < 2) {print "core/db missing from lcov.info"; bad=1}; for (c in lf) {p=100*lh[c]/lf[c]; printf "%s: %.2f%%\n", c, p; if (p < 80) bad=1}; exit bad}' lcov.info
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: rust-lcov
+          path: backend/lcov.info
+          if-no-files-found: ignore
 
   # 生产用 musl 静态可执行文件（plan 第 13 节）；aws-lc、vendored OpenSSL 都要在这里编得过
   rust-musl:
@@ -100,6 +114,9 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
+      - run: pnpm knip
+      # 重复率 < 3%（plan 第 14 节），扫 TS 与 Rust，配置见仓库根的 .jscpd.json
+      - run: pnpm dup
       - run: pnpm turbo run lint typecheck test build
 
   contracts:

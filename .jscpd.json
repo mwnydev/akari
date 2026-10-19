@@ -1,0 +1,19 @@
+{
+  "path": ["frontend/apps", "frontend/packages", "backend/bins", "backend/crates"],
+  "format": ["typescript", "tsx", "javascript", "rust"],
+  "minTokens": 70,
+  "threshold": 3,
+  "ignore": [
+    "**/node_modules/**",
+    "**/.next/**",
+    "**/out/**",
+    "**/target/**",
+    "**/packages/api-client/src/schema.d.ts",
+    "**/packages/contracts/src/generated.ts",
+    "**/next-env.d.ts",
+    "**/migrations/**",
+    "**/.sqlx/**"
+  ],
+  "reporters": ["console", "threshold"],
+  "noTips": true
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@6.41.0/schema.json",
+  // 只在本文件内使用的 export 不算死代码（组件、常量常顺手导出给测试或日后复用），只抓真正无人引用的
+  "ignoreExportsUsedInFile": true,
+  // lefthook 的配置在仓库根（../lefthook.yml），knip 只看 frontend，找不到引用
+  "ignoreDependencies": ["lefthook"],
+  "workspaces": {
+    "apps/admin": {},
+    "apps/forum": {
+      "entry": ["scripts/*.mjs"],
+    },
+    "apps/wallet": {
+      // dev-sponsor.disabled.ts 由 next.config.ts 的 turbopack resolveAlias 在生产构建时换入，没有静态 import
+      "entry": ["scripts/*.mjs", "lib/wallet/dev-sponsor.disabled.ts"],
+    },
+    "packages/*": {},
+    "packages/contracts": {
+      // @wagmi/cli 的配置（pnpm generate），knip 没有对应插件
+      "entry": ["wagmi.config.ts"],
+    },
+  },
+}

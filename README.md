@@ -21,3 +21,18 @@ cd backend && cargo nextest run
 cd frontend && pnpm install && pnpm turbo run build
 cd contracts && forge test
 ```
+
+## 本地预检（lefthook）
+
+CI 是唯一的硬门禁；`lefthook.yml` 只做秒级检查（改动文件的 rustfmt、prettier、eslint、forge fmt，装了 gitleaks 时再扫密钥）。lefthook 在 `frontend` 的 devDependencies 里（版本锁定），`pnpm install` 不会自动装 git 钩子。
+
+jj 不跑 git 钩子，按当前改动（`@`）手动运行；可在 `.jj/repo/config.toml` 里加别名，之后 `jj precheck`：
+
+```toml
+[aliases]
+precheck = ["util", "exec", "--", "bash", "-c", """
+cd "$JJ_WORKSPACE_ROOT" && jj diff --name-only | while read -r f; do [ -e "$f" ] && echo "--file=$f"; done \
+  | xargs frontend/node_modules/.bin/lefthook run pre-commit"""]
+```
+
+用 git 提交时 `frontend/node_modules/.bin/lefthook install` 装上钩子即可。较重的检查（clippy、前端 lint/typecheck/test、knip、jscpd）默认关闭：`LEFTHOOK_HEAVY=1 frontend/node_modules/.bin/lefthook run pre-push`。单独跑 knip / jscpd：`cd frontend && pnpm knip && pnpm dup`。

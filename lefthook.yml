@@ -1,0 +1,44 @@
+# 本地预检（plan 第 14 节）。真正的门禁是 CI；这里只做秒级的快速检查，且只看改动的文件。
+# 团队用 jj 提交，jj 不跑 git 钩子：手动运行方式见 README「本地预检」。
+# 二进制在 frontend 的 devDependencies 里（版本锁定）：frontend/node_modules/.bin/lefthook
+no_auto_install: true
+
+pre-commit:
+  parallel: true
+  commands:
+    rustfmt:
+      root: backend/
+      glob: "*.rs"
+      run: rustfmt --edition 2024 --check {staged_files}
+    prettier:
+      root: frontend/
+      glob: "*.{ts,tsx,js,mjs,json,css,md,yml,yaml}"
+      run: pnpm exec prettier --check --ignore-unknown {staged_files}
+    eslint:
+      root: frontend/
+      glob: "*.{ts,tsx,mjs}"
+      run: pnpm exec eslint --no-warn-ignored {staged_files}
+    forge-fmt:
+      root: contracts/
+      glob: "*.sol"
+      run: forge fmt --check {staged_files}
+    gitleaks:
+      # 没装 gitleaks 时跳过（CI 的 secrets 任务会全量扫描）
+      skip:
+        - run: "! command -v gitleaks >/dev/null"
+      run: for f in {staged_files}; do gitleaks dir --no-banner --redact --config .gitleaks.toml "$f" || exit 1; done
+
+# 较重的检查，默认关闭：LEFTHOOK_HEAVY=1 时才运行
+pre-push:
+  parallel: true
+  skip:
+    - run: test -z "$LEFTHOOK_HEAVY"
+  commands:
+    clippy:
+      root: backend/
+      run: SQLX_OFFLINE=true cargo clippy --workspace --all-targets --locked -- -D warnings
+    frontend:
+      root: frontend/
+      run: pnpm turbo run lint typecheck test && pnpm knip
+    jscpd:
+      run: frontend/node_modules/.bin/jscpd

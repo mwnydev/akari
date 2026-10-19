@@ -1,5 +1,6 @@
 # Rust
 /backend/target/
+/backend/lcov.info
 # Node
 node_modules/
 .next/

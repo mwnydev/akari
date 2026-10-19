@@ -1,11 +1,11 @@
 "use client";
 
 import { ApiError, errorMessage } from "@akari/api-client";
-import { Button, Field, Input } from "@akari/ui";
+import { Button, Field, Input, useCountdown } from "@akari/ui";
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import * as z from "zod/mini";
 import { QueryProvider } from "../../components/QueryProvider";
@@ -27,17 +27,6 @@ const startLogin = (email: string, captcha: string | null) =>
 
 const verifyLogin = (email: string, code: string) =>
   unwrap(api.POST("/api/v1/auth/email/verify", { body: { email, code } }));
-
-/** 每秒减 1 的倒计时；`start(n)` 重新开始。 */
-function useCountdown() {
-  const [left, setLeft] = useState(0);
-  useEffect(() => {
-    if (left <= 0) return;
-    const t = setTimeout(() => setLeft((n) => n - 1), 1000);
-    return () => clearTimeout(t);
-  }, [left]);
-  return [left, setLeft] as const;
-}
 
 function Steps({ next }: { next: string }) {
   const router = useRouter();
