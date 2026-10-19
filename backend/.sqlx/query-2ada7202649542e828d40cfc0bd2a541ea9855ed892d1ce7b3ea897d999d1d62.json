@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, topic_id, seller_id, chain_id, price::text AS \"price!\", terms, content_hash, created_at\n           FROM trade_listings WHERE id = $1",
+  "query": "SELECT id, topic_id, seller_id, chain_id, price::text AS \"price!\", terms, content_hash,\n                  cny_per_usdt AS \"cny_per_usdt?\", created_at\n           FROM trade_listings WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -77,6 +77,17 @@
       },
       {
         "ordinal": 7,
+        "name": "cny_per_usdt?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "trade_listings",
+            "name": "cny_per_usdt"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -100,8 +111,9 @@
       null,
       false,
       false,
+      true,
       false
     ]
   },
-  "hash": "90c701fc635225e7525475974f25541fdda65af812c0a49a2d1a797c29902906"
+  "hash": "2ada7202649542e828d40cfc0bd2a541ea9855ed892d1ce7b3ea897d999d1d62"
 }

@@ -11,7 +11,13 @@ import { SiteNav } from "../../../components/SiteNav";
 import { OfferCard } from "../../../components/trade/OfferCard";
 import { load, serverApi } from "../../../lib/api";
 import { cardLookup, formatDays, profileHref, userName } from "../../../lib/display";
-import { FEE_PAYERS, feePayerOf, orderCostPreview } from "../../../lib/fees";
+import {
+  cnyReference,
+  FEE_PAYERS,
+  feePayerOf,
+  formatCnyPerUsdt,
+  orderCostPreview,
+} from "../../../lib/fees";
 import { boardHref, topicHref } from "../../../lib/links";
 
 type Params = Promise<{ id: string }>;
@@ -117,6 +123,12 @@ export default async function TradePage({ params }: { params: Params }) {
               <p className="text-3xl font-semibold">
                 <Amount value={listing.price} />
               </p>
+              {listing.cny_per_usdt ? (
+                <p className="mt-1 text-sm text-fg-muted">
+                  ≈ {cnyReference(listing.price, listing.cny_per_usdt)}（卖家参考汇率{" "}
+                  {formatCnyPerUsdt(listing.cny_per_usdt)}）
+                </p>
+              ) : null}
             </div>
             <ul className="space-y-2 text-sm">
               <li className="flex items-center gap-2">

@@ -334,6 +334,10 @@ pub struct OrderUpsert<'a> {
     pub offer_hash: Vec<u8>,
     pub listing_hash: Vec<u8>,
     pub auction_id: Option<String>,
+    /// 拍卖币种（0 = USDT、1 = 人民币）、卖家汇率（4 位小数）与拍卖币种的成交价（ADR 0011）。
+    pub auction_currency: Option<i16>,
+    pub auction_cny_per_usdt: Option<i32>,
+    pub auction_price: Option<String>,
     pub state: i16,
     pub ship_deadline: Option<OffsetDateTime>,
     pub confirm_deadline: Option<OffsetDateTime>,
@@ -415,7 +419,10 @@ pub async fn upsert_order(
         o.snapshot,
         o.level,
         o.created_block,
-        o.updated_block
+        o.updated_block,
+        o.auction_currency,
+        o.auction_cny_per_usdt,
+        o.auction_price
     )
     .fetch_optional(db)
     .await

@@ -53,7 +53,9 @@ contract Escrow is MarketBase, EIP712 {
         address seller;
         address token;
         uint256 auctionId;
-        uint256 reservePrice;
+        uint256 reservePrice; // in the auction currency's smallest unit (USDT units or fen)
+        uint8 currency; // CURRENCY_USDT or CURRENCY_CNY (ADR 0011)
+        uint32 cnyPerUsdt; // seller's fixed rate, 4 decimals (7.2000 → 72000); 0 for USDT auctions
         FeeMath.Payer feePayer;
         uint16 maxFeeBps;
         uint256 maxBaseGas;
@@ -69,7 +71,7 @@ contract Escrow is MarketBase, EIP712 {
     struct SettlementProof {
         bytes32 authHash;
         address winner;
-        uint256 price;
+        uint256 price; // in the auction currency, like `reservePrice`
         uint64 payDeadline;
     }
 
@@ -112,12 +114,18 @@ contract Escrow is MarketBase, EIP712 {
         "Offer(address seller,address buyer,address token,uint256 amount,uint8 feePayer,uint16 maxFeeBps,uint256 maxBaseGas,uint256 maxMinFee,uint256 bond,uint16 lateSlashBps,bool instant,uint32 shipWindow,uint32 confirmWindow,bytes32 listingHash,uint64 expiry,uint32 maxFills,uint256 nonce)"
     );
     bytes32 public constant AUCTION_TYPEHASH = keccak256(
-        "AuctionAuth(address seller,address token,uint256 auctionId,uint256 reservePrice,uint8 feePayer,uint16 maxFeeBps,uint256 maxBaseGas,uint256 maxMinFee,bool instant,uint32 shipWindow,uint32 confirmWindow,bytes32 listingHash,uint64 expiry)"
+        "AuctionAuth(address seller,address token,uint256 auctionId,uint256 reservePrice,uint8 currency,uint32 cnyPerUsdt,uint8 feePayer,uint16 maxFeeBps,uint256 maxBaseGas,uint256 maxMinFee,bool instant,uint32 shipWindow,uint32 confirmWindow,bytes32 listingHash,uint64 expiry)"
     );
     bytes32 public constant PROOF_TYPEHASH =
         keccak256("SettlementProof(bytes32 authHash,address winner,uint256 price,uint64 payDeadline)");
 
     uint256 internal constant BPS = 10_000;
+
+    uint8 public constant CURRENCY_USDT = 0;
+    uint8 public constant CURRENCY_CNY = 1;
+    /// @dev Hard bounds on the seller's CNY rate (5.0000–10.0000) to catch typos such as 72 or 0.72.
+    uint256 public constant MIN_CNY_PER_USDT = 50_000;
+    uint256 public constant MAX_CNY_PER_USDT = 100_000;
 
     uint256 public constant MIN_WINDOW = 1 days;
     uint256 public constant MAX_WINDOW = 30 days;
@@ -148,7 +156,16 @@ contract Escrow is MarketBase, EIP712 {
         bytes32 listingHash,
         bool instant
     );
-    event AuctionSettled(uint256 indexed orderId, address indexed seller, uint256 indexed auctionId);
+    /// @param price The settled price in the auction currency; `amount` is the USDT order amount it converts to.
+    event AuctionSettled(
+        uint256 indexed orderId,
+        address indexed seller,
+        uint256 indexed auctionId,
+        uint8 currency,
+        uint32 cnyPerUsdt,
+        uint256 price,
+        uint256 amount
+    );
     event Delivered(uint256 indexed orderId, uint64 confirmDeadline);
     event ConfirmExtended(uint256 indexed orderId, address indexed by, uint64 confirmDeadline);
     event DeadlineExtended(uint256 indexed orderId, uint64 deadline);
@@ -199,6 +216,7 @@ contract Escrow is MarketBase, EIP712 {
 
     /// @notice Auction winner pays and opens the order: the seller's authorization and the platform's settlement
     ///         proof must both verify, the price must reach the reserve, and each auction settles at most once.
+    ///         CNY auctions convert the price to USDT at the seller-signed rate, rounding up (ADR 0011).
     function createFromAuction(
         AuctionAuth calldata auth,
         bytes calldata sellerSig,
@@ -220,8 +238,9 @@ contract Escrow is MarketBase, EIP712 {
             }
         }
         if (!SignatureCheckerLib.isValidERC6492SignatureNow(auth.seller, authHash, sellerSig)) revert BadSignature();
-        orderId = _createOrder(_auctionTerms(auth, proof.price), authHash, config.SCOPE_AUCTION());
-        emit AuctionSettled(orderId, auth.seller, auth.auctionId);
+        uint256 amount = _auctionAmount(auth, proof.price);
+        orderId = _createOrder(_auctionTerms(auth, amount), authHash, config.SCOPE_AUCTION());
+        emit AuctionSettled(orderId, auth.seller, auth.auctionId, auth.currency, auth.cnyPerUsdt, proof.price, amount);
     }
 
     /// @notice Seller marks the goods as shipped; the buyer's confirmation window starts.
@@ -462,12 +481,21 @@ contract Escrow is MarketBase, EIP712 {
         _pullExact(o.token, buyerPays);
     }
 
-    function _auctionTerms(AuctionAuth calldata a, uint256 price) internal view returns (Offer memory) {
+    /// @dev USDT order amount for a settled price; rejects unknown currencies and out-of-bounds rates.
+    function _auctionAmount(AuctionAuth calldata a, uint256 price) internal pure returns (uint256) {
+        if (a.currency == CURRENCY_USDT && a.cnyPerUsdt == 0) return price;
+        if (a.currency != CURRENCY_CNY || a.cnyPerUsdt < MIN_CNY_PER_USDT || a.cnyPerUsdt > MAX_CNY_PER_USDT) {
+            revert BadOffer();
+        }
+        return FeeMath.cnyFenToUsdt(price, a.cnyPerUsdt);
+    }
+
+    function _auctionTerms(AuctionAuth calldata a, uint256 amount) internal view returns (Offer memory) {
         return Offer({
             seller: a.seller,
             buyer: msg.sender,
             token: a.token,
-            amount: price,
+            amount: amount,
             feePayer: a.feePayer,
             maxFeeBps: a.maxFeeBps,
             maxBaseGas: a.maxBaseGas,

@@ -36,6 +36,7 @@ function Form({ forumSlug, params }: Props) {
       confirmDays: String(Math.round(d.confirm_window / DAY)),
       feePayer: String(d.fee_payer) as ListingInput["feePayer"],
       bond: "",
+      cnyRate: "",
     },
   });
   const [bodyError, setBodyError] = useState<string | null>(null);
@@ -97,6 +98,9 @@ function Form({ forumSlug, params }: Props) {
         <Field label="卖家保证金（USDT，可选）" error={errs.bond?.message}>
           <Input inputMode="decimal" placeholder="0" {...form.register("bond")} />
         </Field>
+        <Field label="人民币参考汇率（选填，1 USDT 合多少元）" error={errs.cnyRate?.message}>
+          <Input inputMode="decimal" placeholder="如 7.2" {...form.register("cnyRate")} />
+        </Field>
         <Field label="发货期限（天）" error={errs.shipDays?.message}>
           <Input inputMode="numeric" disabled={instant} {...form.register("shipDays")} />
         </Field>
@@ -118,7 +122,8 @@ function Form({ forumSlug, params }: Props) {
         </label>
       </div>
       <p className="text-xs text-fg-muted">
-        发帖后在钱包里签名报价，买家才能担保购买；成交以签名报价为准。图片上传即将开放。
+        发帖后在钱包里签名报价，买家才能担保购买；成交以签名报价为准。填了参考汇率时页面另显示人民币参考价，
+        只是参考，付款仍按 USDT。图片上传即将开放。
       </p>
       {create.isError ? (
         <p role="alert" className="text-sm text-danger">

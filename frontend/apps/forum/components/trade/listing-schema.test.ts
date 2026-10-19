@@ -16,6 +16,7 @@ const valid: ListingInput = {
   confirmDays: "7",
   feePayer: "0",
   bond: "",
+  cnyRate: "",
 };
 
 function errors(v: Partial<ListingInput>): string[] {
@@ -28,6 +29,7 @@ describe("listingSchema", () => {
     expect(errors({})).toEqual([]);
     expect(listingTerms(valid)).toEqual({
       price: "45000000",
+      cny_per_usdt: null,
       terms: {
         instant: false,
         ship_window: 3 * 86_400,
@@ -50,6 +52,15 @@ describe("listingSchema", () => {
     expect(errors({ shipDays: "0", instant: true })).toEqual([]);
     expect(errors({ confirmDays: "31" })).toEqual(["confirmDays: 需为 1–30 天"]);
     expect(listingTerms({ ...valid, instant: true }).terms.ship_window).toBe(7 * 86_400);
+  });
+
+  it("accepts an optional CNY reference rate within the contract bounds", () => {
+    expect(listingTerms({ ...valid, cnyRate: "7.2" }).cny_per_usdt).toBe(72_000);
+    expect(errors({ cnyRate: " " })).toEqual([]);
+    expect(errors({ cnyRate: "72" })).toEqual([
+      "cnyRate: 参考汇率需在 5.0000–10.0000 之间，最多 4 位小数",
+    ]);
+    expect(errors({ cnyRate: "7.12345" })).toHaveLength(1);
   });
 
   it("rejects a bond above the price", () => {

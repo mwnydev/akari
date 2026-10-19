@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.37;
 
+import {FixedPointMathLib} from "solady/utils/FixedPointMathLib.sol";
+
 /// @title FeeMath
 /// @notice Fee, split and stream-unlock math shared by Escrow and StreamEscrow.
 /// @dev Must match test-vectors/fees.json `rules` exactly; Rust and TypeScript implement the same vectors.
-///      All amounts are USDT smallest units (6 decimals); every division floors.
+///      All amounts are USDT smallest units (6 decimals); every division floors except `cnyFenToUsdt`.
 library FeeMath {
     enum Payer {
         Seller,
@@ -14,7 +16,17 @@ library FeeMath {
 
     uint256 internal constant BPS = 10_000;
 
+    /// @dev 10^6 (USDT smallest units; only 6-decimal tokens are whitelisted) × 10^4 (rate decimals) / 100 (fen
+    ///      per yuan).
+    uint256 internal constant CNY_SCALE = 1e8;
+
     error ZeroPeriods();
+
+    /// @notice USDT amount for a CNY price in fen at `cnyPerUsdt` (4 decimals), rounded up so the seller never
+    ///         receives less than the signed rate implies: ceil(fen × 10^8 / cnyPerUsdt).
+    function cnyFenToUsdt(uint256 priceFen, uint256 cnyPerUsdt) internal pure returns (uint256) {
+        return FixedPointMathLib.fullMulDivUp(priceFen, CNY_SCALE, cnyPerUsdt);
+    }
 
     /// @notice Total platform fee. A campaign rate disables the minimum fee.
     function feeTotal(uint256 amount, uint256 feeBps, uint256 minFee, bool campaign) internal pure returns (uint256) {

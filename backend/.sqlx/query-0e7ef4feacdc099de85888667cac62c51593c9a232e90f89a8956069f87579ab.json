@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- 按主键批量取订单（金额以十进制文本取出），附带生成它的报价卡片、交易帖与私信谈判记录。$1 ids\nSELECT o.id, o.chain_id, o.contract, o.chain_order_id, o.mode, o.buyer, o.seller, o.buyer_id, o.seller_id,\n  o.token, o.amount::text AS \"amount!\", o.buyer_fee::text AS \"buyer_fee?\", o.seller_fee::text AS \"seller_fee?\",\n  o.buyer_gas::text AS \"buyer_gas?\", o.seller_gas::text AS \"seller_gas?\", o.dispute_fee::text AS \"dispute_fee?\",\n  o.bond::text AS \"bond?\", o.instant, o.offer_hash, o.listing_hash, o.auction_id::text AS \"auction_id?\", o.state,\n  o.ship_deadline, o.confirm_deadline, o.proposer, o.proposal_to_buyer::text AS \"proposal_to_buyer?\",\n  o.proposal_expiry, o.disputed_by, o.dispute_from_bond, o.disputed_at, o.ruling_to_buyer_bps,\n  o.ruling_bond_to_buyer_bps, o.settled_to_buyer::text AS \"settled_to_buyer?\",\n  o.settled_to_seller::text AS \"settled_to_seller?\", o.settled_to_fee::text AS \"settled_to_fee?\",\n  o.interval_secs, o.periods, o.started_at, o.released_amount::text AS \"released_amount!\",\n  o.level::text AS \"level!\", o.created_block, o.updated_block, o.created_at, o.updated_at,\n  f.id AS \"offer_id?\", f.listing_id AS \"listing_id?\", l.topic_id AS \"listing_topic_id?\",\n  n.conversation_id AS \"negotiation_conversation_id?\", n.last_message_id AS \"negotiation_last_message_id?\"\nFROM escrow_orders o\nLEFT JOIN offers f ON f.offer_hash = o.offer_hash AND f.chain_id = o.chain_id AND f.verifying_contract = o.contract\nLEFT JOIN trade_listings l ON l.id = f.listing_id\nLEFT JOIN order_negotiations n ON n.order_id = o.id\nWHERE o.id = ANY($1::bigint[])\nORDER BY o.id DESC\n",
+  "query": "-- 按主键批量取订单（金额以十进制文本取出），附带生成它的报价卡片、交易帖与私信谈判记录。$1 ids\nSELECT o.id, o.chain_id, o.contract, o.chain_order_id, o.mode, o.buyer, o.seller, o.buyer_id, o.seller_id,\n  o.token, o.amount::text AS \"amount!\", o.buyer_fee::text AS \"buyer_fee?\", o.seller_fee::text AS \"seller_fee?\",\n  o.buyer_gas::text AS \"buyer_gas?\", o.seller_gas::text AS \"seller_gas?\", o.dispute_fee::text AS \"dispute_fee?\",\n  o.bond::text AS \"bond?\", o.instant, o.offer_hash, o.listing_hash, o.auction_id::text AS \"auction_id?\",\n  o.auction_currency AS \"auction_currency?\", o.auction_cny_per_usdt AS \"auction_cny_per_usdt?\",\n  o.auction_price::text AS \"auction_price?\", o.state,\n  o.ship_deadline, o.confirm_deadline, o.proposer, o.proposal_to_buyer::text AS \"proposal_to_buyer?\",\n  o.proposal_expiry, o.disputed_by, o.dispute_from_bond, o.disputed_at, o.ruling_to_buyer_bps,\n  o.ruling_bond_to_buyer_bps, o.settled_to_buyer::text AS \"settled_to_buyer?\",\n  o.settled_to_seller::text AS \"settled_to_seller?\", o.settled_to_fee::text AS \"settled_to_fee?\",\n  o.interval_secs, o.periods, o.started_at, o.released_amount::text AS \"released_amount!\",\n  o.level::text AS \"level!\", o.created_block, o.updated_block, o.created_at, o.updated_at,\n  f.id AS \"offer_id?\", f.listing_id AS \"listing_id?\", l.topic_id AS \"listing_topic_id?\",\n  n.conversation_id AS \"negotiation_conversation_id?\", n.last_message_id AS \"negotiation_last_message_id?\"\nFROM escrow_orders o\nLEFT JOIN offers f ON f.offer_hash = o.offer_hash AND f.chain_id = o.chain_id AND f.verifying_contract = o.contract\nLEFT JOIN trade_listings l ON l.id = f.listing_id\nLEFT JOIN order_negotiations n ON n.order_id = o.id\nWHERE o.id = ANY($1::bigint[])\nORDER BY o.id DESC\n",
   "describe": {
     "columns": [
       {
@@ -196,6 +196,34 @@
       },
       {
         "ordinal": 21,
+        "name": "auction_currency?",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "auction_currency"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "auction_cny_per_usdt?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "auction_cny_per_usdt"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "auction_price?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 24,
         "name": "state",
         "type_info": "Int2",
         "origin": {
@@ -206,7 +234,7 @@
         }
       },
       {
-        "ordinal": 22,
+        "ordinal": 25,
         "name": "ship_deadline",
         "type_info": "Timestamptz",
         "origin": {
@@ -217,7 +245,7 @@
         }
       },
       {
-        "ordinal": 23,
+        "ordinal": 26,
         "name": "confirm_deadline",
         "type_info": "Timestamptz",
         "origin": {
@@ -228,7 +256,7 @@
         }
       },
       {
-        "ordinal": 24,
+        "ordinal": 27,
         "name": "proposer",
         "type_info": "Bytea",
         "origin": {
@@ -239,13 +267,13 @@
         }
       },
       {
-        "ordinal": 25,
+        "ordinal": 28,
         "name": "proposal_to_buyer?",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 26,
+        "ordinal": 29,
         "name": "proposal_expiry",
         "type_info": "Timestamptz",
         "origin": {
@@ -256,7 +284,7 @@
         }
       },
       {
-        "ordinal": 27,
+        "ordinal": 30,
         "name": "disputed_by",
         "type_info": "Bytea",
         "origin": {
@@ -267,7 +295,7 @@
         }
       },
       {
-        "ordinal": 28,
+        "ordinal": 31,
         "name": "dispute_from_bond",
         "type_info": "Bool",
         "origin": {
@@ -278,7 +306,7 @@
         }
       },
       {
-        "ordinal": 29,
+        "ordinal": 32,
         "name": "disputed_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -289,7 +317,7 @@
         }
       },
       {
-        "ordinal": 30,
+        "ordinal": 33,
         "name": "ruling_to_buyer_bps",
         "type_info": "Int4",
         "origin": {
@@ -300,7 +328,7 @@
         }
       },
       {
-        "ordinal": 31,
+        "ordinal": 34,
         "name": "ruling_bond_to_buyer_bps",
         "type_info": "Int4",
         "origin": {
@@ -311,25 +339,25 @@
         }
       },
       {
-        "ordinal": 32,
+        "ordinal": 35,
         "name": "settled_to_buyer?",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 33,
+        "ordinal": 36,
         "name": "settled_to_seller?",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 34,
+        "ordinal": 37,
         "name": "settled_to_fee?",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 35,
+        "ordinal": 38,
         "name": "interval_secs",
         "type_info": "Int4",
         "origin": {
@@ -340,7 +368,7 @@
         }
       },
       {
-        "ordinal": 36,
+        "ordinal": 39,
         "name": "periods",
         "type_info": "Int4",
         "origin": {
@@ -351,7 +379,7 @@
         }
       },
       {
-        "ordinal": 37,
+        "ordinal": 40,
         "name": "started_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -362,19 +390,19 @@
         }
       },
       {
-        "ordinal": 38,
+        "ordinal": 41,
         "name": "released_amount!",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 39,
+        "ordinal": 42,
         "name": "level!",
         "type_info": "Text",
         "origin": "Expression"
       },
       {
-        "ordinal": 40,
+        "ordinal": 43,
         "name": "created_block",
         "type_info": "Int8",
         "origin": {
@@ -385,7 +413,7 @@
         }
       },
       {
-        "ordinal": 41,
+        "ordinal": 44,
         "name": "updated_block",
         "type_info": "Int8",
         "origin": {
@@ -396,7 +424,7 @@
         }
       },
       {
-        "ordinal": 42,
+        "ordinal": 45,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -407,7 +435,7 @@
         }
       },
       {
-        "ordinal": 43,
+        "ordinal": 46,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -418,7 +446,7 @@
         }
       },
       {
-        "ordinal": 44,
+        "ordinal": 47,
         "name": "offer_id?",
         "type_info": "Int8",
         "origin": {
@@ -429,7 +457,7 @@
         }
       },
       {
-        "ordinal": 45,
+        "ordinal": 48,
         "name": "listing_id?",
         "type_info": "Int8",
         "origin": {
@@ -440,7 +468,7 @@
         }
       },
       {
-        "ordinal": 46,
+        "ordinal": 49,
         "name": "listing_topic_id?",
         "type_info": "Int8",
         "origin": {
@@ -451,7 +479,7 @@
         }
       },
       {
-        "ordinal": 47,
+        "ordinal": 50,
         "name": "negotiation_conversation_id?",
         "type_info": "Int8",
         "origin": {
@@ -462,7 +490,7 @@
         }
       },
       {
-        "ordinal": 48,
+        "ordinal": 51,
         "name": "negotiation_last_message_id?",
         "type_info": "Int8",
         "origin": {
@@ -500,6 +528,9 @@
       false,
       false,
       null,
+      true,
+      true,
+      null,
       false,
       true,
       true,
@@ -530,5 +561,5 @@
       true
     ]
   },
-  "hash": "f378d43c83ee01cbef909af0e0b441744b1a6dec42d1d880f843428868a18105"
+  "hash": "0e7ef4feacdc099de85888667cac62c51593c9a232e90f89a8956069f87579ab"
 }

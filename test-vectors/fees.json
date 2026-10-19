@@ -8,7 +8,9 @@
     "disputeFee": "floor((feeTotal>0 ? feeTotal : minFee) * disputeMulBps / 10000)",
     "streamNet": "amount - sellerFee - sellerGas",
     "streamUnlocked": "floor(net * min(elapsedPeriods, periods) / periods)",
-    "claim": "claimable = unlocked - claimed; requires claimable > claimGas; seller receives claimable - claimGas"
+    "claim": "claimable = unlocked - claimed; requires claimable > claimGas; seller receives claimable - claimGas",
+    "cnyToUsdt": "CNY auctions (ADR 0011): usdt = ceil(priceFen * 10^8 / cnyPerUsdt); cnyPerUsdt has 4 decimals (7.2000 = 72000) and must lie in [minCnyPerUsdt, maxCnyPerUsdt]; 10^8 = 10^6 (USDT units) * 10^4 (rate decimals) / 100 (fen per yuan)",
+    "cnyReference": "listing reference price (display only): fen = floor(usdt * cnyPerUsdt / 10^8)"
   },
   "claimGas": "20000",
   "fees": [
@@ -282,5 +284,103 @@
         ]
       }
     }
-  ]
+  ],
+  "cny": {
+    "minCnyPerUsdt": 50000,
+    "maxCnyPerUsdt": 100000,
+    "toUsdt": [
+      {
+        "name": "exact: 360 CNY at 7.2000 = 50 USDT",
+        "priceFen": "36000",
+        "cnyPerUsdt": 72000,
+        "expect": "50000000"
+      },
+      {
+        "name": "1 CNY at 7.2000 rounds up",
+        "priceFen": "100",
+        "cnyPerUsdt": 72000,
+        "expect": "138889"
+      },
+      {
+        "name": "1 fen at 7.2000 rounds up",
+        "priceFen": "1",
+        "cnyPerUsdt": 72000,
+        "expect": "1389"
+      },
+      {
+        "name": "zero price",
+        "priceFen": "0",
+        "cnyPerUsdt": 72000,
+        "expect": "0"
+      },
+      {
+        "name": "odd rate 7.1234",
+        "priceFen": "12345",
+        "cnyPerUsdt": 71234,
+        "expect": "17330208"
+      },
+      {
+        "name": "7.0001 overpays by under one unit",
+        "priceFen": "7",
+        "cnyPerUsdt": 70001,
+        "expect": "10000"
+      },
+      {
+        "name": "min rate 5.0000, 25 CNY = 5 USDT",
+        "priceFen": "2500",
+        "cnyPerUsdt": 50000,
+        "expect": "5000000"
+      },
+      {
+        "name": "max rate 10.0000, 2000 CNY = 200 USDT",
+        "priceFen": "200000",
+        "cnyPerUsdt": 100000,
+        "expect": "200000000"
+      },
+      {
+        "name": "max rate, one fen over 200 USDT",
+        "priceFen": "200001",
+        "cnyPerUsdt": 100000,
+        "expect": "200001000"
+      },
+      {
+        "name": "every fen is exact when the rate divides 10^8",
+        "priceFen": "2499999",
+        "cnyPerUsdt": 50000,
+        "expect": "4999998000"
+      },
+      {
+        "name": "large price far beyond caps",
+        "priceFen": "1000000000000000000000000000000",
+        "cnyPerUsdt": 72001,
+        "expect": "1388869599033346759072790655685338"
+      }
+    ],
+    "reference": [
+      {
+        "name": "50 USDT at 7.2000 = 360 CNY",
+        "usdt": "50000000",
+        "cnyPerUsdt": 72000,
+        "expectFen": "36000"
+      },
+      {
+        "name": "floors to the fen",
+        "usdt": "1234567",
+        "cnyPerUsdt": 71234,
+        "expectFen": "879"
+      },
+      {
+        "name": "below one fen",
+        "usdt": "1",
+        "cnyPerUsdt": 72000,
+        "expectFen": "0"
+      },
+      {
+        "name": "200 USDT at 10.0000",
+        "usdt": "200000000",
+        "cnyPerUsdt": 100000,
+        "expectFen": "200000"
+      }
+    ]
+  }
 }

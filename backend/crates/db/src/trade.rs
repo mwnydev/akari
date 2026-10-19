@@ -29,6 +29,8 @@ pub struct Listing {
     pub price: String,
     pub terms: Value,
     pub content_hash: Vec<u8>,
+    /// 卖家参考汇率（ADR 0011，只供显示人民币参考价）。
+    pub cny_per_usdt: Option<i32>,
     pub created_at: OffsetDateTime,
 }
 
@@ -40,6 +42,7 @@ pub struct NewListing<'a> {
     pub price: &'a str,
     pub terms: &'a Value,
     pub content_hash: &'a [u8],
+    pub cny_per_usdt: Option<i32>,
 }
 
 pub async fn insert_listing(
@@ -47,14 +50,15 @@ pub async fn insert_listing(
     l: NewListing<'_>,
 ) -> Result<i64, sqlx::Error> {
     let row = sqlx::query!(
-        r#"INSERT INTO trade_listings (topic_id, seller_id, chain_id, price, terms, content_hash)
-           VALUES ($1, $2, $3, $4::text::numeric, $5, $6) RETURNING id"#,
+        r#"INSERT INTO trade_listings (topic_id, seller_id, chain_id, price, terms, content_hash, cny_per_usdt)
+           VALUES ($1, $2, $3, $4::text::numeric, $5, $6, $7) RETURNING id"#,
         l.topic_id,
         l.seller_id,
         l.chain_id,
         l.price,
         l.terms,
-        l.content_hash
+        l.content_hash,
+        l.cny_per_usdt
     )
     .fetch_one(db)
     .await?;
@@ -64,7 +68,8 @@ pub async fn insert_listing(
 pub async fn listing(db: impl PgExecutor<'_>, id: i64) -> Result<Option<Listing>, sqlx::Error> {
     sqlx::query_as!(
         Listing,
-        r#"SELECT id, topic_id, seller_id, chain_id, price::text AS "price!", terms, content_hash, created_at
+        r#"SELECT id, topic_id, seller_id, chain_id, price::text AS "price!", terms, content_hash,
+                  cny_per_usdt AS "cny_per_usdt?", created_at
            FROM trade_listings WHERE id = $1"#,
         id
     )

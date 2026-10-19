@@ -99,6 +99,21 @@ contract FeeMathTest is Test {
         assertGt(n, 0, "no stream vectors");
     }
 
+    function test_cnyToUsdtVectors() public view {
+        uint256 n;
+        for (; vm.keyExistsJson(json, string.concat(".cny.toUsdt[", vm.toString(n), "]")); n++) {
+            string memory p = string.concat(".cny.toUsdt[", vm.toString(n), "]");
+            assertEq(
+                FeeMath.cnyFenToUsdt(
+                    _uint(string.concat(p, ".priceFen")), json.readUint(string.concat(p, ".cnyPerUsdt"))
+                ),
+                _uint(string.concat(p, ".expect")),
+                json.readString(string.concat(p, ".name"))
+            );
+        }
+        assertGt(n, 0, "no cny vectors");
+    }
+
     function test_claimNet() public view {
         uint256 claimGas = _uint(".claimGas");
         assertEq(FeeMath.claimNet(1_000_000, 0, claimGas), 980_000);
@@ -137,6 +152,15 @@ contract FeeMathTest is Test {
         assertLe(b, net);
         assertEq(FeeMath.streamUnlocked(net, periods, periods), net);
         assertEq(FeeMath.streamUnlocked(net, 0, periods), 0);
+    }
+
+    /// The seller never receives less than the signed rate implies, and the buyer overpays by less than one unit.
+    function testFuzz_cnyFenToUsdtRoundsUp(uint128 priceFen, uint32 cnyPerUsdt) public pure {
+        cnyPerUsdt = uint32(bound(cnyPerUsdt, 50_000, 100_000));
+        uint256 usdt = FeeMath.cnyFenToUsdt(priceFen, cnyPerUsdt);
+        uint256 target = uint256(priceFen) * 1e8;
+        assertGe(usdt * cnyPerUsdt, target);
+        if (usdt > 0) assertLt((usdt - 1) * cnyPerUsdt, target);
     }
 
     function testFuzz_claimNetNeverExceedsClaimable(uint128 unlocked, uint128 claimed, uint32 claimGas) public pure {

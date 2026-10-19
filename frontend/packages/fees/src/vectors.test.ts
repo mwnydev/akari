@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   type FeePayer,
+  MAX_CNY_PER_USDT,
+  MIN_CNY_PER_USDT,
   claimPayout,
+  cnyFenToUsdt,
+  isValidCnyPerUsdt,
+  usdtToCnyFen,
   orderCost,
   split,
   feeTotal,
@@ -36,11 +41,19 @@ interface StreamVector {
   expect: { unlockableNet: string; points: { elapsedPeriods: number; unlocked: string }[] };
 }
 
+interface CnyVectors {
+  minCnyPerUsdt: number;
+  maxCnyPerUsdt: number;
+  toUsdt: { name: string; priceFen: string; cnyPerUsdt: number; expect: string }[];
+  reference: { name: string; usdt: string; cnyPerUsdt: number; expectFen: string }[];
+}
+
 interface Vectors {
   version: number;
   claimGas: string;
   fees: FeeVector[];
   streams: StreamVector[];
+  cny: CnyVectors;
 }
 
 const vectors = JSON.parse(
@@ -88,5 +101,24 @@ describe("claim", () => {
     expect(claimPayout(claimGas, 0n, claimGas)).toBeNull();
     expect(claimPayout(claimGas + 1n, 0n, claimGas)).toBe(1n);
     expect(claimPayout(10_000_000n, 4_000_000n, claimGas)).toBe(6_000_000n - claimGas);
+  });
+});
+
+describe("cny vectors", () => {
+  const { cny } = vectors;
+  it("rate bounds match the contract", () => {
+    expect(MIN_CNY_PER_USDT).toBe(BigInt(cny.minCnyPerUsdt));
+    expect(MAX_CNY_PER_USDT).toBe(BigInt(cny.maxCnyPerUsdt));
+    for (const r of [0n, 72n, 49_999n, 100_001n]) {
+      expect(isValidCnyPerUsdt(r)).toBe(false);
+      expect(() => cnyFenToUsdt(100n, r)).toThrow(RangeError);
+      expect(() => usdtToCnyFen(1_000_000n, r)).toThrow(RangeError);
+    }
+  });
+  it.each(cny.toUsdt.map((v) => [v.name, v] as const))("to USDT: %s", (_name, v) => {
+    expect(cnyFenToUsdt(BigInt(v.priceFen), BigInt(v.cnyPerUsdt))).toBe(BigInt(v.expect));
+  });
+  it.each(cny.reference.map((v) => [v.name, v] as const))("reference: %s", (_name, v) => {
+    expect(usdtToCnyFen(BigInt(v.usdt), BigInt(v.cnyPerUsdt))).toBe(BigInt(v.expectFen));
   });
 });

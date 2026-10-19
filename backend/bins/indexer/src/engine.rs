@@ -517,7 +517,14 @@ impl Engine {
             instant: v.instant,
             offer_hash: v.offer_hash.to_vec(),
             listing_hash: v.listing_hash.to_vec(),
-            auction_id: v.auction_id.as_ref().map(dec),
+            auction_id: v.auction.as_ref().map(|a| dec(&a.auction_id)),
+            auction_currency: v.auction.as_ref().map(|a| i16::from(a.currency)),
+            auction_cny_per_usdt: v
+                .auction
+                .as_ref()
+                .map(|a| small(a.cny_per_usdt))
+                .transpose()?,
+            auction_price: v.auction.as_ref().map(|a| dec(&a.price)),
             state: v.state.code(),
             ship_deadline: v.ship_deadline.and_then(timestamp),
             confirm_deadline: v.confirm_deadline.and_then(timestamp),

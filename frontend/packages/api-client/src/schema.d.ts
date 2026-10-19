@@ -1108,6 +1108,19 @@ export interface components {
       /** @description 原样传给 `navigator.credentials.get()`。 */
       options: Record<string, unknown>;
     };
+    /** @description 拍卖成交（ADR 0011）：付款页显示拍卖币种成交价、卖家汇率与应付 USDT（订单 `amount`）。 */
+    AuctionView: {
+      auction_id: string;
+      /**
+       * Format: int32
+       * @description 卖家签名的固定汇率（每 1 USDT 合多少元，4 位小数定点数，7.2000 = 72000）；USDT 拍卖为空。
+       */
+      cny_per_usdt?: number | null;
+      /** @description `usdt` 或 `cny`。 */
+      currency: string;
+      /** @description 成交价，拍卖币种的最小单位：USDT 6 位小数或人民币分（十进制字符串）。 */
+      price: string;
+    };
     AvatarRequest: {
       /**
        * Format: int64
@@ -1394,6 +1407,11 @@ export interface components {
     ListingView: {
       /** Format: int64 */
       chain_id: number;
+      /**
+       * Format: int32
+       * @description 卖家参考汇率（4 位小数定点数）；未填为空，页面只显示 USDT。
+       */
+      cny_per_usdt?: number | null;
       content_hash: string;
       /** Format: date-time */
       created_at: string;
@@ -1479,6 +1497,12 @@ export interface components {
       last_message_id: number;
     };
     NewListingRequest: components["schemas"]["NewTopicRequest"] & {
+      /**
+       * Format: int32
+       * @description 可选的卖家参考汇率（ADR 0011）：每 1 USDT 合多少元，4 位小数定点数（7.2000 = 72000），范围 50000–100000。
+       *     页面据此显示人民币参考价；只是参考，不进内容哈希，报价与订单仍以 USDT 为准。
+       */
+      cny_per_usdt?: number | null;
       /** @description 价格，USDT 最小单位（十进制字符串，如 "45000000" = 45 USDT）。 */
       price: string;
       terms: components["schemas"]["ListingTerms"];
@@ -1708,8 +1732,7 @@ export interface components {
     };
     /** @description 订单的来源：卖家签名的报价（站内卡片 `GET /api/v1/offers/{id}`）与交易帖内容哈希（下单时锁定的版本）。 */
     OrderSource: {
-      /** @description 拍卖成交的订单。 */
-      auction_id?: string | null;
+      auction?: components["schemas"]["AuctionView"] | null;
       listing_hash: string;
       /** Format: int64 */
       listing_id?: number | null;

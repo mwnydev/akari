@@ -2440,6 +2440,24 @@
           "options": { "type": "object", "description": "原样传给 `navigator.credentials.get()`。" }
         }
       },
+      "AuctionView": {
+        "type": "object",
+        "description": "拍卖成交（ADR 0011）：付款页显示拍卖币种成交价、卖家汇率与应付 USDT（订单 `amount`）。",
+        "required": ["auction_id", "currency", "price"],
+        "properties": {
+          "auction_id": { "type": "string" },
+          "cny_per_usdt": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "卖家签名的固定汇率（每 1 USDT 合多少元，4 位小数定点数，7.2000 = 72000）；USDT 拍卖为空。"
+          },
+          "currency": { "type": "string", "description": "`usdt` 或 `cny`。" },
+          "price": {
+            "type": "string",
+            "description": "成交价，拍卖币种的最小单位：USDT 6 位小数或人民币分（十进制字符串）。"
+          }
+        }
+      },
       "AvatarRequest": {
         "type": "object",
         "required": ["upload_id"],
@@ -2834,6 +2852,11 @@
         ],
         "properties": {
           "chain_id": { "type": "integer", "format": "int64" },
+          "cny_per_usdt": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "卖家参考汇率（4 位小数定点数）；未填为空，页面只显示 USDT。"
+          },
           "content_hash": { "type": "string" },
           "created_at": { "type": "string", "format": "date-time" },
           "id": { "type": "integer", "format": "int64" },
@@ -2951,6 +2974,12 @@
             "type": "object",
             "required": ["price", "terms"],
             "properties": {
+              "cny_per_usdt": {
+                "type": ["integer", "null"],
+                "format": "int32",
+                "description": "可选的卖家参考汇率（ADR 0011）：每 1 USDT 合多少元，4 位小数定点数（7.2000 = 72000），范围 50000–100000。\n页面据此显示人民币参考价；只是参考，不进内容哈希，报价与订单仍以 USDT 为准。",
+                "minimum": 0
+              },
               "price": {
                 "type": "string",
                 "description": "价格，USDT 最小单位（十进制字符串，如 \"45000000\" = 45 USDT）。"
@@ -3276,7 +3305,12 @@
         "description": "订单的来源：卖家签名的报价（站内卡片 `GET /api/v1/offers/{id}`）与交易帖内容哈希（下单时锁定的版本）。",
         "required": ["offer_hash", "listing_hash"],
         "properties": {
-          "auction_id": { "type": ["string", "null"], "description": "拍卖成交的订单。" },
+          "auction": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/AuctionView", "description": "拍卖成交的订单。" },
+              { "type": "null" }
+            ]
+          },
           "listing_hash": { "type": "string" },
           "listing_id": { "type": ["integer", "null"], "format": "int64" },
           "listing_topic_id": { "type": ["integer", "null"], "format": "int64" },

@@ -1,6 +1,7 @@
 import type { Schemas } from "@akari/api-client";
 import { formatUsdt, parseUsdt } from "@akari/ui";
 import * as z from "zod/mini";
+import { parseCnyPerUsdt } from "../../lib/fees";
 
 const DAY = 86_400;
 
@@ -43,6 +44,12 @@ export function listingSchema(limits: TradeLimits) {
       bond: z
         .string()
         .check(z.refine((v) => parseUsdt(v || "0") !== null, { error: "保证金格式不正确" })),
+      // 选填的人民币参考汇率（ADR 0011），只用于显示参考价
+      cnyRate: z.string().check(
+        z.refine((v) => v.trim() === "" || parseCnyPerUsdt(v) !== null, {
+          error: "参考汇率需在 5.0000–10.0000 之间，最多 4 位小数",
+        }),
+      ),
     })
     .check(
       z.refine((v) => v.instant || days.safeParse(v.shipDays).success, {
@@ -62,13 +69,15 @@ export function listingSchema(limits: TradeLimits) {
 
 export type ListingInput = z.infer<ReturnType<typeof listingSchema>>;
 
-/** 表单值 → POST /forums/{slug}/listings 的价格与条款（金额转成最小单位字符串，天数转秒）。 */
+/** 表单值 → POST /forums/{slug}/listings 的价格、条款与参考汇率（金额转成最小单位字符串，天数转秒）。 */
 export function listingTerms(
   v: ListingInput,
-): Pick<Schemas["NewListingRequest"], "price" | "terms"> {
+): Pick<Schemas["NewListingRequest"], "price" | "terms" | "cny_per_usdt"> {
   const confirm = Number(v.confirmDays) * DAY;
+  const rate = v.cnyRate.trim() === "" ? null : parseCnyPerUsdt(v.cnyRate);
   return {
     price: String(parseUsdt(v.price)),
+    cny_per_usdt: rate === null ? null : Number(rate),
     terms: {
       instant: v.instant,
       // 即时发货不用发货期限，后端仍要求字段存在，填确认期同值即可

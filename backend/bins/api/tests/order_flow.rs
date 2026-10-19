@@ -194,7 +194,31 @@ async fn order_detail_for_parties_and_arbiters_only(db: PgPool) {
         assert_eq!(o["stream"], serde_json::Value::Null);
         assert_eq!(o["source"]["offer_id"], offer_id);
         assert_eq!(o["source"]["offer_hash"], format!("0x{}", "09".repeat(32)));
+        assert_eq!(o["source"]["auction"], serde_json::Value::Null);
     }
+    // 人民币拍卖成交（ADR 0011）：成交价以分计，订单金额是按卖家汇率换算后的 USDT
+    let auction_order: i64 = sqlx::query_scalar(
+        "UPDATE escrow_orders SET auction_id = 42, auction_currency = 1, auction_cny_per_usdt = 72000,
+           auction_price = 57600, amount = 80000000
+         WHERE mode = 0 AND chain_order_id = 2 RETURNING id",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/v1/orders/{auction_order}"),
+        None,
+        &ca,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(
+        r.body["source"]["auction"],
+        serde_json::json!({"auction_id": "42", "currency": "cny", "cny_per_usdt": 72000, "price": "57600"})
+    );
+    assert_eq!(r.body["amount"], "80000000");
     // 旁人看不到，与不存在一样
     let r = call(&app, "GET", &path, None, &cc).await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);

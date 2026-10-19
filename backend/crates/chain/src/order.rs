@@ -162,9 +162,7 @@ pub enum OrderEvent {
         instant: bool,
         stream: Option<StreamTerms>,
     },
-    AuctionSettled {
-        auction_id: U256,
-    },
+    AuctionSettled(AuctionSale),
     Delivered {
         confirm_deadline: u64,
     },
@@ -255,9 +253,12 @@ fn decode_escrow(ev: EscrowEvents) -> Result<Option<(u64, OrderEvent)>, ChainErr
         ),
         EscrowEvents::AuctionSettled(e) => (
             order_id(e.orderId)?,
-            OrderEvent::AuctionSettled {
+            OrderEvent::AuctionSettled(AuctionSale {
                 auction_id: e.auctionId,
-            },
+                currency: e.currency,
+                cny_per_usdt: e.cnyPerUsdt,
+                price: e.price,
+            }),
         ),
         EscrowEvents::Delivered(e) => (
             order_id(e.orderId)?,
@@ -448,6 +449,17 @@ pub struct StreamProgress {
     pub claimed: U256,
 }
 
+/// 拍卖成交（ADR 0011）：成交价以拍卖币种计（USDT 最小单位或人民币分），订单金额是按卖家汇率换算后的 USDT。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuctionSale {
+    pub auction_id: U256,
+    /// 0 = USDT、1 = 人民币（合约 `CURRENCY_USDT` / `CURRENCY_CNY`）。
+    pub currency: u8,
+    /// 卖家签名的固定汇率（4 位小数，7.2000 = 72000）；USDT 拍卖为 0。
+    pub cny_per_usdt: u32,
+    pub price: U256,
+}
+
 /// 折叠结果，对应 escrow_orders 的一行。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrderView {
@@ -460,7 +472,7 @@ pub struct OrderView {
     pub offer_hash: B256,
     pub listing_hash: B256,
     pub instant: bool,
-    pub auction_id: Option<U256>,
+    pub auction: Option<AuctionSale>,
     pub snapshot: Option<OrderSnapshot>,
     pub state: OrderState,
     /// 一次性：发货期限；分期：开始期限。
@@ -521,7 +533,7 @@ pub fn fold(
                 offer_hash,
                 listing_hash,
                 instant,
-                auction_id: None,
+                auction: None,
                 ship_deadline: snapshot.map(OrderSnapshot::deadline).filter(|d| *d != 0),
                 snapshot: log.snapshot.clone(),
                 state: OrderState::Funded,
@@ -547,7 +559,7 @@ pub fn fold(
         v.updated_block = log.block_number;
         match ev {
             OrderEvent::Created { .. } => {}
-            OrderEvent::AuctionSettled { auction_id } => v.auction_id = Some(auction_id),
+            OrderEvent::AuctionSettled(sale) => v.auction = Some(sale),
             OrderEvent::Delivered { confirm_deadline }
             | OrderEvent::ConfirmExtended { confirm_deadline } => {
                 v.confirm_deadline = Some(confirm_deadline);
@@ -796,6 +808,41 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(v.state, OrderState::Settled);
+    }
+
+    #[test]
+    fn cny_auction_sale_is_folded() {
+        let sale = log(
+            Escrow::AuctionSettled {
+                orderId: U256::from(1),
+                seller: SELLER,
+                auctionId: U256::from(42),
+                currency: 1,
+                cnyPerUsdt: 72_000,
+                price: U256::from(36_000),
+                amount: U256::from(50_000_000u64),
+            },
+            1,
+            1,
+            Level::Latest,
+        );
+        let v = fold(Market::Escrow, 1, &[created(1, 1, Level::Latest), sale])
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            v.auction,
+            Some(AuctionSale {
+                auction_id: U256::from(42),
+                currency: 1,
+                cny_per_usdt: 72_000,
+                price: U256::from(36_000),
+            })
+        );
+        assert_eq!(
+            v.amount,
+            U256::from(50_000_000u64),
+            "order amount is the USDT side"
+        );
     }
 
     #[test]

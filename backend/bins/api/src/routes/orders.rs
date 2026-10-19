@@ -133,7 +133,41 @@ pub struct OrderSource {
     pub listing_id: Option<i64>,
     pub listing_topic_id: Option<i64>,
     /// 拍卖成交的订单。
-    pub auction_id: Option<String>,
+    pub auction: Option<AuctionView>,
+}
+
+/// 拍卖成交（ADR 0011）：付款页显示拍卖币种成交价、卖家汇率与应付 USDT（订单 `amount`）。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AuctionView {
+    pub auction_id: String,
+    /// `usdt` 或 `cny`。
+    pub currency: &'static str,
+    /// 卖家签名的固定汇率（每 1 USDT 合多少元，4 位小数定点数，7.2000 = 72000）；USDT 拍卖为空。
+    pub cny_per_usdt: Option<i32>,
+    /// 成交价，拍卖币种的最小单位：USDT 6 位小数或人民币分（十进制字符串）。
+    pub price: String,
+}
+
+impl AuctionView {
+    fn from_row(
+        auction_id: Option<String>,
+        currency: Option<i16>,
+        cny_per_usdt: Option<i32>,
+        price: Option<String>,
+    ) -> Option<Self> {
+        let (auction_id, price) = auction_id.zip(price)?;
+        let currency = match currency? {
+            0 => "usdt",
+            1 => "cny",
+            _ => return None,
+        };
+        Some(Self {
+            auction_id,
+            currency,
+            cny_per_usdt: cny_per_usdt.filter(|r| *r != 0),
+            price,
+        })
+    }
 }
 
 /// 私信报价生成的订单：谈判会话与付款上链时的最后一条消息（`GET /api/v1/orders/{id}/negotiation` 读取）。
@@ -262,7 +296,12 @@ impl OrderView {
                 listing_hash: hex0x(&r.listing_hash),
                 listing_id: r.listing_id,
                 listing_topic_id: r.listing_topic_id,
-                auction_id: r.auction_id,
+                auction: AuctionView::from_row(
+                    r.auction_id,
+                    r.auction_currency,
+                    r.auction_cny_per_usdt,
+                    r.auction_price,
+                ),
             },
             negotiation: r
                 .negotiation_conversation_id

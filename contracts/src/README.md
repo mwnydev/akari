@@ -4,7 +4,7 @@
 
 ## 已完成
 
-- [x] `libraries/FeeMath.sol`：手续费（含活动费率）、承担方拆分、买家应付、争议费、分期净本金 / 解锁 / 领取净额；过 `test-vectors/fees.json`
+- [x] `libraries/FeeMath.sol`：手续费（含活动费率）、承担方拆分、买家应付、争议费、分期净本金 / 解锁 / 领取净额、人民币成交价换算 USDT（`cnyFenToUsdt`）；过 `test-vectors/fees.json`
 - [x] `MockUSDT.sol`：仅测试网，6 位小数
 - [x] `StreamEscrow.sol`：分期担保（第 4 轮），经构造时登记为 `EscrowConfig` 市场，保证金走 `Escrow` 统一池
 - [x] `MarketBase.sol`：两份合约共用的报价计数 / 作废 / ERC-6492 验签与领取式转账（`withdraw`、`cancelOffer`）；`FeeMath.feesCharged` 共用按比例收费与争议费抵扣
@@ -14,7 +14,15 @@
 - `EscrowConfig`：金库 Safe 拥有的全部可调设置，`Escrow` 与 `StreamEscrow` 共用（参数与 72h 排队、暂停、免费活动、代币白名单、拍卖签名人、市场列表、全局在押资金上限计数）。建单时经 `checkout` 取快照；`claimGas`（分期每次领取 gas 费，默认 0.02 USDT，0–1 USDT）也在参数里，调高排队 72h，gas 补贴订单同时免领取 gas 费。
 - `Escrow`：一次性担保 + 统一卖家保证金池；没有 owner。所有可调项都在 `EscrowConfig`，`Escrow` 不可升级、无管理员函数。
 - `StreamEscrow`：分期担保；仲裁 Safe、收款地址与 `EscrowConfig` 均从 `Escrow` 读取，两份合约不会配错。免费活动范围「担保」（`SCOPE_ESCROW`）同时覆盖一次性与分期。
-- 拆分原因：功能全部放进一份合约会超过 24 KB 代码上限；现在 Escrow 21.8 KB、StreamEscrow 16.9 KB、EscrowConfig 11.3 KB。
+- 拆分原因：功能全部放进一份合约会超过 24 KB 代码上限；现在 Escrow 22.5 KB、StreamEscrow 16.9 KB、EscrowConfig 11.3 KB。
+
+## 人民币计价拍卖（ADR 0011）
+
+- `AuctionAuth` 多 `currency`（0 = USDT、1 = 人民币，其他值拒绝）与 `cnyPerUsdt`（每 1 USDT 合多少元，4 位小数定点数，7.2000 = 72000），两者都在卖家 EIP-712 签名里，平台改不了
+- USDT 拍卖要求 `cnyPerUsdt == 0`；人民币拍卖要求 `cnyPerUsdt` 在写死的 [5.0000, 10.0000]（`MIN_CNY_PER_USDT` / `MAX_CNY_PER_USDT`）内，防止把 7.2 填成 72 或 0.72
+- 人民币拍卖的 `reservePrice` 与成交证明的 `price` 都以分计；先按拍卖币种检查 `price ≥ reservePrice`，再换算：`amount = ceil(price × 10^8 / cnyPerUsdt)`（10^8 = USDT 6 位小数 × 汇率 4 位小数 ÷ 每元 100 分；白名单只收 6 位小数代币），向上取整，卖家所得不低于签名汇率换算值，买家最多多付 1 个最小单位；乘法用 512 位中间值（Solady `fullMulDivUp`），不会因溢出算错（结果超出 uint256 时回滚）
+- 换算后的 USDT 金额照常走手续费、最低订单 5 USDT、单笔 200 / 全站 5000 上限与 `FeesExceedAmount` 检查
+- 成交证明不变（价格用拍卖币种，经 `authHash` 绑定卖家授权）；`AuctionSettled` 事件带 `currency`、`cnyPerUsdt`、`price`（拍卖币种）与 `amount`（USDT）
 
 ## 分期（StreamEscrow）规则
 
@@ -51,7 +59,7 @@
 - [x] `withdraw(token, to)` 领取式转账余额
 - [x] `cancelOffer(nonce)` 卖家
 - [x] `extendConfirm(orderId, secs)` 卖家（累计上限）；买家最后 6h 内免费紧急顺延 1 次 24h
-- [x] `createFromAuction(授权, 卖家签名, 成交证明, 平台签名)` 拍卖赢家；每场只成交一次、成交价 ≥ 保留价（成交证明带 `authHash` 绑定卖家授权）
+- [x] `createFromAuction(授权, 卖家签名, 成交证明, 平台签名)` 拍卖赢家；每场只成交一次、成交价 ≥ 保留价（成交证明带 `authHash` 绑定卖家授权）；人民币拍卖按卖家签名汇率向上取整换算 USDT（见上「人民币计价拍卖」）
 - [x] `extendDeadlines(orderIds, secs)` 仲裁 Safe：单次 ≤ 7 天、累计 ≤ 14 天
 - [x] `depositBond` / `withdrawBond`（Escrow 统一保证金池，市场经 `lockBond` / `releaseBond` 锁定 / 解锁 / 赔付，经 `takeBond` 划走卖家可用保证金付本市场争议费）
 - [x] `pause` 只阻止新建订单

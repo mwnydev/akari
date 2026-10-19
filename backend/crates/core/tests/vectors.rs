@@ -4,8 +4,10 @@
 
 use std::path::PathBuf;
 
+use forum_core::cny::{MAX_CNY_PER_USDT, MIN_CNY_PER_USDT};
 use forum_core::{
-    FeeParams, FeePayer, Usdt, claim, dispute_fee, quote, stream_net, stream_unlocked,
+    FeeParams, FeePayer, Usdt, claim, cny_fen_to_usdt, dispute_fee, quote, stream_net,
+    stream_unlocked, usdt_to_cny_fen,
 };
 use serde::Deserialize;
 
@@ -16,6 +18,34 @@ struct Vectors {
     claim_gas: String,
     fees: Vec<FeeCase>,
     streams: Vec<StreamCase>,
+    cny: CnyVectors,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CnyVectors {
+    min_cny_per_usdt: u32,
+    max_cny_per_usdt: u32,
+    to_usdt: Vec<CnyToUsdtCase>,
+    reference: Vec<CnyReferenceCase>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CnyToUsdtCase {
+    name: String,
+    price_fen: String,
+    cny_per_usdt: u32,
+    expect: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CnyReferenceCase {
+    name: String,
+    usdt: String,
+    cny_per_usdt: u32,
+    expect_fen: String,
 }
 
 #[derive(Deserialize)]
@@ -140,5 +170,21 @@ fn stream_vectors() {
             }
         }
         assert_eq!(claimed, net, "{}: fully claimed at end", c.name);
+    }
+}
+
+#[test]
+fn cny_vectors() {
+    let v = load().cny;
+    assert_eq!(v.min_cny_per_usdt, MIN_CNY_PER_USDT);
+    assert_eq!(v.max_cny_per_usdt, MAX_CNY_PER_USDT);
+    assert!(!v.to_usdt.is_empty() && !v.reference.is_empty());
+    for c in &v.to_usdt {
+        let got = cny_fen_to_usdt(c.price_fen.parse().unwrap(), c.cny_per_usdt).unwrap();
+        assert_eq!(got, u(&c.expect), "{}", c.name);
+    }
+    for c in &v.reference {
+        let got = usdt_to_cny_fen(u(&c.usdt), c.cny_per_usdt).unwrap();
+        assert_eq!(got, c.expect_fen.parse::<u128>().unwrap(), "{}", c.name);
     }
 }

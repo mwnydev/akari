@@ -220,6 +220,14 @@ async fn listing_requires_wallet_and_valid_terms(db: PgPool) {
         assert_eq!(r.status, StatusCode::BAD_REQUEST);
         assert_eq!(r.body["code"], code);
     }
+    // 参考汇率超出 5.0000–10.0000（如把 7.2 填成 72 或 0.72）
+    for rate in [72, 7_200, 49_999, 100_001] {
+        let mut body = listing_body("45000000", 86_400);
+        body["cny_per_usdt"] = json!(rate);
+        let r = call(&app, "POST", path, Some(body), &seller.cookies).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST);
+        assert_eq!(r.body["code"], "INVALID_PARAMETER", "{rate}");
+    }
     let mut bond = listing_body("45000000", 86_400);
     bond["terms"]["bond"] = json!("45000001");
     let r = call(&app, "POST", path, Some(bond), &seller.cookies).await;
@@ -249,6 +257,7 @@ async fn listing_requires_wallet_and_valid_terms(db: PgPool) {
     assert_eq!(r.body["price"], "45000000");
     assert_eq!(r.body["content_hash"], hash);
     assert_eq!(r.body["terms"]["bond"], "0");
+    assert_eq!(r.body["cny_per_usdt"], Value::Null);
     // 主题帖本身照常可读；主题、板块列表、跨板块最新都带交易帖 ID 与价格
     let r = call(
         &app,
@@ -285,6 +294,16 @@ async fn listing_requires_wallet_and_valid_terms(db: PgPool) {
     )
     .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    // 参考汇率只供显示：照存照返，不进内容哈希
+    let mut with_rate = listing_body("45000000", 3 * 86_400);
+    with_rate["cny_per_usdt"] = json!(72_000);
+    let r = call(&app, "POST", path, Some(with_rate), &seller.cookies).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    assert_eq!(r.body["content_hash"], hash);
+    let rated = r.body["listing_id"].as_i64().unwrap();
+    let r = call(&app, "GET", &format!("/api/v1/listings/{rated}"), None, &[]).await;
+    assert_eq!(r.body["cny_per_usdt"], 72_000);
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]

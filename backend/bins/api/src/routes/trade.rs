@@ -12,6 +12,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use forum_chain::config::WalletInitVersion;
+use forum_core::cny::check_cny_per_usdt;
 use forum_core::eip712::{Address, B256, DOMAIN_NAME, DOMAIN_VERSION, Offer, U256, keccak256};
 use forum_core::trade::{
     MAX_OFFER_TTL_SECS, MAX_WINDOW, MIN_OFFER_TTL_SECS, MIN_WINDOW, check_bond, check_offer,
@@ -211,6 +212,10 @@ pub struct NewListingRequest {
     /// 价格，USDT 最小单位（十进制字符串，如 "45000000" = 45 USDT）。
     pub price: String,
     pub terms: ListingTerms,
+    /// 可选的卖家参考汇率（ADR 0011）：每 1 USDT 合多少元，4 位小数定点数（7.2000 = 72000），范围 50000–100000。
+    /// 页面据此显示人民币参考价；只是参考，不进内容哈希，报价与订单仍以 USDT 为准。
+    #[serde(default)]
+    pub cny_per_usdt: Option<u32>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -265,6 +270,13 @@ pub async fn create_listing(
     check_windows(t.instant, t.ship_window, t.confirm_window)?;
     let bond = usdt_of(&t.bond)?;
     check_bond(price, bond, t.late_slash_bps)?;
+    let cny_per_usdt = req
+        .cny_per_usdt
+        .map(|r| {
+            check_cny_per_usdt(r)?;
+            i32::try_from(r).map_err(|_| ErrorCode::InvalidParameter)
+        })
+        .transpose()?;
     // 规范化数字字符串（去掉前导 0），哈希与数据库里的值一致。
     let price_str = price.0.to_string();
     let terms = ListingTerms {
@@ -294,6 +306,7 @@ pub async fn create_listing(
             price: &price_str,
             terms: &terms_json,
             content_hash: &content_hash,
+            cny_per_usdt,
         },
     )
     .await?;
@@ -319,6 +332,8 @@ pub struct ListingView {
     pub price: String,
     pub terms: ListingTerms,
     pub content_hash: String,
+    /// 卖家参考汇率（4 位小数定点数）；未填为空，页面只显示 USDT。
+    pub cny_per_usdt: Option<i32>,
     #[schema(value_type = String, format = DateTime)]
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
@@ -368,6 +383,7 @@ pub async fn get_listing(
         price: l.price,
         terms: serde_json::from_value(l.terms).map_err(ApiError::internal)?,
         content_hash: hex0x(&l.content_hash),
+        cny_per_usdt: l.cny_per_usdt,
         created_at: l.created_at,
     }))
 }
