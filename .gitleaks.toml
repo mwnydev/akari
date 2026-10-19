@@ -1,7 +1,12 @@
-# 沿用默认规则；只排除原样拷贝进来的第三方合约库（OpenZeppelin 测试里的错误名、示例 JWT 会误报）。
+# 沿用默认规则；只放行下面明确列出的误报。
 [extend]
 useDefault = true
 
 [allowlist]
-description = "vendored third-party libraries"
+description = "原样拷贝的第三方合约库；公开合约地址与本地 Anvil 专用开发私钥（由公开字符串 akari-dev-only:* 派生，chain id 31337，无真实价值）"
 paths = ['''^contracts/lib/''']
+regexTarget = "match"
+regexes = [
+  '''0x7ab16Ff354AcB328452F1D445b3Ddee9a91e9e69''',
+  '''0x2bd477e315997bfc5018a2d4ef4780999f011bceb8cf602c009337739f641d81''',
+]

@@ -22,3 +22,5 @@ out/
 .vscode/*
 !.vscode/extensions.json
 /contracts/lcov.info
+# next dev 自动生成给 AI 代理看的说明文件
+frontend/apps/*/AGENTS.md

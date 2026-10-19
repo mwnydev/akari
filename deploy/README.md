@@ -31,7 +31,7 @@ ansible-playbook -i inventory/staging.yml site.yml      # 或 inventory/producti
 
 | 文件 | 关键变量 |
 | --- | --- |
-| `forum-api.env` | `DATABASE_URL`、`VALKEY_URL`（Unix socket）、`COOKIE_SECRET`（64 字节十六进制）、`AUTH_SECRET`、`ALLOWED_ORIGINS`、`INTERNAL_HOSTS` |
+| `forum-api.env` | `DATABASE_URL`、`VALKEY_URL`（Unix socket）、`COOKIE_SECRET`（64 字节十六进制）、`AUTH_SECRET`、`ALLOWED_ORIGINS`、`INTERNAL_HOSTS`、`WALLET_RP_ID`（钱包中心域名）、`WALLET_ORIGINS`（钱包子域名列表，绝不含论坛主站）、`BRAND_NAME`、`CHAIN_ID`、`ESCROW_ADDRESS`、`USDT_ADDRESS` |
 | `forum-worker.env` | `DATABASE_URL`、`VALKEY_URL`、邮件通道（Resend / SMTP） |
 | `web.env` | `COOKIE_SIGNING_KEY` = `COOKIE_SECRET` 的**前 32 字节**（只给签名那一半，最小权限）、`API_ORIGIN` |
 

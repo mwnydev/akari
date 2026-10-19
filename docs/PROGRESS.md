@@ -50,12 +50,22 @@
 - [x] 第 3 轮合约：自写固定费 Paymaster（EntryPoint v0.7），签名有效期链上强制 ≤ 10 分钟；合约合计 151 个测试，覆盖率 100%，Slither 无高危
 - [x] 第 3 轮后端：板块 / 主题 / 楼层 API、楼层分配单条语句、板块列表 ZSET + 深分页游标、首页缓存版本化失效、浏览数批量回写、版主操作写审计日志、新用户限制；58 个测试，所有新 SQL 实测走索引
 - [x] 第 3 轮前端：OpenAPI 生成客户端、邮箱登录接真实 API、会话 Cookie 验签（Next.js 只持有签名半密钥）、Playwright 端到端；论坛首屏 143–178 KB
-- [ ] 下一轮合约：`StreamEscrow`（共用 `EscrowConfig` 与保证金池）
+- [x] 第 4 轮合约：`StreamEscrow` 分期担保（共用 `EscrowConfig` 与保证金池，抽出 `MarketBase` 共用签名与领取式转账）；合约合计 223 个测试，覆盖率 100%，Slither 无高危，三份合约都在 24 KB 内
+- [x] 第 4 轮后端：钱包 Passkey 注册与再验证（首个 Passkey 需专用「开通交易」邮箱码）、钱包地址绑定、交易帖、报价卡片（EIP-712 哈希与 Solidity 向量一致）；89 个测试；musl 静态构建含 vendored OpenSSL 验证通过
+- [x] 第 4 轮前端：钱包 Passkey 智能账户（Kernel v3.3）、卖家签报价（ERC-6492）、买家一次 Face ID 付款、发货、放款；本地 Anvil（分叉 Arbitrum Sepolia）+ Alto Bundler，端到端全程通过；钱包 SDK 懒加载，钱包页首屏 148–166 KB
+- [ ] 第 4 轮后端：indexer（进行中）
+- [ ] 下一轮：forum-sponsor（代付签名 + 私有代发器）、钱包初始化参数版本化（ADR 0008）、钱包前端接真实后端接口、订单页读 indexer 数据 → 打通第 5 周端到端链路
 - [ ] 下一轮后端：站内通知 + WebSocket 推送、用户名片 Valkey 缓存、管理人员 Passkey 登录、板块管理接口、apalis 接入
 - [ ] 下一轮前端：板块 / 帖子页接真实 API、Tiptap 编辑器、游客页 Valkey 缓存、Turnstile
 - [ ] 待补 CI：knip、jscpd、cargo-llvm-cov、lefthook
 
 ### 评审记录
+
+- 第 4 轮：钱包地址依赖 Paymaster 与 USDT 地址（初始化授权）→ ADR 0008 初始化参数版本化，换 Paymaster 不影响老用户地址。
+- 第 4 轮：`takeBond` 只有登记过的市场合约能调（登记需 72 小时排队、不可移除），用于卖家用保证金付分期订单的争议费。
+- 第 4 轮：开发用代付私钥曾被打进生产包（Turbopack 打包了不会执行的分支），已改为构建时替换为空桩 + 生产构建扫描产物，发现即失败。
+- 第 4 轮：钱包子域名与论坛不同源时 Lax 会话 Cookie 跨站不发送，需在接线时定 Cookie 作用域与 CORS（只放行钱包子域名）。
+- 第 4 轮：本地测试链 chain id 用 31337，本地签名不能在真实 Sepolia 重放。
 
 - 第 3 轮：ammonia 4.2.3 有安全公告 RUSTSEC-2026-0373，按 48 小时安全补丁规则升到 4.2.4（我们不允许 `style`，原本也无法利用）。
 - 第 3 轮：开发库 `random_page_cost` 改为 1.1 与生产一致，否则规划器在默认值下会选错 ZSET 重建方案。

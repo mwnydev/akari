@@ -58,6 +58,28 @@ jobs:
       - run: SQLX_OFFLINE=false cargo sqlx prepare --workspace --check -- --all-targets
       - run: cargo nextest run --workspace --locked
 
+  # 生产用 musl 静态可执行文件（plan 第 13 节）；aws-lc、vendored OpenSSL 都要在这里编得过
+  rust-musl:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      SQLX_OFFLINE: "true"
+    steps:
+      - uses: actions/checkout@v5
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools cmake
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.99.1
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+          key: musl
+      - run: cargo build --release --locked --target x86_64-unknown-linux-musl --bins
+      - run: file target/x86_64-unknown-linux-musl/release/forum-api | grep -q "static"
+
   frontend:
     runs-on: ubuntu-24.04
     defaults:
