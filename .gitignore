@@ -21,3 +21,4 @@ out/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+/contracts/lcov.info

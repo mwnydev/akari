@@ -38,12 +38,26 @@
 - [x] ADR 0001–0002；威胁分析 v0（docs/threat-model.md）
 - [x] ADR 0003–0005：EntryPoint v0.7 + Kernel v3.3；自写固定费 Paymaster（验证阶段预扣）；自写 48h 延迟恢复模块
 
-## 第 2–3 周（待拆）
+## 第 2–3 周（2026-10-26 – 11-06）
 
-- Ansible 服务器初始化、邮件双通道（Resend + SMTP）
-- 设计系统令牌 + 10 个关键页面设计稿（需站长确认）
-- 资金与账号威胁分析文档
-- 第 3 周起：阶段 1 账号 / 板块，阶段 2 `Escrow` 状态机
+- [x] `Escrow` 核心（一次性模式）：建单（EIP-712 报价 + ERC-6492 / 1271 验签、计次、撤销、最高费率 / gas / 最低手续费保护）、发货、确认、退款、超时、和解、争议、裁决、超时兜底、领取式转账、参数排队 72h、暂停；77 个测试（含模糊与不变量），覆盖率 100%，Slither 无高危
+- [x] 后端：迁移（users、forums、topics、posts、post_sources、outbox、只增审计日志等）、邮箱验证码登录、Valkey 会话与滑动窗口限流、Origin 校验、新设备邮件、邮件双通道 + 发件箱 worker、OpenAPI；31 个测试；musl 静态构建验证通过
+- [x] 前端：设计系统组件 + 10 个关键页面（模拟数据）+ `/design` 展示页；论坛首屏 JS 174–182 KB
+- [x] Ansible 六个角色 + 版本安装 / 回滚脚本；ansible-lint production 档通过，Caddyfile / nftables / systemd 单元实测校验
+- [x] CI：合约覆盖率 100% 硬门禁、deploy 检查；后端 CI 带 PostgreSQL + Valkey 服务
+- [x] 版本控制改用 Jujutsu（ADR 0006）
+- [ ] **设计稿确认（站长）** ← 阶段 0 关卡
+- [ ] 下一轮合约：卖家保证金池、`StreamEscrow`、`createFromAuction`、`extendDeadlines`、免费活动排期、代币白名单、部署脚本（含 ERC-6492 验证器检查）
+- [ ] 下一轮后端：板块 / 主题 / 楼层 API（楼层分配多 CTE）、ammonia 过滤、apalis 接入、设备管理
+- [ ] 下一轮前端：页面接真实 API、Next.js 验证会话 Cookie 签名、Storybook
+- [ ] 待补 CI：knip、jscpd、cargo-llvm-cov、lefthook
+
+### 评审记录
+
+- 合约：Offer 原只保护费率和 gas 费，最低手续费上调会多扣旧报价 → 已加 `maxMinFee`。
+- 合约：卖家已发货后又主动退款时，平台已垫付的基础 gas 从买家退款里扣（plan「平台不为 gas 倒贴」）。保证金池上线后改从卖家保证金扣，届时复议。
+- 前端：金额显示改为至少 2 位小数、去掉尾随 0（`45.00`，`123.456789` 原样）。
+- 前端：钱包页首屏 JS 已到 185–200 KB，接入 ZeroDev / viem 时必须懒加载，否则超 200 KB 预算。
 
 ## 待决事项跟踪（plan 第 17 节）
 
