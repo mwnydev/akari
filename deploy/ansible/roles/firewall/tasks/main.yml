@@ -1,4 +1,19 @@
-# 80/443 只放行 Cloudflare 网段（plan 第 11、13 节）；源站另由 Caddy 校验 Authenticated Origin Pulls。
+# 入站：tunnel 模式下公网一个端口都不开（网页与 SSH 都经 cloudflared 出站连接进来）；direct 模式只放行 Cloudflare 网段的 443，
+# 源站另由 Caddy 校验 Authenticated Origin Pulls。出站只放行固定端口（docs/runbooks/origin-protection.md「出站」）。
+# 本角色排在 cloudflared 之后：隧道验证通过前不会走到这里，公网 SSH 不会在隧道可用之前被关掉。
+- name: Bootstrap SSH allowlist is narrow
+  ansible.builtin.assert:
+    that: firewall_ssh_bootstrap_allow | select('match', '^(0\.0\.0\.0|::)/0$') | list | length == 0
+    fail_msg: firewall_ssh_bootstrap_allow 只能填运维自己的出口地址，不能是 0.0.0.0/0 或 ::/0
+
+- name: WARNING public SSH is open
+  ansible.builtin.debug:
+    msg: >-
+      !!! 公网 SSH 临时对 {{ firewall_ssh_bootstrap_allow | join(', ') }} 开放（端口 {{ ssh_port }}）。
+      这会暴露源站 IP 上的服务；隧道恢复后立即不带 firewall_ssh_bootstrap_allow 重跑 playbook 关闭。 !!!
+  when: firewall_ssh_bootstrap_allow | length > 0
+
+# 刷新 Cloudflare 网段：ansible-playbook ... site.yml --tags cloudflare-ips（direct 模式；tunnel 模式不需要）
 - name: Fetch Cloudflare IP ranges
   ansible.builtin.uri:
     url: "https://www.cloudflare.com/ips-{{ item }}"
@@ -8,11 +23,15 @@
   delegate_to: localhost
   become: false
   run_once: true
+  when: origin_ingress == 'direct'
+  tags: [cloudflare-ips]
 
 - name: Keep Cloudflare ranges for later roles (Caddy trusted_proxies)
   ansible.builtin.set_fact:
     firewall_cf_v4: "{{ firewall_cf_ips.results[0].content.split() }}"
     firewall_cf_v6: "{{ firewall_cf_ips.results[1].content.split() }}"
+  when: origin_ingress == 'direct'
+  tags: [cloudflare-ips]
 
 - name: Write nftables ruleset
   ansible.builtin.template:
@@ -21,6 +40,7 @@
     mode: "0644"
     validate: /usr/sbin/nft -c -f %s
   notify: Reload nftables
+  tags: [cloudflare-ips]
 
 - name: Enable nftables
   ansible.builtin.service:

@@ -5,8 +5,9 @@
 | 路径 | 内容 |
 | --- | --- |
 | `dev/compose.yaml` | 本机开发依赖（PostgreSQL 18 + PGroonga、Valkey、Mailpit） |
-| `ansible/` | 服务器初始化：base、firewall、postgresql、valkey、caddy、app 六个角色 |
+| `ansible/` | 服务器初始化：base、cloudflared、firewall、postgresql、valkey、caddy、app 七个角色 |
 | `install-release.sh` | 安装 / 回滚版本；部署账号经 sudoers 只能执行它 |
+| `check-origin-exposure.sh` | 从外部主机检查源站 IP 是否暴露；每次部署、改 DNS 或换 IP 后运行 |
 
 ## 初始化一台服务器
 
@@ -18,13 +19,18 @@ ansible-playbook -i inventory/staging.yml site.yml      # 或 inventory/producti
 
 前提：Debian 13、`deploy` 账号已有 SSH 公钥和 sudo（首次运行后 sudo 被收窄为只能执行 install-release，后续改服务器配置用单独的运维账号）。
 
+**源站 IP 保护**（[docs/runbooks/origin-protection.md](../docs/runbooks/origin-protection.md)）：公网不开任何端口，网页与 SSH 都经 Cloudflare Tunnel，
+SSH 另需 Cloudflare Access 登录；源站 IP 不进仓库。上面的命令是日常用法（经隧道连接，本机需装 `cloudflared`）；
+新服务器第一次运行、隧道故障应急、DNS 清单见该手册，换 IP 见 [origin-ip-rotation.md](../docs/runbooks/origin-ip-rotation.md)。
+
 ## 角色要点
 
 - **base**：自动安全更新；SSH 只允许密钥、非默认端口 22022；大页、`vm.overcommit_memory=1`。
-- **firewall**：nftables，80/443 只放行 Cloudflare 网段（运行时从 cloudflare.com 拉取）。
+- **cloudflared**：锁版本的 Cloudflare Tunnel 连接器（sha256 校验）两个实例，systemd 沙箱；隧道凭据用 `LoadCredentialEncrypted`；验证经隧道能登录后 sshd 只听本机。
+- **firewall**：nftables。入站：tunnel 模式不放行任何端口（direct 备用模式只放行 Cloudflare 网段的 443）；公网 SSH 只在 `firewall_ssh_bootstrap_allow` 临时放行。出站只放行 443、DNS、NTP、隧道等固定端口。
 - **postgresql**：PGDG 18 + PGroonga + pgBackRest；只监听 Unix socket；参数按 `group_vars/<环境>.yml`；只设 `MemoryHigh`。
 - **valkey**：官方 9.1.2 二进制（sha256 校验），只监听 Unix socket，AOF，`volatile-lru`。
-- **caddy**：Cloudflare Origin CA 证书 + Authenticated Origin Pulls（`require_and_verify`）；真实 IP 只信任 Cloudflare 网段的 `CF-Connecting-IP`；api 两实例 `least_conn` + 健康检查；Next.js 限并发。
+- **caddy**：tunnel 模式只听本机、未知 Host 直接断开；direct 模式用 Cloudflare Origin CA 证书 + Authenticated Origin Pulls（`require_and_verify`）；真实 IP 只信任上一跳的 `CF-Connecting-IP`；api 两实例 `least_conn` + 健康检查；Next.js 限并发。
 - **app**：每个程序独立系统用户和 systemd 单元（`ProtectSystem=strict`、`NoNewPrivileges`、`MemoryMax` 等）；forum-sponsor 的私钥用 `LoadCredentialEncrypted`（`systemd-creds encrypt` 生成，放 `/etc/akari/credstore/`）。
 
 ## 环境变量文件（/etc/akari/*.env，不进仓库）
@@ -32,7 +38,7 @@ ansible-playbook -i inventory/staging.yml site.yml      # 或 inventory/producti
 | 文件 | 关键变量 |
 | --- | --- |
 | `forum-api.env` | `DATABASE_URL`、`VALKEY_URL`（Unix socket）、`COOKIE_SECRET`（64 字节十六进制）、`AUTH_SECRET`、`BRAND_NAME`；域名见下方「域名」，生产不在这里配置（设置了反而拒绝启动），测试服务器在这里设 `ALLOWED_ORIGINS`、`INTERNAL_HOSTS`、`WALLET_RP_ID`（钱包中心域名）、`WALLET_ORIGINS`（钱包子域名列表，绝不含论坛主站）；`CHAIN_CONFIG`（链配置文件路径，与 forum-indexer / forum-sponsor 同一份，格式见 `backend/crates/chain/chain.example.toml`；链 ID、合约、USDT 与钱包初始化参数版本都取自它，RPC 用 `CHAIN_RPC_PRIMARY_HTTP` / `CHAIN_RPC_BACKUP_HTTP` 提供，未设置时才用 `CHAIN_ID`、`ESCROW_ADDRESS`、`USDT_ADDRESS` 且钱包地址不能登记）；`SPONSOR_URL`（本机 forum-sponsor，如 `http://127.0.0.1:8090`）与 `SPONSOR_API_TOKEN`（与 forum-sponsor 相同的共享令牌，≥ 32 字符），两项都设置才开放 `/api/v1/aa/rpc` |
-| `forum-worker.env` | `DATABASE_URL`、`VALKEY_URL`、邮件通道（Resend / SMTP） |
+| `forum-worker.env` | `DATABASE_URL`、`VALKEY_URL`、`MAIL_FROM`、邮件通道：生产只用 HTTP API（`RESEND_API_KEY`；Postmark 的 `POSTMARK_SERVER_TOKEN` 待 worker 接入），SMTP 只能连本机（开发 Mailpit），因为 SMTP 会在邮件头里留下源站 IP |
 | `forum-indexer.env` | `DATABASE_URL`、`CHAIN_CONFIG`、`CHAIN_RPC_PRIMARY_HTTP` / `_WS`、`CHAIN_RPC_BACKUP_HTTP` / `_WS` |
 | `forum-sponsor.env` | `DATABASE_URL`、`CHAIN_CONFIG`（必须含 `[aa]`：EntryPoint、Paymaster、允许的 Kernel 工厂）、`CHAIN_RPC_*`、`SPONSOR_LISTEN`（只听本机，默认 `127.0.0.1:8090`）、`SPONSOR_API_TOKEN`；可选 `SPONSOR_FEE`、`SPONSOR_BATCH_WINDOW_MS`、`SPONSOR_MAX_OP_COST_WEI`、`SPONSOR_ALERT_DEPOSIT_WEI`、`SPONSOR_ALERT_HOT_WALLET_WEI`、`FALLBACK_BUNDLER_URL`（备用 bundler，带服务商密钥）。私钥不放这里：`paymaster-signer`、`relayer-hot-wallet` 走 systemd 凭据 |
 | `web.env` | `COOKIE_SIGNING_KEY` = `COOKIE_SECRET` 的**前 32 字节**（只给签名那一半，最小权限）、`API_ORIGIN` |
@@ -54,4 +60,4 @@ ansible-playbook -i inventory/staging.yml site.yml      # 或 inventory/producti
 ## 尚未完成
 
 - pgBackRest 归档到 R2（等 R2 凭据）、Prometheus / Grafana / Loki、AIDE 基线初始化。
-- 证书、主机地址与测试服务器域名是占位值。
+- 隧道 UUID、Access AUD、测试服务器域名待填（`group_vars/<环境>.yml`）；direct 模式的证书是占位路径。

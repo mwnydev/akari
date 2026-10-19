@@ -2,6 +2,10 @@
 ansible_user: deploy
 ansible_port: "{{ ssh_port }}"
 ssh_port: 22022
+# SSH 不对公网开放：日常经 Cloudflare Tunnel + Access 登录（本机需装 cloudflared）。
+# 源站 IP 不写进仓库；首次初始化与隧道故障时的做法见 docs/runbooks/origin-protection.md。
+ansible_host: "{{ cloudflared_ssh_hostname }}"
+ansible_ssh_common_args: -o ProxyCommand="cloudflared access ssh --hostname %h"
 timezone: UTC
 
 postgresql_version: 18
@@ -18,7 +22,26 @@ app_services:
   - { unit: forum-indexer, user: forum-indexer, bin: forum-indexer, memory_max: 400M }
   - { unit: forum-sponsor, user: forum-sponsor, bin: forum-sponsor, memory_max: 100M, credentials: [paymaster-signer, relayer-hot-wallet] }
 
-# Caddy：源站证书用 Cloudflare Origin CA；只接受带 Cloudflare 客户端证书的连接（Authenticated Origin Pulls）
+# 源站入口（docs/runbooks/origin-protection.md）：
+#   tunnel：80/443 不对公网开放，网页与 SSH 都经 cloudflared（只有出站连接）；Caddy 只听本机 caddy_listen_port
+#   direct：备用方案，443 只放行 Cloudflare 网段 + Authenticated Origin Pulls，DNS 需改成指向源站 IP 的代理记录
+origin_ingress: tunnel
+caddy_listen_port: 8080
+
+# Cloudflare Tunnel 连接器（plan 第 3 节锁版本）：GitHub 发布的单文件，sha256 与发布说明核对过
+cloudflared_version: 2026.10.0
+cloudflared_sha256: d33ff2d14475178d2012c2c56beba87389ac5ded27649519f198a7d3134a99db # gitleaks:allow（公开校验和）
+# 同一隧道起两个连接器（编号 1–9，指标端口 2024<编号>）：一个崩溃或滚动重启时另一个继续承载网页与 SSH
+cloudflared_replicas: [1, 2]
+# 隧道 UUID、SSH 主机名、Access 团队名与 AUD 按环境写在 group_vars/<环境>.yml（都不是密钥；隧道凭据见 cloudflared 角色）
+
+# 临时放行公网 SSH 的来源网段（如 ["198.51.100.7/32"]），只在隧道无法使用时经 -e 传入；默认空 = 公网 SSH 关闭。
+firewall_ssh_bootstrap_allow: []
+# 出站只放行固定端口（443、DNS、NTP、隧道等），其余拒绝并记日志；SMTP 端口因此在生产不可用（只用 HTTP API 发信）
+firewall_egress_enforce: true
+firewall_egress_extra_tcp_ports: []
+
+# Caddy（direct 模式）：源站证书用 Cloudflare Origin CA；只接受带 Cloudflare 客户端证书的连接（Authenticated Origin Pulls）
 caddy_origin_cert: /etc/caddy/certs/origin.pem
 caddy_origin_key: /etc/caddy/certs/origin.key
 caddy_cf_origin_pull_ca: /etc/caddy/certs/cloudflare-origin-pull-ca.pem

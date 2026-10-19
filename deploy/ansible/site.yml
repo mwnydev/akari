@@ -3,6 +3,8 @@
   become: true
   roles:
     - base
+    # 先建好并验证隧道，firewall 才关闭公网 SSH（docs/runbooks/origin-protection.md）
+    - cloudflared
     - firewall
     - postgresql
     - valkey

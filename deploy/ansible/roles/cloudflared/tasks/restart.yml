@@ -1,0 +1,23 @@
+# 重启一个连接器。当前 SSH 可能正走它：异步发出重启，再等连接（经另一个连接器）恢复。
+- name: Restart connector {{ cloudflared_replica }}
+  ansible.builtin.systemd_service:
+    name: "cloudflared@{{ cloudflared_replica }}"
+    state: restarted
+    daemon_reload: true
+  async: 60
+  poll: 0
+  changed_when: true
+
+- name: Wait for the SSH connection to come back
+  ansible.builtin.wait_for_connection:
+    delay: 3
+    timeout: 120
+
+- name: Connector is connected again {{ cloudflared_replica }}
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:2024{{ cloudflared_replica }}/ready"
+    use_proxy: false
+  register: cloudflared_restarted
+  until: cloudflared_restarted.status == 200
+  retries: 12
+  delay: 5

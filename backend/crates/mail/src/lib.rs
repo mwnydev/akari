@@ -1,13 +1,16 @@
-//! 统一「发邮件」接口（plan 第 12 节）：Resend API 与任意 SMTP 两种实现，主通道失败自动切到备用。
+//! 统一「发邮件」接口（plan 第 12 节）：主通道失败自动切到备用。生产用 Resend、Postmark 两个 HTTP API 通道；
+//! SMTP 只用于开发（会在邮件头里留下源站 IP，见 smtp.rs）。
 //!
 //! 只由 worker 经发件箱调用；日志里不记录收件人地址和正文。
 
+pub mod postmark;
 pub mod resend;
 pub mod smtp;
 pub mod templates;
 
 use std::future::Future;
 
+pub use postmark::PostmarkMailer;
 pub use resend::ResendMailer;
 pub use smtp::SmtpMailer;
 
@@ -23,6 +26,8 @@ pub struct Email {
 
 #[derive(Debug, thiserror::Error)]
 pub enum MailError {
+    #[error("config: {0}")]
+    Config(String),
     #[error("invalid address: {0}")]
     Address(String),
     #[error("build message: {0}")]
@@ -40,6 +45,7 @@ pub trait Mailer: Send + Sync {
 /// 运行时选择的通道。
 pub enum AnyMailer {
     Resend(ResendMailer),
+    Postmark(PostmarkMailer),
     Smtp(SmtpMailer),
 }
 
@@ -47,6 +53,7 @@ impl Mailer for AnyMailer {
     fn name(&self) -> &'static str {
         match self {
             Self::Resend(m) => m.name(),
+            Self::Postmark(m) => m.name(),
             Self::Smtp(m) => m.name(),
         }
     }
@@ -54,6 +61,7 @@ impl Mailer for AnyMailer {
     async fn send(&self, email: &Email) -> Result<(), MailError> {
         match self {
             Self::Resend(m) => m.send(email).await,
+            Self::Postmark(m) => m.send(email).await,
             Self::Smtp(m) => m.send(email).await,
         }
     }
@@ -96,7 +104,7 @@ impl<P: Mailer, B: Mailer> Mailer for Failover<P, B> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
@@ -129,7 +137,7 @@ mod tests {
         }
     }
 
-    fn email() -> Email {
+    pub(crate) fn email() -> Email {
         Email {
             to: "a@example.com".into(),
             subject: "s".into(),
@@ -137,6 +145,14 @@ mod tests {
             text: "t".into(),
             idempotency_key: "outbox-1".into(),
         }
+    }
+
+    /// 本机主机名（用来断言它没有出现在发出的内容里）；太短的不查，避免误报。
+    pub(crate) fn machine_hostname() -> Option<String> {
+        std::fs::read_to_string("/proc/sys/kernel/hostname")
+            .ok()
+            .map(|h| h.trim().to_owned())
+            .filter(|h| h.len() >= 6)
     }
 
     #[tokio::test]

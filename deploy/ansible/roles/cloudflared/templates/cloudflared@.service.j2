@@ -1,0 +1,44 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Cloudflare Tunnel connector %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+DynamicUser=yes
+LoadCredentialEncrypted=tunnel-credentials:/etc/akari/credstore/cloudflared-tunnel.cred
+# 指标与 /ready 只听本机；关闭经 Cloudflare 远程拉取 pprof 等诊断数据
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --config /etc/cloudflared/config.yml \
+  --metrics 127.0.0.1:2024%i --management-diagnostics=false --label {{ inventory_hostname }}-%i \
+  run --credentials-file %d/tunnel-credentials
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+MemoryMax=256M
+UMask=0077
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectProc=invisible
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

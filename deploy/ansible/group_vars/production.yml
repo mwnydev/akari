@@ -2,6 +2,11 @@
 # forum-api 在 production 下的域名写在代码里（bins/api/src/config.rs 的 domains），改域名两处一起改。
 site_domain: akari.cc
 akari_env: production
+# Cloudflare Tunnel（docs/runbooks/origin-protection.md）：上线前填写隧道 UUID 与 Access 应用的 AUD
+cloudflared_tunnel_id: ""
+cloudflared_ssh_hostname: ssh.akari.cc
+cloudflared_access_team: ""
+cloudflared_ssh_access_aud: ""
 # plan 第 8 节 PostgreSQL 参数（8 核 32 GB NVMe）
 pg_settings:
   shared_buffers: 8GB

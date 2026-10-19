@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+# 本地管理的隧道：入口规则在仓库里经审查修改，不在 Cloudflare 后台改。凭据由 systemd 凭据传入（--credentials-file）。
+tunnel: {{ cloudflared_tunnel_id }}
+no-autoupdate: true
+ingress:
+{% if origin_ingress == 'tunnel' %}
+  # 论坛主站：Host 原样转给本机 Caddy
+  - hostname: {{ site_domain }}
+    service: http://127.0.0.1:{{ caddy_listen_port }}
+{% endif %}
+  # SSH：边缘要求 Cloudflare Access 登录；连接器再校验 Access JWT，后台误删 Access 应用也进不来
+  - hostname: {{ cloudflared_ssh_hostname }}
+    service: ssh://127.0.0.1:{{ ssh_port }}
+    originRequest:
+      access:
+        required: true
+        teamName: {{ cloudflared_access_team }}
+        audTag: [{{ cloudflared_ssh_access_aud }}]
+  - service: http_status:404

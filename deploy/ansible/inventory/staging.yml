@@ -1,5 +1,4 @@
-# 测试服务器：4 核 12 GB，每次合并自动部署。
+# 测试服务器：4 核 12 GB，每次合并自动部署。连接方式同生产（group_vars/all.yml）。
 staging:
   hosts:
     staging-1:
-      ansible_host: 203.0.113.20 # 占位（TEST-NET-3）

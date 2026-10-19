@@ -1,20 +1,28 @@
 # {{ ansible_managed }}
 {
 	admin unix//run/caddy/admin.sock
+{% if origin_ingress == 'tunnel' %}
+	# 只听本机：公网入口只有 cloudflared，Caddy 不需要证书，也不开 80/443
+	auto_https off
+	default_bind 127.0.0.1 [::1]
+{% else %}
+	# Cloudflare 只回源 443（「Always Use HTTPS」），不开 80
+	auto_https disable_redirects
+{% endif %}
 	servers {
-		# 真实 IP 只信任 Cloudflare 网段的 CF-Connecting-IP（plan 第 11 节）
+		# 真实 IP 只信任上一跳的 CF-Connecting-IP（plan 第 11 节）：tunnel 模式是本机 cloudflared，direct 模式是 Cloudflare 网段
+{% if origin_ingress == 'tunnel' %}
+		trusted_proxies static 127.0.0.1/32 ::1/128
+{% else %}
 		trusted_proxies static {{ (firewall_cf_v4 + firewall_cf_v6) | join(' ') }}
+		# Host 必须与 SNI 一致
+		strict_sni_host on
+{% endif %}
 		client_ip_headers CF-Connecting-IP
 	}
 }
 
-{{ site_domain }} {
-	tls {{ caddy_origin_cert }} {{ caddy_origin_key }} {
-		client_auth {
-			mode require_and_verify
-			trust_pool file {{ caddy_cf_origin_pull_ca }}
-		}
-	}
+(forum) {
 	encode zstd gzip
 
 	handle /api/* {
@@ -34,3 +42,25 @@
 		}
 	}
 }
+
+{% if origin_ingress == 'tunnel' %}
+http://{{ site_domain }}:{{ caddy_listen_port }} {
+	import forum
+}
+
+# 其他 Host（含用 IP 访问）不回任何内容，直接断开
+http://:{{ caddy_listen_port }} {
+	abort
+}
+{% else %}
+# 未知 SNI（含不带 SNI、用 IP 访问）没有证书可用，握手失败
+{{ site_domain }} {
+	tls {{ caddy_origin_cert }} {{ caddy_origin_key }} {
+		client_auth {
+			mode require_and_verify
+			trust_pool file {{ caddy_cf_origin_pull_ca }}
+		}
+	}
+	import forum
+}
+{% endif %}

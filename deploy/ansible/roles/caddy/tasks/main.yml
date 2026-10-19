@@ -20,3 +20,4 @@
     mode: "0644"
     validate: caddy validate --adapter caddyfile --config %s
   notify: Reload caddy
+  tags: [cloudflare-ips]

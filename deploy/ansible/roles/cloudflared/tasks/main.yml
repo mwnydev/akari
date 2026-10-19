@@ -1,0 +1,192 @@
+# Cloudflare Tunnel：源站只有出站连接，网页与 SSH 都从这里进来（docs/runbooks/origin-protection.md）。
+# 顺序保证不会把自己锁在外面：隧道连上边缘并从控制机实际 SSH 通过之后，才让 sshd 只听本机；
+# 公网 SSH 的防火墙规则在下一个角色（firewall）才去掉。
+- name: Tunnel settings are filled in
+  ansible.builtin.assert:
+    that:
+      - cloudflared_tunnel_id | default('') | length > 0
+      - cloudflared_ssh_hostname | default('') | length > 0
+      - cloudflared_access_team | default('') | length > 0
+      - cloudflared_ssh_access_aud | default('') | length > 0
+    fail_msg: 在 group_vars/{{ akari_env }}.yml 填写 cloudflared_tunnel_id、cloudflared_ssh_hostname、cloudflared_access_team、cloudflared_ssh_access_aud
+
+- name: Release directory
+  ansible.builtin.file:
+    path: /usr/local/lib/cloudflared
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download cloudflared (pinned version, sha256 checked)
+  ansible.builtin.get_url:
+    url: "https://github.com/cloudflare/cloudflared/releases/download/{{ cloudflared_version }}/cloudflared-linux-amd64"
+    dest: "/usr/local/lib/cloudflared/cloudflared-{{ cloudflared_version }}"
+    checksum: "sha256:{{ cloudflared_sha256 }}"
+    owner: root
+    group: root
+    mode: "0755"
+  register: cloudflared_binary
+
+- name: Point cloudflared at the pinned version
+  ansible.builtin.file:
+    src: "/usr/local/lib/cloudflared/cloudflared-{{ cloudflared_version }}"
+    dest: /usr/local/bin/cloudflared
+    state: link
+  register: cloudflared_link
+
+- name: Config directory
+  ansible.builtin.file:
+    path: /etc/cloudflared
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Tunnel ingress rules
+  ansible.builtin.template:
+    src: config.yml.j2
+    dest: /etc/cloudflared/config.yml
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/local/bin/cloudflared tunnel --config %s ingress validate
+  register: cloudflared_config
+
+- name: Credential store
+  ansible.builtin.file:
+    path: /etc/akari/credstore
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# 隧道凭据（cloudflared tunnel create 生成的 <UUID>.json）只在控制机本地，经 -e cloudflared_credentials_file=<路径> 传入：
+# 内容经 stdin 交给 systemd-creds 加密（绑定本机密钥），明文不落服务器磁盘，也不进日志。
+- name: Encrypt tunnel credentials (only when a credentials file is passed)
+  ansible.builtin.command:
+    argv:
+      - systemd-creds
+      - encrypt
+      - --name=tunnel-credentials
+      - "-"
+      - /etc/akari/credstore/cloudflared-tunnel.cred
+    stdin: "{{ lookup('ansible.builtin.file', cloudflared_credentials_file) }}"
+    stdin_add_newline: false
+  when: cloudflared_credentials_file is defined
+  no_log: true
+  register: cloudflared_credentials
+  changed_when: true
+
+- name: Check tunnel credentials exist
+  ansible.builtin.stat:
+    path: /etc/akari/credstore/cloudflared-tunnel.cred
+  register: cloudflared_cred_file
+
+- name: Tunnel credentials are installed
+  ansible.builtin.assert:
+    that: cloudflared_cred_file.stat.exists
+    fail_msg: 缺少 /etc/akari/credstore/cloudflared-tunnel.cred：用 -e cloudflared_credentials_file=<隧道 JSON 路径> 重跑（见 docs/runbooks/origin-protection.md）
+
+- name: Connector unit
+  ansible.builtin.template:
+    src: cloudflared@.service.j2
+    dest: /etc/systemd/system/cloudflared@.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: cloudflared_unit
+
+- name: Enable connectors
+  ansible.builtin.systemd_service:
+    name: "cloudflared@{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop: "{{ cloudflared_replicas }}"
+
+# 一次只重启一个连接器，另一个继续承载当前的 SSH 连接；每个都等它重新连上边缘再动下一个。
+- name: Rolling restart after changes
+  ansible.builtin.include_tasks: restart.yml
+  loop: "{{ cloudflared_replicas }}"
+  loop_control:
+    loop_var: cloudflared_replica
+  when: >-
+    cloudflared_binary is changed or cloudflared_link is changed or cloudflared_config is changed
+    or cloudflared_credentials is changed or cloudflared_unit is changed
+
+- name: Every connector is connected to the Cloudflare edge
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:2024{{ item }}/ready"
+    use_proxy: false
+  register: cloudflared_ready
+  until: cloudflared_ready.status == 200
+  retries: 12
+  delay: 5
+  loop: "{{ cloudflared_replicas }}"
+
+# 先让 base 角色的 sshd 配置（端口 {{ ssh_port }}）生效：隧道转发到这个端口，下面的登录验证要用到它。
+- name: Apply pending sshd changes
+  ansible.builtin.meta: flush_handlers
+
+# 本次是经公网 IP 连进来的（首次初始化或应急）：先从控制机经隧道真正登录一次，确认可用后才关闭公网 SSH。
+# 主机密钥取自当前连接并固定，不接受隧道另一端出现别的主机。
+- name: Prove SSH through the tunnel from the controller
+  when: ansible_host != cloudflared_ssh_hostname
+  block:
+    - name: Read the host key
+      ansible.builtin.slurp:
+        src: /etc/ssh/ssh_host_ed25519_key.pub
+      register: cloudflared_host_key
+
+    - name: Temporary known_hosts on the controller
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .known_hosts
+      delegate_to: localhost
+      become: false
+      register: cloudflared_known_hosts
+
+    - name: Pin the host key for the tunnel hostname
+      ansible.builtin.copy:
+        dest: "{{ cloudflared_known_hosts.path }}"
+        content: "{{ cloudflared_ssh_hostname }} {{ (cloudflared_host_key.content | b64decode).split()[:2] | join(' ') }}\n"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+
+    # 控制机需已登录 Access：cloudflared access login https://<cloudflared_ssh_hostname>
+    - name: SSH through Cloudflare Access
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', '120', 'ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes',
+              '-o', 'UserKnownHostsFile=' ~ cloudflared_known_hosts.path,
+              '-o', 'ProxyCommand=cloudflared access ssh --hostname %h', '-l', ansible_user]
+             + (['-i', ansible_ssh_private_key_file] if ansible_ssh_private_key_file is defined else [])
+             + [cloudflared_ssh_hostname, 'true'] }}
+      delegate_to: localhost
+      become: false
+      changed_when: false
+  always:
+    - name: Remove the temporary known_hosts
+      ansible.builtin.file:
+        path: "{{ cloudflared_known_hosts.path }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      when: cloudflared_known_hosts.path is defined
+
+# 上面都通过了才写：sshd 只听本机，只能经隧道到达；临时放行公网 SSH 时（firewall_ssh_bootstrap_allow 非空）照常监听。
+- name: Make sshd listen on loopback only (reachable through the tunnel)
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/20-akari-listen.conf
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+    content: |
+      # {{ ansible_managed }}
+      {% if firewall_ssh_bootstrap_allow | length > 0 %}
+      # 临时放行公网 SSH（firewall_ssh_bootstrap_allow），隧道恢复后不带该变量重跑即改回只听本机
+      {% else %}
+      ListenAddress 127.0.0.1
+      {% endif %}
+  notify: Restart sshd

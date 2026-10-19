@@ -2545,8 +2545,13 @@ dependencies = [
 name = "forum-mail"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "lettre",
+ "rand 0.10.3",
+ "reqwest",
  "resend-rs",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

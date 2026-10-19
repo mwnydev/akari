@@ -1,5 +1,10 @@
 site_domain: staging.example.com # 占位，测试域名待定；forum-api 的来源与 Passkey 域名取自 /etc/akari/forum-api.env
 akari_env: staging
+# Cloudflare Tunnel（docs/runbooks/origin-protection.md）：上线前填写隧道 UUID 与 Access 应用的 AUD
+cloudflared_tunnel_id: ""
+cloudflared_ssh_hostname: ssh-staging.example.com # 占位，与测试域名一起定
+cloudflared_access_team: ""
+cloudflared_ssh_access_aud: ""
 # plan 第 13 节测试服务器（4 核 12 GB）参数
 pg_settings:
   shared_buffers: 2GB
