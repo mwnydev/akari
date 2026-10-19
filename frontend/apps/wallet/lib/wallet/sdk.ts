@@ -307,7 +307,7 @@ async function openKernel(passkey: PasskeyView, v: WalletInitVersion, versions: 
       }
     },
 
-    /** 买家：approve + createAndFund 合成一个 UserOperation，一次 Face ID。返回链上订单号。 */
+    /** 买家：approve + createAndFund 合成一个 UserOperation，一次 Face ID。返回 Escrow 上的链上订单号。 */
     async pay({ offer, signature }: SignedOffer, quote: CheckoutQuote) {
       const receipt = await send("createAndFund", [
         { to: token, abi: mockUsdtAbi, functionName: "approve", args: [escrow, quote.buyerPays] },

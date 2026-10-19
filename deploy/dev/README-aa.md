@@ -1,17 +1,17 @@
 # 本地 AA 开发链
 
 anvil fork Arbitrum Sepolia（EntryPoint v0.7、ZeroDev Kernel v3.3、WebAuthn 验证器都是链上现成的），
-部署本仓库的 MockUSDT、EscrowConfig、Escrow、FixedFeePaymaster，再起一个 Pimlico Alto bundler。
-钱包前端（`apps/wallet`）和 AA 端到端测试都跑在这条链上。
+部署本仓库的 MockUSDT、EscrowConfig、Escrow、StreamEscrow、FixedFeePaymaster，再起一个 Pimlico Alto bundler。
+钱包前端（`apps/wallet`）、后端（forum-api / forum-indexer / forum-sponsor）和 AA 端到端测试都跑在这条链上。
 
 **仅限开发。** 里面用到的私钥全部由固定字符串派生（`cast keccak "akari-dev-only:<name>"`），公开、无价值。
 
 ## 启动 / 停止
 
 ```sh
-deploy/dev/aa.sh up       # 约 30 秒：anvil → 核对 AA 合约 → 部署 → 充押金 → 写 chain.local.json → Alto
+deploy/dev/aa.sh up       # 约 30 秒：anvil → 核对 AA 合约 → 部署 → 充押金 → 写前后端链配置 → Alto
 deploy/dev/aa.sh status
-deploy/dev/aa.sh down     # 删除两个容器；链状态不保留，下次 up 重新 fork
+deploy/dev/aa.sh down     # 删除两个容器与 chain.local.toml、.env.aa；链状态不保留，下次 up 重新 fork
 ```
 
 需要 Docker、Foundry（`~/.foundry/bin`）、`jq`。有 HTTP 代理时容器直接用宿主机的 `HTTP(S)_PROXY`
@@ -23,7 +23,7 @@ deploy/dev/aa.sh down     # 删除两个容器；链状态不保留，下次 up 
 | bundler | `http://127.0.0.1:4337` | `ghcr.io/pimlicolabs/alto:v1.2.8`（按 digest 锁定）；`--safe-mode=false`，开了 CORS     |
 
 可选环境变量：`AA_FORK_URL`（默认 `https://sepolia-rollup.arbitrum.io/rpc`）、`AA_FORK_BLOCK`（默认最新块）、
-`AA_ANVIL_PORT`、`AA_BUNDLER_PORT`。
+`AA_ANVIL_PORT`、`AA_BUNDLER_PORT`、`AA_SPONSOR_PORT`（写进 `.env.aa` 的 forum-sponsor 端口，默认 8090）。
 
 链 ID 改成 31337 是故意的：本地签的报价、代付签名的 EIP-712 域 / 哈希都绑定链 ID，拿到真实 Sepolia 上无法重放。
 fork 来的状态（EntryPoint、Kernel 工厂等）不受影响。
@@ -52,12 +52,14 @@ fork 来的状态（EntryPoint、Kernel 工厂等）不受影响。
 | MockUSDT          | `0x8c313D0eC280837325fA5aB05AC04Be31F46AbBC` | 任何人可 `mint`                                   |
 | EscrowConfig      | `0x5b8A58E060327C720Db5FCb1a2BB7C217B292c89` | `contracts/script/Deploy.s.sol`，默认参数         |
 | Escrow            | `0xFb3ca740dac6A93a5110a0F8d9cc584ACE80940C` | 同上                                              |
+| StreamEscrow      | `0x6022875397e11A32BbAEB91d80258CBF4AA6F4A8` | 同上                                              |
 | FixedFeePaymaster | `0x3dd2Fe1Ec5Cfe2EE0ABe62c1e3D81e3d18ee4E1e` | `forge create`；押金 10 ETH、质押 1 ETH（1 天）   |
 
 | 开发账户        | 地址                                         | 用途                                                        |
 | --------------- | -------------------------------------------- | ----------------------------------------------------------- |
 | deployer        | `0xEE56770A46E04f6323AA23dC22f5935a45d933aE` | 部署；兼任 owner、仲裁、手续费收款与 Paymaster 金库         |
-| sponsor         | `0x9A53c3ACF864004F00BdE6E48Bd8A50D6470e8A8` | Paymaster `signer`；前端 DEV 代付用它的私钥签名             |
+| sponsor         | `0x9A53c3ACF864004F00BdE6E48Bd8A50D6470e8A8` | Paymaster `signer`；forum-sponsor 与前端 DEV 代付用它签名   |
+| relayer         | `0x8204490c73DceDE91340e855279A8A67758609AC` | forum-sponsor 代发热钱包（`aa.sh up` 给它 100 ETH）         |
 | bundler 执行者  | `0x19d6319D75788D0fc7f71f3b49fa11863412c804` | Alto `--executor-private-keys`                              |
 | bundler 工具户  | `0x685bb2D07a60B63Bd337a0a67b02Ee7749a4Ade3` | Alto `--utility-private-key`                                |
 
@@ -68,6 +70,29 @@ cast send 0x8c313D0eC280837325fA5aB05AC04Be31F46AbBC 'mint(address,uint256)' <�
   --rpc-url http://127.0.0.1:8545 \
   --private-key 0x2bd477e315997bfc5018a2d4ef4780999f011bceb8cf602c009337739f641d81   # deployer
 ```
+
+## 后端接本地链
+
+`aa.sh up` 除了前端的 `chain.local.json`，还生成（都不入库）：
+
+- `deploy/dev/chain.local.toml`：后端链配置（`CHAIN_CONFIG`）。合约地址同上表；`start_block` 是部署前的区块
+  （fork 的区块号很大，indexer 不能从 0 补拉）；`[aa]` 是 EntryPoint、Paymaster 与 Kernel meta factory；
+  `wallet_init_versions` 第 1 版与前端 `localChain` 的版本 1 逐项相同，不同的话钱包页面会拒绝操作。
+- `deploy/dev/.env.aa`：`CHAIN_CONFIG`、`SPONSOR_URL`、`SPONSOR_LISTEN`、`SPONSOR_API_TOKEN`、
+  `SPONSOR_DEV_PAYMASTER_KEY`（sponsor 开发私钥）、`SPONSOR_DEV_HOT_WALLET_KEY`（relayer 开发私钥）、
+  `FALLBACK_BUNDLER_URL`（Alto）。
+
+```sh
+set -a; source backend/.env; source deploy/dev/.env.aa; set +a   # .env.aa 在后，覆盖 CHAIN_CONFIG
+cd backend
+cargo run -p forum-sponsor &   # 代付签名 + 私有代发器，只听 $SPONSOR_LISTEN
+cargo run -p forum-indexer &   # 订单状态；anvil 每秒一块，约 1 分钟到 finalized
+cargo run -p forum-worker &    # 登录与开通交易的验证码邮件（Mailpit）
+cargo run -p forum-api         # /api/v1/aa/rpc 转发给 forum-sponsor
+```
+
+forum-api 还需要 `backend/.env.example` 里的其他变量；`WALLET_ORIGINS`、`ALLOWED_ORIGINS` 要包含钱包页面的源。
+`.env.aa` 的私钥都由公开字符串派生，forum-sponsor 在主网（链 ID 42161）上拒绝读取环境变量里的私钥。
 
 ## 钱包前端 + 端到端测试
 
@@ -84,6 +109,9 @@ pnpm e2e:aa                                                 # Playwright + CDP �
 - 钱包页面同源请求 `/api/v1`，`next dev` 转发到 `API_ORIGIN`（默认 `http://127.0.0.1:8080`）；生产构建用
   `NEXT_PUBLIC_API_ORIGIN` 直连论坛 API（ADR 0009）。forum-api 的 `WALLET_ORIGINS` 要包含钱包页面的源。
 - 端到端测试按接口逐个选择后端：`WALLET_E2E_API`（默认 `http://127.0.0.1:8080`）上的 forum-api 实现了的接口走真实后端
-  （登录与开通验证码经 Mailpit，需要 forum-worker；用户名直接写数据库，`WALLET_E2E_DATABASE` 指定库名），
-  没实现的（或 forum-api 没运行）由 `e2e/fake-backend.ts` 模拟；有 `/api/v1/aa/rpc` 时不用 DEV 代付。
+  （登录与开通验证码经 Mailpit，需要 forum-worker；用户名与测试版块 `e2e` 直接写数据库，`WALLET_E2E_DATABASE`
+  指定库名），没实现的（或 forum-api 没运行）由 `e2e/fake-backend.ts` 模拟；有 `/api/v1/aa/rpc` 时不用 DEV 代付。
+  上面四个后端程序都在跑时就是完整的真实流程：卖家发交易帖并签公开报价 → 买家经 forum-sponsor 代付、代发付款 →
+  indexer 把报价标为已付款 → 卖家标记发货 → 买家确认收货 → 等到 finalized。订单页按站内订单 ID 打开，
+  链上操作用订单的 `chain_order_id` 与 `contract`。
 - 合约 ABI 改了以后：`pnpm --filter @akari/contracts generate`（先 `forge build`，再用 @wagmi/cli 重新生成 `src/generated.ts`）。

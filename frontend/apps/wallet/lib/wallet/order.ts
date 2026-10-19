@@ -2,6 +2,12 @@ import type { BadgeTone, OnceState } from "@akari/ui";
 import type { OrderView } from "./api";
 
 // 订单页的展示与按钮规则（纯函数，不依赖钱包 SDK，可以进首屏 JS）。数据来自 indexer（GET /api/v1/orders/{id}）。
+// 订单 ID 是站内 ID；链上操作用 `chain_order_id` + `contract`（两份担保合约各自编号，链上订单号会重复）。
+
+/** 一次性担保订单（`mode = escrow`）。分期担保（`stream`）目前只显示状态。 */
+export function isOnce(o: OrderView): boolean {
+  return o.mode === "escrow";
+}
 
 /** 一次性担保的进度；`none`（回滚后订单消失）与不认识的状态返回 null。确认期限有值 = 卖家已标记发货。 */
 export function onceState(o: OrderView): OnceState | null {
@@ -18,7 +24,7 @@ export function onceState(o: OrderView): OnceState | null {
   }
 }
 
-export const STATE_TEXT: Record<OnceState, string> = {
+const STATE_TEXT: Record<OnceState, string> = {
   funded: "买家已付款，等待卖家发货",
   delivered: "卖家已发货，等待买家确认收货",
   released: "已确认收货，货款已放给卖家",
@@ -26,6 +32,25 @@ export const STATE_TEXT: Record<OnceState, string> = {
   settled: "已协商结算",
   disputed: "争议中",
 };
+
+const STREAM_TEXT: Record<string, string> = {
+  disputed: "争议中",
+  released: "已全部解锁给卖家",
+  refunded: "已退款给买家",
+  settled: "已协商结算",
+};
+
+/** 列表与订单页的一句话状态；回滚撤销的订单返回 null。 */
+export function stateText(o: OrderView): string | null {
+  if (isOnce(o)) {
+    const s = onceState(o);
+    return s && STATE_TEXT[s];
+  }
+  if (o.state === "funded") {
+    return o.stream?.started_at ? "服务进行中，按期解锁给卖家" : "买家已付款，等待卖家开始服务";
+  }
+  return STREAM_TEXT[o.state] ?? null;
+}
 
 /**
  * 确认级别（plan 第 6 节）：latest / safe 界面即时显示但可能被回滚，标「处理中」；finalized 才是最终结果。
@@ -48,11 +73,17 @@ export type OrderAction =
 
 /**
  * 当前钱包在这单上能做的操作，与合约条件一致：卖家在发货期限内、尚未发货时标记发货；
- * 买家在已付款状态随时可以确认收货（`release`）。
+ * 买家在已付款状态随时可以确认收货（`release`）。只对链配置里那份 Escrow 上的一次性订单给按钮。
  */
-export function availableAction(o: OrderView, me: string, now: number): OrderAction | null {
-  if (o.state !== "funded") return null;
+export function availableAction(
+  o: OrderView,
+  me: string,
+  now: number,
+  escrow: string,
+): OrderAction | null {
   const mine = (a: string) => a.toLowerCase() === me.toLowerCase();
+  if (!isOnce(o) || o.contract.toLowerCase() !== escrow.toLowerCase()) return null;
+  if (o.state !== "funded") return null;
   const { ship, confirm } = o.deadlines;
   const shipOpen = !ship || Date.parse(ship) >= now;
   if (mine(o.seller.address) && !confirm && shipOpen) {

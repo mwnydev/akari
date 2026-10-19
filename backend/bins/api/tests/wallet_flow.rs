@@ -440,7 +440,7 @@ async fn wallet_address_is_verified_against_the_kernel_factory(db: PgPool) {
     let sdk_key = PasskeyPublicKey::new([0x11; 32], [0x22; 32], b"akari-test-credential");
     assert_eq!(
         resolver.address(&version, &sdk_key).await.unwrap(),
-        alloy::primitives::address!("960D3E65b1370D32E31A86D1DAD6ae51E25Bb833")
+        alloy::primitives::address!("3AdBfa556B412F9329f3C91F8D9eaD364801c0EA")
     );
     // 工厂里的 Kernel 实现与配置不符：配置错误，不是「地址不符」。
     let wrong_impl = forum_chain::config::WalletInitVersion {

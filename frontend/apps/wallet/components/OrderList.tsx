@@ -5,7 +5,7 @@ import { SegmentedControl } from "@akari/ui/tabs";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { userMessage, walletApi, type OrderRole } from "../lib/wallet/api";
-import { STATE_TEXT, levelBadge, onceState } from "../lib/wallet/order";
+import { isOnce, levelBadge, stateText } from "../lib/wallet/order";
 
 const ROLES: { value: OrderRole; label: string }[] = [
   { value: "buyer", label: "我买的" },
@@ -41,7 +41,6 @@ export function OrderList() {
         <Card className="p-0 sm:p-0">
           <ul className="divide-y divide-border">
             {orders.map((o) => {
-              const state = onceState(o);
               const level = levelBadge(o);
               return (
                 <li key={o.id}>
@@ -50,9 +49,11 @@ export function OrderList() {
                     className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-surface-2 sm:px-5"
                   >
                     <span className="min-w-0">
-                      <span className="block font-medium">订单 #{o.id}</span>
+                      <span className="block font-medium">
+                        订单 #{o.id} · {isOnce(o) ? "一次性" : "分期"}
+                      </span>
                       <span className="block text-sm text-fg-muted">
-                        {state ? STATE_TEXT[state] : "已撤销"}
+                        {stateText(o) ?? "已撤销"}
                       </span>
                     </span>
                     <span className="flex shrink-0 flex-col items-end gap-1">

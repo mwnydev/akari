@@ -1,15 +1,24 @@
 import { describe, expect, it } from "vitest";
 import type { OrderView } from "./api";
-import { availableAction, isFinal, levelBadge, onceState, remaining } from "./order";
+import {
+  availableAction as action,
+  isFinal,
+  levelBadge,
+  onceState,
+  remaining,
+  stateText,
+} from "./order";
 
 const BUYER = "0x1111111111111111111111111111111111111111";
 const SELLER = "0x2222222222222222222222222222222222222222";
 const NOW = Date.parse("2026-10-19T00:00:00Z");
+const ESCROW = "0xFb3ca740dac6A93a5110a0F8d9cc584ACE80940C";
+const availableAction = (o: OrderView, me: string, now: number) => action(o, me, now, ESCROW);
 
 const order = (o: Partial<OrderView> = {}, deadlines: OrderView["deadlines"] = {}): OrderView => ({
   id: 7,
   chain_id: 31337,
-  contract: "0xFb3ca740dac6A93a5110a0F8d9cc584ACE80940C",
+  contract: ESCROW,
   chain_order_id: 3,
   mode: "escrow",
   buyer: { address: BUYER, user_id: 1 },
@@ -29,6 +38,7 @@ const order = (o: Partial<OrderView> = {}, deadlines: OrderView["deadlines"] = {
   ...o,
 });
 const DELIVERED = { confirm: "2026-10-25T00:00:00Z" };
+const NOW_ISO = "2026-10-19T00:00:00Z";
 
 describe("订单页规则", () => {
   it("已付款且有确认期限 = 卖家已发货；回滚后的订单没有进度", () => {
@@ -67,6 +77,28 @@ describe("订单页规则", () => {
       expect(availableAction(order({ state }), BUYER, NOW)).toBeNull();
       expect(availableAction(order({ state }), SELLER, NOW)).toBeNull();
     }
+  });
+
+  it("分期订单与别的合约上的订单没有一次性担保的按钮", () => {
+    const stream = order({
+      mode: "stream",
+      contract: "0x6022875397e11A32BbAEB91d80258CBF4AA6F4A8",
+    });
+    expect(availableAction(stream, BUYER, NOW)).toBeNull();
+    expect(availableAction(order({ contract: SELLER }), BUYER, NOW)).toBeNull();
+    expect(availableAction(order({ contract: ESCROW.toLowerCase() }), BUYER, NOW)?.kind).toBe(
+      "release",
+    );
+  });
+
+  it("状态文案区分一次性与分期", () => {
+    expect(stateText(order({}, DELIVERED))).toBe("卖家已发货，等待买家确认收货");
+    expect(stateText(order({ state: "none" }))).toBeNull();
+    const stream = (o: Partial<OrderView>) => order({ mode: "stream", ...o });
+    expect(stateText(stream({}))).toBe("买家已付款，等待卖家开始服务");
+    const started = { interval_secs: 86_400, periods: 30, claimed: "0", started_at: NOW_ISO };
+    expect(stateText(stream({ stream: started }))).toBe("服务进行中，按期解锁给卖家");
+    expect(stateText(stream({ state: "released" }))).toBe("已全部解锁给卖家");
   });
 
   it("期限倒计时", () => {

@@ -24,3 +24,5 @@ out/
 /contracts/lcov.info
 # next dev 自动生成给 AI 代理看的说明文件
 frontend/apps/*/AGENTS.md
+# deploy/dev/aa.sh 生成的后端链配置（含部署区块，每次 up 不同）
+/deploy/dev/chain.local.toml

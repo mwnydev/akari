@@ -345,14 +345,6 @@ mod tests {
     }
 
     #[test]
-    fn local_dev_sponsor_config_parses() {
-        let text = include_str!("../../../../deploy/dev/sponsor.chain.toml");
-        let cfg = ChainConfig::parse(text, |_| None).unwrap();
-        assert_eq!(cfg.chain_id, 31_337);
-        assert!(cfg.aa.is_some());
-    }
-
-    #[test]
     fn zero_aa_addresses_are_rejected() {
         let text = EXAMPLE.replace(
             "factories = [\"0xd703aaE79538628d27099B8c4f621bE4CCd142d5\"]",

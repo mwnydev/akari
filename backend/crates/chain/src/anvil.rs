@@ -23,7 +23,7 @@ pub fn dev_wallet_version() -> WalletInitVersion {
         kernel_meta_factory: address!("d703aaE79538628d27099B8c4f621bE4CCd142d5"),
         webauthn_validator: address!("7ab16Ff354AcB328452F1D445b3Ddee9a91e9e69"),
         entry_point: address!("0000000071727De22E5E9d8BAf0edAc6f37da032"),
-        paymaster: address!("6022875397e11A32BbAEB91d80258CBF4AA6F4A8"),
+        paymaster: address!("3dd2Fe1Ec5Cfe2EE0ABe62c1e3D81e3d18ee4E1e"),
         approve_token: address!("8c313D0eC280837325fA5aB05AC04Be31F46AbBC"),
         approve_amount: U256::MAX,
     }

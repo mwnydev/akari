@@ -2,7 +2,7 @@ import type { BrowserContext } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 
 // 真实 forum-api 上的测试用户：邮箱验证码登录（Mailpit 截获邮件），再直接在数据库里设用户名
-// （开通交易要求有用户名，设置用户名的接口还没有）。需要 forum-worker 在跑，否则收不到邮件。
+// （开通交易要求有用户名，设置用户名的接口还没有）与测试版块。需要 forum-worker 在跑，否则收不到邮件。
 
 const MAILPIT = process.env.MAILPIT_URL ?? "http://127.0.0.1:8025";
 const PG_CONTAINER = process.env.WALLET_E2E_PG_CONTAINER ?? "akari-dev-postgres-1";
@@ -48,7 +48,22 @@ export async function signIn(context: BrowserContext, baseURL: string, tag: stri
   });
   if (!verify.ok()) throw new Error(`login verify failed: ${verify.status()}`);
   const username = `w${tag}${Date.now() % 1e9}`;
-  // psql 变量只在标准输入的脚本里展开（-c 不展开），用 :'x' 按字面量引用，避免拼 SQL
+  psql("UPDATE users SET username = :'username' WHERE email = :'email';", { username, email });
+  return { email, loginMail: mail };
+}
+
+/** 测试用的交易版块（新用户也能发帖），不存在就建；返回 slug。 */
+export function ensureBoard(): string {
+  const slug = "e2e";
+  psql(
+    "INSERT INTO forums (slug, name, post_min_level) VALUES (:'slug', 'e2e', 0) ON CONFLICT (slug) DO NOTHING;",
+    { slug },
+  );
+  return slug;
+}
+
+/** 在测试数据库上执行一段 SQL；psql 变量只在标准输入的脚本里展开（-c 不展开），用 :'x' 按字面量引用，避免拼 SQL。 */
+function psql(sql: string, vars: Record<string, string>) {
   execFileSync(
     "docker",
     [
@@ -62,12 +77,8 @@ export async function signIn(context: BrowserContext, baseURL: string, tag: stri
       PG_DATABASE,
       "-v",
       "ON_ERROR_STOP=1",
-      "-v",
-      `username=${username}`,
-      "-v",
-      `email=${email}`,
+      ...Object.entries(vars).flatMap(([k, v]) => ["-v", `${k}=${v}`]),
     ],
-    { input: "UPDATE users SET username = :'username' WHERE email = :'email';" },
+    { input: sql },
   );
-  return { email, loginMail: mail };
 }

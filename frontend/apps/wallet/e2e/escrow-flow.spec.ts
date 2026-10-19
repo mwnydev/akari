@@ -4,7 +4,7 @@ import { createWalletClient, http, parseUnits, type Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { backendPaths, chainIsDown, publicClient } from "./env";
 import { FAKE_EMAIL_CODE, FakeBackend } from "./fake-backend";
-import { signIn, waitForCode } from "./forum-user";
+import { ensureBoard, signIn, waitForCode } from "./forum-user";
 
 // 完整担保流程：两个浏览器上下文各带一个 CDP 虚拟 Passkey（卖家、买家），链上余额按前后差额断言。
 // 前置：deploy/dev/aa.sh up。链或 bundler 不在线时跳过。
@@ -49,6 +49,8 @@ interface Harness {
   fake: FakeBackend;
   /** 订单接口由模拟 indexer 提供（可以手动推进到 finalized） */
   fakeOrders: boolean;
+  /** 真实 forum-api 能发交易帖：卖家为交易帖签公开报价，否则在私信会话里签给指定买家 */
+  realListings: boolean;
   newUser(browser: Browser, tag: string, baseURL: string): Promise<User>;
 }
 
@@ -59,6 +61,7 @@ async function harness(): Promise<Harness> {
   return {
     fake,
     fakeOrders: !isReal("/api/v1/orders/1"),
+    realListings: isReal("/api/v1/forums/e2e/listings"),
     async newUser(browser, tag, baseURL) {
       const context = await browser.newContext();
       // 已登录用户：有真实后端就真的登录，否则模拟后端里每个上下文本身就是一个用户
@@ -103,6 +106,37 @@ async function createWallet({ page, emailCode }: User): Promise<Address> {
   const text = (await page.getByTestId("wallet-address").textContent()) ?? "";
   expect(text).toMatch(/^0x[0-9a-fA-F]{40}$/);
   return text as Address;
+}
+
+/** 用卖家的会话在测试版块发一个 20 USDT 的交易帖（卖家承担手续费），返回交易帖 ID。 */
+async function createListing(page: Page): Promise<number> {
+  const slug = ensureBoard();
+  const res = await page.evaluate(async (slug) => {
+    const r = await fetch(`/api/v1/forums/${slug}/listings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        title: "e2e 测试商品",
+        html: "<p>e2e 测试商品，九成新</p>",
+        source: { type: "doc" },
+        price: "20000000",
+        terms: { ship_window: 3 * 86_400, confirm_window: 7 * 86_400 },
+      }),
+    });
+    return { status: r.status, body: (await r.json()) as { listing_id?: number } };
+  }, slug);
+  expect(res.status, JSON.stringify(res.body)).toBe(201);
+  return res.body.listing_id ?? 0;
+}
+
+/** 订单接口（站内 ID）→ 链上订单号；走页面的 fetch，模拟后端也能接住。 */
+async function chainOrderId(page: Page, orderId: string): Promise<bigint> {
+  const order = await page.evaluate(
+    async (id) =>
+      (await fetch(`/api/v1/orders/${id}`)).json() as Promise<{ chain_order_id: number }>,
+    orderId,
+  );
+  return BigInt(order.chain_order_id);
 }
 
 /** 确认页必须先出现（动作、金额、网络、地址前后 6 位），再点 Face ID。 */
@@ -166,20 +200,26 @@ test("开通交易 → 卖家发报价 → 买家一次 Face ID 付款 → 卖�
     return Object.fromEntries(names.map((k) => [k, now[k] - before[k]]));
   };
 
-  // 卖家：在私信会话里签一份只给这位买家的 20 USDT 报价（钱包未部署 → ERC-6492 签名，页面用 eth_call 验证）。
-  // 注册 Passkey 刚算过一次近期验证，所以这里只有签报价这一次 Face ID。
-  const conversation = 1 + Math.floor(Math.random() * 1e9);
+  // 卖家：为自己的交易帖签公开报价，或在私信会话里签一份只给这位买家的报价，都是 20 USDT
+  // （钱包未部署 → ERC-6492 签名，页面用 eth_call 验证）。注册 Passkey 刚算过一次近期验证，
+  // 所以这里只有签报价这一次 Face ID。
   const sellerSigns = await seller.signCount();
-  await seller.page.goto(`/offer?conversation=${conversation}`);
-  await seller.page.getByLabel("商品 / 服务").fill("e2e 测试商品");
-  await seller.page.getByLabel("金额（USDT）").fill("20");
-  await seller.page.getByLabel("买家钱包地址").fill(buyerAddr);
+  if (h.realListings) {
+    await seller.page.goto(`/offer?listing=${await createListing(seller.page)}`);
+  } else {
+    const conversation = 1 + Math.floor(Math.random() * 1e9);
+    await seller.page.goto(`/offer?conversation=${conversation}`);
+    await seller.page.getByLabel("商品 / 服务").fill("e2e 测试商品");
+    await seller.page.getByLabel("金额（USDT）").fill("20");
+    await seller.page.getByLabel("买家钱包地址").fill(buyerAddr);
+  }
   await seller.page.getByRole("button", { name: "签名报价" }).click();
   await confirmSignature(seller.page, "签署担保报价", "20.00");
   await expect(seller.page.getByTestId("offer-verified")).toBeVisible();
   expect(await seller.signCount()).toBe(sellerSigns + 1);
   const link = (await seller.page.getByTestId("offer-link").textContent()) ?? "";
   expect(link).toMatch(/\/pay\?offer=\d+$/);
+  const offerId = new URL(link).searchParams.get("offer") ?? "";
 
   // 买家：approve + createAndFund 一个 UserOperation（卖家承担手续费，买家付 20 + 0.05 代付费）
   await buyer.page.goto(link);
@@ -188,9 +228,18 @@ test("开通交易 → 卖家发报价 → 买家一次 Face ID 付款 → 卖�
   await buyer.page.getByRole("button", { name: /^付款/ }).click();
   await confirmSignature(buyer.page, "担保付款", "20.05");
   expect(await buyer.signCount()).toBe(buyerSigns + 1); // 授权 + 付款只刷一次 Face ID
+  // 付款结果页等 indexer 同步出订单（GET /offers/{id}/order）才给出订单链接：站内订单 ID，不是链上订单号
   const orderHref = (await buyer.page.getByTestId("order-link").getAttribute("href")) ?? "";
   const orderId = new URL(orderHref, "http://x").searchParams.get("id") ?? "";
-  expect(BigInt(orderId)).toBeGreaterThan(0n);
+  expect(Number(orderId)).toBeGreaterThan(0);
+  if (!h.fakeOrders) {
+    // indexer 看到成交后把报价卡片标为已付款（只能成交一次）
+    const offer = await seller.page.evaluate(
+      async (id) => (await fetch(`/api/v1/offers/${id}`)).json() as Promise<{ status: string }>,
+      offerId,
+    );
+    expect(offer.status).toBe("paid");
+  }
 
   expect(await changes()).toEqual({
     buyer: -U("20.05"),
@@ -218,11 +267,13 @@ test("开通交易 → 卖家发报价 → 买家一次 Face ID 付款 → 卖�
   // 卖家那边的页面自己刷新出最终状态
   await expect(seller.page.getByTestId("order-state")).toHaveText("已确认收货，货款已放给卖家");
   await expect(buyer.page.getByRole("button", { name: "确认收货" })).toBeHidden();
-  if (h.fakeOrders) {
-    await expect(buyer.page.getByTestId("order-level")).toHaveText("已上链（处理中）");
-    h.fake.finalize(orderId);
-    await expect(buyer.page.getByTestId("order-level")).toHaveText("已最终确认");
-  }
+  await expect(buyer.page.getByTestId("order-level")).toHaveText("已上链（处理中）");
+  // 真实 indexer：anvil 每秒出一块，finalized = 最新块往前 64 块，约一分钟后订单页显示最终确认
+  // （fork 链上 anvil_mine 每块要一两秒，比等出块还慢，所以不手动挖块）
+  if (h.fakeOrders) h.fake.finalize(orderId);
+  await expect(buyer.page.getByTestId("order-level")).toHaveText("已最终确认", {
+    timeout: 150_000,
+  });
 
   // 默认参数：手续费 max(20 × 1%, 1) = 1 USDT + 基础 gas 费 0.1 USDT，均由卖家承担
   expect(await changes()).toEqual({
@@ -236,7 +287,7 @@ test("开通交易 → 卖家发报价 → 买家一次 Face ID 付款 → 卖�
     address: chain.contracts.Escrow,
     abi: escrowAbi,
     functionName: "getOrder",
-    args: [BigInt(orderId)],
+    args: [await chainOrderId(buyer.page, orderId)],
   });
   expect(order.state).toBe(3); // Released
   expect(order.seller).toBe(sellerAddr);

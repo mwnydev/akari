@@ -20,12 +20,13 @@ import { useEffect, useState } from "react";
 import { userMessage, walletApi, type OrderView } from "../lib/wallet/api";
 import { NETWORK_LABEL, chain } from "../lib/wallet/config";
 import {
-  STATE_TEXT,
   availableAction,
   isFinal,
+  isOnce,
   levelBadge,
   onceState,
   remaining,
+  stateText,
 } from "../lib/wallet/order";
 import type { Wallet } from "../lib/wallet/sdk";
 import { OrderList } from "./OrderList";
@@ -56,8 +57,21 @@ async function fetchOrder(id: number): Promise<OrderView | null> {
   }
 }
 
-function Deadline({ order, state, now }: { order: OrderView; state: OnceState; now: number }) {
-  const { ship, confirm } = order.deadlines;
+function Deadline({
+  order,
+  state,
+  now,
+}: {
+  order: OrderView;
+  state: OnceState | null;
+  now: number;
+}) {
+  const { ship, confirm, start } = order.deadlines;
+  if (!isOnce(order)) {
+    return state === "funded" && start && !order.stream?.started_at ? (
+      <>开始期限{remaining(start, now)}，逾期未开始买家可全额取回。</>
+    ) : null;
+  }
   if (state === "funded" && ship) {
     return <>发货期限{remaining(ship, now)}，逾期未发货买家可全额取回。</>;
   }
@@ -94,13 +108,16 @@ export function OrderLive({ orderId, wallet }: { orderId: number; wallet: Wallet
       <ErrorState title="没有这个订单" message={`没有找到订单 #${orderId}`} />
     );
   }
-  const state = onceState(order);
-  if (!state) {
+  const text = stateText(order);
+  if (!text) {
     return <ErrorState title="订单已撤销" message="这笔付款所在的区块被回滚，订单不存在了" />;
   }
+  const state = onceState(order);
 
-  const pending = submittedAt === state;
-  const action = pending ? null : availableAction(order, wallet.address, now);
+  const pending = submittedAt !== null && submittedAt === state;
+  const action = pending
+    ? null
+    : availableAction(order, wallet.address, now, chain.contracts.Escrow);
   const me = wallet.address.toLowerCase();
   const buyer = order.buyer.address;
   const seller = order.seller.address;
@@ -110,17 +127,20 @@ export function OrderLive({ orderId, wallet }: { orderId: number; wallet: Wallet
     <div className="space-y-4">
       <div>
         <p className="text-sm text-fg-muted">
-          订单 #{order.id} · 一次性担保{role ? ` · 你是${role}` : ""}
+          订单 #{order.id} · {isOnce(order) ? "一次性担保" : "分期担保"}
+          {role ? ` · 你是${role}` : ""}
         </p>
         <p className="mt-1 text-2xl font-semibold">
           <Amount value={order.amount} />
         </p>
       </div>
       <Card className="space-y-3">
-        <OnceProgress state={state} delivered={Boolean(order.deadlines.confirm)} />
+        {isOnce(order) && state ? (
+          <OnceProgress state={state} delivered={Boolean(order.deadlines.confirm)} />
+        ) : null}
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-medium" data-testid="order-state">
-            {STATE_TEXT[state]}
+            {text}
           </p>
           <Badge tone={level.tone} data-testid="order-level">
             {level.label}
@@ -172,7 +192,7 @@ export function OrderLive({ orderId, wallet }: { orderId: number; wallet: Wallet
               : "确认期从现在开始计算，期满未争议自动放款。"
           }
           onConfirm={async () => {
-            const id = BigInt(order.id);
+            const id = BigInt(order.chain_order_id);
             await (action.kind === "release" ? wallet.release(id) : wallet.markDelivered(id));
             setOpen(false);
             setSubmittedAt(state);

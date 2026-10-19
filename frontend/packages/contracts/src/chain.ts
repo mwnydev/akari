@@ -15,6 +15,7 @@ export interface ChainConfig {
     MockUSDT: Address;
     EscrowConfig: Address;
     Escrow: Address;
+    StreamEscrow: Address;
     FixedFeePaymaster: Address;
   };
   /** Paymaster 合约里登记的代付签名者（只有地址；私钥在 forum-sponsor，本地链见 DEV 代付实现）。 */

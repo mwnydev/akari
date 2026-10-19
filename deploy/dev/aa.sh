@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 本地 AA 开发链：anvil fork Arbitrum Sepolia + 部署本仓库合约 + Pimlico Alto bundler。说明见 README-aa.md。
-#   deploy/dev/aa.sh up      启动 anvil → 核对 AA 基础合约 → 部署 → 充押金 → 写 chain.local.json → 启动 Alto
-#   deploy/dev/aa.sh down    停止并删除 anvil、Alto 容器（链状态不保留，下次 up 重新 fork）
+#   deploy/dev/aa.sh up      启动 anvil → 核对 AA 基础合约 → 部署 → 充押金 → 写前后端链配置与 .env.aa → 启动 Alto
+#   deploy/dev/aa.sh down    停止并删除 anvil、Alto 容器与生成的后端链配置（链状态不保留，下次 up 重新 fork）
 #   deploy/dev/aa.sh status  显示两个服务是否在线
 # 仅限开发：下面的私钥由固定字符串派生（cast keccak "akari-dev-only:<name>"），公开、无价值，绝不能用在任何真实网络。
 set -euo pipefail
@@ -10,6 +10,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 CONTRACTS="$ROOT/contracts"
 OUT="$ROOT/frontend/packages/contracts/src/chain.local.json"
+# 后端链配置（forum-api / forum-indexer / forum-sponsor 的 CHAIN_CONFIG）与开发环境变量；含部署区块，每次 up 都不同，不入库。
+CHAIN_TOML="$HERE/chain.local.toml"
+DEV_ENV="$HERE/.env.aa"
 COMPOSE=(docker compose -f "$HERE/compose.yaml" --profile aa)
 
 export PATH="$HOME/.foundry/bin:$PATH"
@@ -19,7 +22,10 @@ BUNDLER="http://127.0.0.1:${AA_BUNDLER_PORT:-4337}"
 CHAIN_ID=31337
 
 DEPLOYER_KEY=0x2bd477e315997bfc5018a2d4ef4780999f011bceb8cf602c009337739f641d81 # akari-dev-only:deployer（本地 Anvil 专用，公开派生）gitleaks:allow
+SPONSOR_KEY=0xdccc2a137d5ed46c4b46ea12b6e50feb5565cfa60bda1c3814b0e25d3f52eb98    # akari-dev-only:sponsor gitleaks:allow
 SPONSOR_ADDR=0x9A53c3ACF864004F00BdE6E48Bd8A50D6470e8A8                          # akari-dev-only:sponsor
+RELAYER_KEY=0x418cc49efb0f686af9f810b10928711756343553a8bcf6e77f784ec4c23310cf    # akari-dev-only:relayer gitleaks:allow
+RELAYER_ADDR=0x8204490c73DceDE91340e855279A8A67758609AC                          # akari-dev-only:relayer（forum-sponsor 代发热钱包）
 EXECUTOR_ADDR=0x19d6319D75788D0fc7f71f3b49fa11863412c804                         # akari-dev-only:bundler-executor
 UTILITY_ADDR=0x685bb2D07a60B63Bd337a0a67b02Ee7749a4Ade3                          # akari-dev-only:bundler-utility
 
@@ -34,6 +40,9 @@ ERC6492_VERIFIER=0x00007bd799e4A591FeA53f8A8a3E9f931626Ba7e
 PAYMASTER_DEPOSIT=10ether
 PAYMASTER_STAKE=1ether
 PAYMASTER_UNSTAKE_DELAY=86400
+# forum-api → forum-sponsor（只听本机）的地址与共享令牌，仅开发。
+SPONSOR_PORT=${AA_SPONSOR_PORT:-8090}
+SPONSOR_API_TOKEN=dev-only-sponsor-token-change-me-0123456789
 
 log() { printf '\033[1;34m[aa]\033[0m %s\n' "$*" >&2; }
 die() { printf '\033[1;31m[aa]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -80,7 +89,7 @@ up() {
 
   local deployer
   deployer=$(cast wallet address "$DEPLOYER_KEY")
-  for a in "$deployer" "$EXECUTOR_ADDR" "$UTILITY_ADDR"; do
+  for a in "$deployer" "$EXECUTOR_ADDR" "$UTILITY_ADDR" "$RELAYER_ADDR"; do
     cast rpc anvil_setBalance "$a" 0x56bc75e2d63100000 --rpc-url "$RPC" >/dev/null # 100 ETH
   done
   [[ "$(cast nonce "$deployer" --rpc-url "$RPC")" == 0 ]] ||
@@ -88,15 +97,19 @@ up() {
 
   log "部署合约（部署账户 $deployer，nonce 从 0 开始，地址每次都相同）"
   (cd "$CONTRACTS" && forge build --quiet)
-  local usdt config escrow paymaster
+  local start_block usdt config escrow stream paymaster
+  start_block=$(cast block-number --rpc-url "$RPC")
   usdt=$(cd "$CONTRACTS" && forge create src/MockUSDT.sol:MockUSDT --broadcast --json \
     --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" | jq -r .deployedTo)
   (cd "$CONTRACTS" && TOKEN=$usdt OWNER=$deployer ARBITER=$deployer FEE_RECIPIENT=$deployer \
     forge script script/Deploy.s.sol --broadcast --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" --silent)
   config=$(cast compute-address "$deployer" --nonce 1 | awk '{print $NF}')
   escrow=$(cast compute-address "$deployer" --nonce 2 | awk '{print $NF}')
+  stream=$(cast compute-address "$deployer" --nonce 3 | awk '{print $NF}')
   [[ "$(cast call "$escrow" 'config()(address)' --rpc-url "$RPC")" == "$config" ]] ||
     die "Escrow / EscrowConfig 地址与预期不符"
+  [[ "$(cast call "$stream" 'escrow()(address)' --rpc-url "$RPC")" == "$escrow" ]] ||
+    die "StreamEscrow 地址与预期不符"
   paymaster=$(cd "$CONTRACTS" && forge create src/aa/FixedFeePaymaster.sol:FixedFeePaymaster --broadcast --json \
     --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" \
     --constructor-args "$ENTRY_POINT" "$usdt" "$deployer" "$SPONSOR_ADDR" "$deployer" | jq -r .deployedTo)
@@ -110,7 +123,8 @@ up() {
   jq -n --argjson chainId "$CHAIN_ID" --arg rpc "$RPC" --arg bundler "$BUNDLER" \
     --arg ep "$ENTRY_POINT" --arg impl "$KERNEL_IMPL" --arg factory "$KERNEL_FACTORY" \
     --arg meta "$KERNEL_META_FACTORY" --arg webauthn "$WEBAUTHN_VALIDATOR" --arg v6492 "$ERC6492_VERIFIER" \
-    --arg usdt "$usdt" --arg config "$config" --arg escrow "$escrow" --arg paymaster "$paymaster" \
+    --arg usdt "$usdt" --arg config "$config" --arg escrow "$escrow" --arg stream "$stream" \
+    --arg paymaster "$paymaster" \
     --arg signer "$SPONSOR_ADDR" --arg deployer "$deployer" '{
       "//": "由 deploy/dev/aa.sh 生成，勿手改。本地 anvil（fork Arbitrum Sepolia，链 ID 改为 31337）。",
       chainId: $chainId,
@@ -121,11 +135,15 @@ up() {
       kernel: { version: "0.3.3", implementation: $impl, factory: $factory, metaFactory: $meta },
       webAuthnValidator: $webauthn,
       erc6492Verifier: $v6492,
-      contracts: { MockUSDT: $usdt, EscrowConfig: $config, Escrow: $escrow, FixedFeePaymaster: $paymaster },
+      contracts: {
+        MockUSDT: $usdt, EscrowConfig: $config, Escrow: $escrow, StreamEscrow: $stream,
+        FixedFeePaymaster: $paymaster
+      },
       paymasterSigner: $signer,
       deployer: $deployer
     }' >"$OUT"
   log "已写入 ${OUT#"$ROOT/"}"
+  write_backend_config "$start_block" "$usdt" "$config" "$escrow" "$stream" "$paymaster"
 
   log "启动 Alto bundler"
   "${COMPOSE[@]}" up -d alto
@@ -133,8 +151,67 @@ up() {
   log "就绪：RPC $RPC · bundler $BUNDLER · fork 区块 $(cast rpc anvil_nodeInfo --rpc-url "$RPC" | jq -r .forkConfig.forkBlockNumber)"
 }
 
+# 后端链配置：地址与 chain.local.json 相同；钱包初始化参数第 1 版与前端 localChain 的版本 1 逐项一致
+# （frontend/packages/contracts/src/chain.ts），否则钱包页面会因参数与服务器不一致而拒绝操作。
+write_backend_config() {
+  local start_block=$1 usdt=$2 config=$3 escrow=$4 stream=$5 paymaster=$6
+  cat >"$CHAIN_TOML" <<TOML
+# 由 deploy/dev/aa.sh 生成，勿手改。本地 AA 开发链，仅限开发。
+chain_id = $CHAIN_ID
+name = "Akari 本地链（Arbitrum Sepolia fork）"
+
+[rpc.primary]
+http = "$RPC"
+ws = "${RPC/http:/ws:}"
+
+[contracts]
+escrow = "$escrow"
+stream = "$stream"
+config = "$config"
+# 部署前的最新块：indexer 首次启动从这里补拉（fork 来的区块号很大，不能从 0 开始）。
+start_block = $start_block
+
+[token]
+symbol = "mUSDT"
+address = "$usdt"
+decimals = 6
+
+[aa]
+entry_point = "$ENTRY_POINT"
+paymaster = "$paymaster"
+factories = ["$KERNEL_META_FACTORY"]
+
+# anvil 每秒一块，safe / finalized 标记 = 最新块往前 32 / 64 块。
+[indexer]
+reconcile_interval_ms = 1000
+
+[[wallet_init_versions]]
+version = 1
+kernel_implementation = "$KERNEL_IMPL"
+kernel_factory = "$KERNEL_FACTORY"
+kernel_meta_factory = "$KERNEL_META_FACTORY"
+webauthn_validator = "$WEBAUTHN_VALIDATOR"
+entry_point = "$ENTRY_POINT"
+paymaster = "$paymaster"
+approve_token = "$usdt"
+approve_amount = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+TOML
+  cat >"$DEV_ENV" <<ENV
+# 由 deploy/dev/aa.sh 生成，勿手改；仅限开发（私钥由公开字符串派生）。用法见 deploy/dev/README-aa.md。
+CHAIN_CONFIG=$CHAIN_TOML
+SPONSOR_URL=http://127.0.0.1:$SPONSOR_PORT
+SPONSOR_LISTEN=127.0.0.1:$SPONSOR_PORT
+SPONSOR_API_TOKEN=$SPONSOR_API_TOKEN
+SPONSOR_DEV_PAYMASTER_KEY=$SPONSOR_KEY
+SPONSOR_DEV_HOT_WALLET_KEY=$RELAYER_KEY
+FALLBACK_BUNDLER_URL=$BUNDLER
+ENV
+  log "已写入 ${CHAIN_TOML#"$ROOT/"}、${DEV_ENV#"$ROOT/"}"
+}
+
 down() {
   "${COMPOSE[@]}" rm -sf alto anvil
+  rm -f "$CHAIN_TOML" "$DEV_ENV" # 链状态不保留，部署区块随之失效
 }
 
 status() {

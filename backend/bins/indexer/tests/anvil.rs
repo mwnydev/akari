@@ -755,7 +755,9 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
     eventually("first indexer holds the lock", || async {
         (count(
             &pool,
-            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND granted",
+            // 只看本测试库：同一 PostgreSQL 上别的库里跑着的 indexer 也持有同名锁
+            "SELECT count(*) FROM pg_locks l JOIN pg_database d ON d.oid = l.database \
+             WHERE l.locktype = 'advisory' AND l.granted AND d.datname = current_database()",
         )
         .await
             == 1)

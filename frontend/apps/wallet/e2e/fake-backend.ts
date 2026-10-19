@@ -251,6 +251,19 @@ export class FakeBackend {
       }
       case "GET /api/v1/orders/{id}":
         return [200, await this.order(id)];
+      case "GET /api/v1/offers/{id}/order": {
+        // 不记报价哈希：取这位买家最近一次建单（测试里每个买家只付一次）
+        const logs = await publicClient.getContractEvents({
+          address: chain.contracts.Escrow,
+          abi: escrowAbi,
+          eventName: "OrderCreated",
+          args: { buyer: this.walletOf(user).address as `0x${string}` },
+          fromBlock: (await publicClient.getBlockNumber()) - 1000n,
+        });
+        const created = logs.at(-1);
+        if (!created?.args.orderId) throw new HttpError(404, "NOT_FOUND", "内容不存在或已被删除");
+        return [200, await this.order(created.args.orderId.toString())];
+      }
       default:
         throw new HttpError(404, "NOT_FOUND", "内容不存在或已被删除");
     }
