@@ -27,6 +27,14 @@ ansible-playbook -i inventory/staging.yml site.yml      # 或 inventory/producti
 - **caddy**：Cloudflare Origin CA 证书 + Authenticated Origin Pulls（`require_and_verify`）；真实 IP 只信任 Cloudflare 网段的 `CF-Connecting-IP`；api 两实例 `least_conn` + 健康检查；Next.js 限并发。
 - **app**：每个程序独立系统用户和 systemd 单元（`ProtectSystem=strict`、`NoNewPrivileges`、`MemoryMax` 等）；forum-sponsor 的私钥用 `LoadCredentialEncrypted`（`systemd-creds encrypt` 生成，放 `/etc/akari/credstore/`）。
 
+## 环境变量文件（/etc/akari/*.env，不进仓库）
+
+| 文件 | 关键变量 |
+| --- | --- |
+| `forum-api.env` | `DATABASE_URL`、`VALKEY_URL`（Unix socket）、`COOKIE_SECRET`（64 字节十六进制）、`AUTH_SECRET`、`ALLOWED_ORIGINS`、`INTERNAL_HOSTS` |
+| `forum-worker.env` | `DATABASE_URL`、`VALKEY_URL`、邮件通道（Resend / SMTP） |
+| `web.env` | `COOKIE_SIGNING_KEY` = `COOKIE_SECRET` 的**前 32 字节**（只给签名那一半，最小权限）、`API_ORIGIN` |
+
 ## 尚未完成
 
 - pgBackRest 归档到 R2（等 R2 凭据）、Prometheus / Grafana / Loki、AIDE 基线初始化。

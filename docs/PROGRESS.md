@@ -46,12 +46,19 @@
 - [x] CI：合约覆盖率 100% 硬门禁、deploy 检查；后端 CI 带 PostgreSQL + Valkey 服务
 - [x] 版本控制改用 Jujutsu（ADR 0006）
 - [ ] **设计稿确认（站长）** ← 阶段 0 关卡
-- [ ] 下一轮合约：卖家保证金池、`StreamEscrow`、`createFromAuction`、`extendDeadlines`、免费活动排期、代币白名单、部署脚本（含 ERC-6492 验证器检查）
-- [ ] 下一轮后端：板块 / 主题 / 楼层 API（楼层分配多 CTE）、ammonia 过滤、apalis 接入、设备管理
-- [ ] 下一轮前端：页面接真实 API、Next.js 验证会话 Cookie 签名、Storybook
+- [x] 第 3 轮合约：卖家保证金池、`extendDeadlines`、免费活动排期、代币白名单、`createFromAuction`、全站托管总额上限 5000 / 单笔 200 USDT、部署脚本；为控制合约大小拆出 `EscrowConfig`（Escrow 本身无 owner）
+- [x] 第 3 轮合约：自写固定费 Paymaster（EntryPoint v0.7），签名有效期链上强制 ≤ 10 分钟；合约合计 151 个测试，覆盖率 100%，Slither 无高危
+- [x] 第 3 轮后端：板块 / 主题 / 楼层 API、楼层分配单条语句、板块列表 ZSET + 深分页游标、首页缓存版本化失效、浏览数批量回写、版主操作写审计日志、新用户限制；58 个测试，所有新 SQL 实测走索引
+- [x] 第 3 轮前端：OpenAPI 生成客户端、邮箱登录接真实 API、会话 Cookie 验签（Next.js 只持有签名半密钥）、Playwright 端到端；论坛首屏 143–178 KB
+- [ ] 下一轮合约：`StreamEscrow`（共用 `EscrowConfig` 与保证金池）
+- [ ] 下一轮后端：站内通知 + WebSocket 推送、用户名片 Valkey 缓存、管理人员 Passkey 登录、板块管理接口、apalis 接入
+- [ ] 下一轮前端：板块 / 帖子页接真实 API、Tiptap 编辑器、游客页 Valkey 缓存、Turnstile
 - [ ] 待补 CI：knip、jscpd、cargo-llvm-cov、lefthook
 
 ### 评审记录
+
+- 第 3 轮：ammonia 4.2.3 有安全公告 RUSTSEC-2026-0373，按 48 小时安全补丁规则升到 4.2.4（我们不允许 `style`，原本也无法利用）。
+- 第 3 轮：开发库 `random_page_cost` 改为 1.1 与生产一致，否则规划器在默认值下会选错 ZSET 重建方案。
 
 - 测试网待实测：USD₮0 代理合约在 Paymaster 验证阶段被读取，第三方备用 Bundler 是否接受（ADR 0004 修订）。
 - P1 恢复功能注意：Kernel v3.3 的 Passkey 验证器是共享合约、验证器 ID 不变，恢复时需 `onUninstall` + `onInstall` 原地换钥（同 ZeroDev 已审计的 RecoveryAction）。

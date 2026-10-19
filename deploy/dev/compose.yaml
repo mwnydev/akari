@@ -17,6 +17,11 @@ services:
       - default_toast_compression=lz4
       - -c
       - jit=off
+      # 与生产一致（plan 第 8 节）：NVMe 随机读接近顺序读，否则规划器会选错索引方案
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
     ports: ["127.0.0.1:5432:5432"]
     volumes: [pgdata:/var/lib/postgresql]
     healthcheck:
