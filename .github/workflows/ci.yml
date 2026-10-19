@@ -54,6 +54,9 @@ jobs:
       - run: cargo deny check
       - run: cargo audit
       # 离线元数据必须与迁移后的真实数据库一致
+      # 规划器参数与开发、生产一致（plan 第 8 节），否则 sqlx 按执行计划推断的可空性会不同
+      - run: |
+          psql "$DATABASE_URL" -c "ALTER SYSTEM SET random_page_cost = 1.1" -c "ALTER SYSTEM SET effective_io_concurrency = 200" -c "SELECT pg_reload_conf()"
       - run: sqlx migrate run --source crates/db/migrations
       - run: SQLX_OFFLINE=false cargo sqlx prepare --workspace --check -- --all-targets
       - run: cargo nextest run --workspace --locked
