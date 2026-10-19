@@ -1,6 +1,7 @@
 import type { Schemas } from "@akari/api-client";
 import { Card, UserCard } from "@akari/ui";
 import { formatTime, profileHref, userName, type UserCardView } from "../../lib/display";
+import { PresenceDot } from "../live/PresenceDot";
 import { Prose } from "../Prose";
 import { FloorShell, type FloorPermissions } from "./FloorShell";
 
@@ -31,6 +32,8 @@ export function Floor({
           name={userName(author)}
           level={author.level}
           href={profileHref(author)}
+          avatar={author.avatar_url ?? undefined}
+          avatarBadge={<PresenceDot userId={author.id} avatarSize={32} />}
           size="sm"
         />
         <a href={`#floor-${post.floor}`} className="amount shrink-0 text-sm text-fg-muted">

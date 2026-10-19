@@ -1,6 +1,7 @@
 "use client";
 
 import * as AvatarPrimitive from "@radix-ui/react-avatar";
+import type { ReactNode } from "react";
 import { cn } from "../cn";
 
 export interface AvatarProps {
@@ -9,11 +10,28 @@ export interface AvatarProps {
   size?: number;
   /** undefined = 不显示在线点 */
   online?: boolean | undefined;
+  /** 叠在右下角的内容（如浏览器里再取的在线点，见 OnlineDot） */
+  badge?: ReactNode;
   className?: string;
 }
 
-export function Avatar({ name, src, size = 40, online, className }: AvatarProps) {
-  const dot = Math.max(8, Math.round(size / 4));
+/** 头像右下角的在线点；`avatarSize` 是所在头像的边长。 */
+export function OnlineDot({ online, avatarSize }: { online: boolean; avatarSize: number }) {
+  const dot = Math.max(8, Math.round(avatarSize / 4));
+  return (
+    <span
+      role="img"
+      aria-label={online ? "在线" : "离线"}
+      className={cn(
+        "absolute right-0 bottom-0 rounded-full ring-2 ring-surface",
+        online ? "bg-online" : "bg-fg-muted/50",
+      )}
+      style={{ width: dot, height: dot }}
+    />
+  );
+}
+
+export function Avatar({ name, src, size = 40, online, badge, className }: AvatarProps) {
   return (
     <span
       className={cn("relative inline-flex shrink-0", className)}
@@ -30,17 +48,8 @@ export function Avatar({ name, src, size = 40, online, className }: AvatarProps)
           {Array.from(name)[0] ?? "?"}
         </AvatarPrimitive.Fallback>
       </AvatarPrimitive.Root>
-      {online !== undefined ? (
-        <span
-          role="img"
-          aria-label={online ? "在线" : "离线"}
-          className={cn(
-            "absolute right-0 bottom-0 rounded-full ring-2 ring-surface",
-            online ? "bg-online" : "bg-fg-muted/50",
-          )}
-          style={{ width: dot, height: dot }}
-        />
-      ) : null}
+      {online !== undefined ? <OnlineDot online={online} avatarSize={size} /> : null}
+      {badge}
     </span>
   );
 }

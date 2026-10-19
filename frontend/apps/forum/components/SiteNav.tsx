@@ -1,10 +1,14 @@
 import type { Me } from "@akari/api-client";
 import { Avatar, Button, GlassNav } from "@akari/ui";
-import { Bell, Search } from "lucide-react";
+import { Bell, MessageCircle, Search } from "lucide-react";
 import Link from "next/link";
 import { profileHref } from "../lib/display";
 import { getMe } from "../lib/session";
+import { UnreadBadge } from "./live/UnreadBadge";
 import { LogoutButton } from "./LogoutButton";
+
+const iconLink =
+  "relative inline-flex h-8 items-center gap-1 rounded-pill px-2 text-sm hover:bg-surface-2";
 
 const links = [
   { href: "/", label: "首页" },
@@ -34,10 +38,15 @@ export async function SiteNav({ active }: { active?: string }) {
           </Button>
           {me ? (
             <>
-              <Button variant="ghost" size="sm" aria-label="通知" className="px-2">
+              <a href="/messages" className={iconLink}>
+                <MessageCircle size={18} aria-hidden />
+                <span className="sr-only sm:not-sr-only">私信</span>
+              </a>
+              <a href="/notifications" className={iconLink}>
                 <Bell size={18} aria-hidden />
                 <span className="sr-only sm:not-sr-only">通知</span>
-              </Button>
+                <UnreadBadge />
+              </a>
               <Link
                 href={profileHref(me)}
                 className="flex items-center gap-2"

@@ -12,11 +12,12 @@ export function TopicRow({
   topic: Schemas["TopicSummary"];
   user: (id: number) => UserCardView;
 }) {
-  const author = userName(user(topic.author_id));
+  const card = user(topic.author_id);
+  const author = userName(card);
   const lastPoster = topic.last_poster_id ? userName(user(topic.last_poster_id)) : author;
   return (
     <li className="flex gap-3 px-4 py-3">
-      <Avatar name={author} size={36} className="mt-0.5" />
+      <Avatar name={author} src={card.avatar_url ?? undefined} size={36} className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <Link href={`/t/${topic.id}`} className="line-clamp-2 font-medium hover:text-accent">
           <TopicBadges topic={topic} />

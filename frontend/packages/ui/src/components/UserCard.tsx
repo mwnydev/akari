@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { cn } from "../cn";
 import { Avatar } from "./Avatar";
 import { Badge } from "./Badge";
@@ -17,6 +18,8 @@ export interface UserCardProps {
   level: number;
   levelName?: string | undefined;
   online?: boolean | undefined;
+  /** 叠在头像右下角的内容（如浏览器里再取的在线点） */
+  avatarBadge?: ReactNode;
   /** 最近活跃文案（不在线时显示），如「5 分钟前」 */
   lastSeen?: string | undefined;
   reputation?: TradeReputation | undefined;
@@ -42,6 +45,7 @@ export function UserCard({
   level,
   levelName,
   online,
+  avatarBadge,
   lastSeen,
   reputation,
   size = "md",
@@ -50,7 +54,13 @@ export function UserCard({
 }: UserCardProps) {
   return (
     <div className={cn("flex min-w-0 items-center gap-3", className)}>
-      <Avatar name={name} src={avatar} online={online} size={size === "sm" ? 32 : 44} />
+      <Avatar
+        name={name}
+        src={avatar}
+        online={online}
+        badge={avatarBadge}
+        size={size === "sm" ? 32 : 44}
+      />
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
           {href ? (

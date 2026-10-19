@@ -1,7 +1,16 @@
-import { Avatar, Badge, Button, Card, EmptyState } from "@akari/ui";
+import { ApiError } from "@akari/api-client";
+import { Amount, Avatar, Badge, Button, Card, CardTitle, EmptyState } from "@akari/ui";
 import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { cache, type ReactNode } from "react";
+import { PresenceDot } from "../../../components/live/PresenceDot";
+import { StartConversation } from "../../../components/messages/StartConversation";
+import { PageError } from "../../../components/PageError";
 import { SiteNav } from "../../../components/SiteNav";
-import { userName } from "../../../lib/display";
+import { load, serverApi } from "../../../lib/api";
+import { formatTime, profileHref, userName } from "../../../lib/display";
+import { loginHref, topicHref } from "../../../lib/links";
 import { WALLET_ORIGIN } from "../../../lib/public-config";
 import { getMe } from "../../../lib/session";
 
@@ -16,50 +25,180 @@ function decodeParam(raw: string): string {
   }
 }
 
-/** 路由参数是用户名，或还没设置用户名的用户的数字 ID（见 lib/display profileHref）。 */
-function displayOf(name: string): string {
-  return /^\d+$/.test(name) ? userName({ id: Number(name) }) : name;
-}
+const loadProfile = cache(async (user: string) => {
+  const api = await serverApi();
+  const path = { params: { path: { user } } };
+  const [profile, posts] = await Promise.all([
+    load(api.GET("/api/v1/users/{user}", path)),
+    load(api.GET("/api/v1/users/{user}/posts", path)),
+  ]);
+  return { profile, posts };
+});
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
-  return { title: displayOf(decodeParam((await params).name)), robots: { index: false } };
+  const { profile } = await loadProfile(decodeParam((await params).name));
+  return profile instanceof ApiError
+    ? { robots: { index: false } }
+    : { title: userName(profile), robots: { index: false } };
+}
+
+/** 成功率（万分比）→「98.6%」。 */
+function percent(bps: number): string {
+  return `${Math.floor(bps / 100)}.${Math.floor((bps % 100) / 10)}%`;
+}
+
+function Stat({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-lg bg-surface-2 px-3 py-2">
+      <dt className="text-xs text-fg-muted">{label}</dt>
+      <dd className="amount text-lg font-semibold">{value}</dd>
+    </div>
+  );
 }
 
 /**
- * 个人主页。后端还没有公开的用户资料、帖子列表与交易信誉接口，先显示名字；
- * 本人访问时显示自己的账号信息和开通交易入口。
+ * 个人主页：等级与经验、交易信誉（只统计链上最终确认的订单）、最近发帖。资料对所有人相同，游客页可缓存，
+ * 在线点在浏览器里取。本人看到账号信息与编辑入口，其他登录用户看到「发私信」。
  */
 export default async function ProfilePage({ params }: { params: Params }) {
   const raw = decodeParam((await params).name);
-  const me = await getMe();
-  const self = me !== null && (raw === me.username || raw === String(me.id));
-  const name = self ? userName(me) : displayOf(raw);
+  const [{ profile, posts }, me] = await Promise.all([loadProfile(raw), getMe()]);
+  if (profile instanceof ApiError) {
+    if (profile.status === 404) notFound();
+    return (
+      <>
+        <SiteNav />
+        <PageError error={profile} />
+      </>
+    );
+  }
+  // 按 ID 打开的、已有用户名的人换成用户名地址：同一个人只有一个规范地址
+  if (/^\d+$/.test(raw) && profile.username) redirect(profileHref(profile));
+
+  const name = userName(profile);
+  const self = me?.id === profile.id;
+  const t = profile.trade;
+  const lastActive = profile.last_active_at
+    ? profile.last_active_day_only
+      ? formatTime(profile.last_active_at).slice(0, 10)
+      : formatTime(profile.last_active_at)
+    : "—";
+
   return (
     <>
       <SiteNav />
       <main className="mx-auto max-w-3xl space-y-4 px-4 py-5">
-        <Card className="flex flex-col items-center gap-3 text-center sm:flex-row sm:text-left">
-          <Avatar name={name} size={80} />
-          <div className="min-w-0 flex-1">
+        <Card className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
+          <Avatar
+            name={name}
+            src={profile.avatar_url ?? undefined}
+            size={80}
+            badge={<PresenceDot userId={profile.id} avatarSize={80} />}
+          />
+          <div className="min-w-0 flex-1 space-y-1">
             <h1 className="flex flex-wrap items-center justify-center gap-2 text-2xl font-semibold sm:justify-start">
               {name}
-              {self ? <Badge tone="accent">这是你</Badge> : null}
+              <Badge tone="accent">Lv{profile.level}</Badge>
+              {self ? <Badge>这是你</Badge> : null}
             </h1>
+            <p className="amount text-sm text-fg-muted">
+              经验 {profile.exp.toLocaleString("zh-CN")} · {profile.topics} 主题 · {profile.posts}{" "}
+              帖子 · 加入于 {formatTime(profile.joined_at).slice(0, 10)} · 最近活跃 {lastActive}
+            </p>
             {self ? (
               <p className="text-sm text-fg-muted">登录邮箱：{me.email}（仅自己可见）</p>
             ) : null}
           </div>
           {self ? (
+            <div className="flex flex-col gap-2">
+              <Button asChild variant="secondary" size="sm">
+                <Link href="/settings">{me.username ? "修改用户名" : "设置用户名"}</Link>
+              </Button>
+              {me.username ? (
+                <Button asChild variant="secondary" size="sm">
+                  <a href={`${WALLET_ORIGIN}/setup`}>开通交易 / 管理钱包</a>
+                </Button>
+              ) : null}
+            </div>
+          ) : me ? (
+            <StartConversation userId={profile.id} />
+          ) : (
             <Button asChild variant="secondary" size="sm">
-              <a href={`${WALLET_ORIGIN}/setup`}>开通交易 / 管理钱包</a>
+              <Link href={loginHref(profileHref(profile))}>登录后发私信</Link>
             </Button>
-          ) : null}
+          )}
         </Card>
+        {self && !me.username ? (
+          <Card className="bg-warning-soft text-sm">
+            开通交易前需要先{" "}
+            <Link href="/settings" className="text-accent underline">
+              设置用户名
+            </Link>
+            ：交易对手和仲裁员都按用户名认人。
+          </Card>
+        ) : null}
+
         <Card>
-          <EmptyState
-            title="个人主页即将开放"
-            description="主题、回复与交易信誉（成功率、成交笔数、争议败诉、回复用时）会显示在这里。"
-          />
+          <CardTitle>交易信誉</CardTitle>
+          <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Stat
+              label="成功率"
+              value={t.success_rate_bps != null ? percent(t.success_rate_bps) : "—"}
+            />
+            <Stat label="成交" value={`${t.success} 笔`} />
+            <Stat label="争议败诉" value={`${t.disputes_lost} 次`} />
+            <Stat label="成交金额" value={<Amount value={t.volume} />} />
+            <Stat label="作为卖家违约" value={`${t.seller_fault_fail} 次`} />
+            <Stat label="作为买家违约" value={`${t.buyer_fault_fail} 次`} />
+            <Stat label="协商和解" value={`${t.settled} 次`} />
+            <Stat
+              label="卖家平均回复"
+              value={
+                t.avg_reply_secs != null
+                  ? `${Math.max(1, Math.round(t.avg_reply_secs / 60))} 分钟`
+                  : "—"
+              }
+            />
+          </dl>
+          <p className="mt-3 text-xs text-fg-muted" data-testid="finalized-note">
+            只统计链上已最终确认（finalized）的订单，刚成交的订单要等最终确认后才计入。成功率 = 成功
+            ÷（成功 + 本人责任失败），不满 10 笔不显示。
+          </p>
+        </Card>
+
+        <Card className="p-0 sm:p-0">
+          <CardTitle className="px-4 pt-4">最近发帖</CardTitle>
+          {posts instanceof ApiError ? (
+            <p className="px-4 py-6 text-sm text-fg-muted">帖子加载失败：{posts.message}</p>
+          ) : posts.posts.length ? (
+            <ul className="divide-y divide-border">
+              {posts.posts.map((p) => (
+                <li key={p.id} className="px-4 py-3">
+                  <Link
+                    href={topicHref(p.topic_id, p.page, p.floor)}
+                    className="font-medium hover:text-accent"
+                  >
+                    {p.floor === 1 ? (
+                      <Badge tone="accent" className="mr-2">
+                        主题
+                      </Badge>
+                    ) : (
+                      <Badge className="mr-2">#{p.floor}</Badge>
+                    )}
+                    {p.topic_title}
+                  </Link>
+                  <p className="mt-0.5 line-clamp-2 text-sm break-words text-fg-muted">
+                    {p.excerpt}
+                  </p>
+                  <time dateTime={p.created_at} className="text-xs text-fg-muted">
+                    {formatTime(p.created_at)}
+                  </time>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState title="还没有发过帖子" />
+          )}
         </Card>
       </main>
     </>

@@ -1,4 +1,5 @@
-import type { Config } from "dompurify";
+import type { Config, DOMPurify } from "dompurify";
+import { linkMentions } from "./mentions";
 
 /**
  * 前端 DOMPurify 二次过滤（plan 第 11 节）：与后端 ammonia 的白名单一致（backend/crates/content），
@@ -43,3 +44,12 @@ export const PURIFY_CONFIG = {
   ],
   ALLOW_DATA_ATTR: false,
 } satisfies Config;
+
+/** 过滤帖子 HTML，再把 @提及换成个人主页链接（lib/mentions）。服务端渲染与浏览器共用。 */
+export function sanitizePost(purify: DOMPurify, html: string): string {
+  const fragment = purify.sanitize(html, { ...PURIFY_CONFIG, RETURN_DOM_FRAGMENT: true });
+  linkMentions(fragment);
+  const box = fragment.ownerDocument.createElement("div");
+  box.append(fragment);
+  return box.innerHTML;
+}

@@ -1,5 +1,6 @@
 // 列表与楼层共用的显示规则。
 import type { Schemas } from "@akari/api-client";
+import type { TradeReputation } from "@akari/ui";
 
 export type UserCardView = Schemas["UserCardView"];
 
@@ -28,16 +29,6 @@ export function cardLookup(users: UserCardView[]): (id: number) => UserCardView 
   return (id) => byId.get(id) ?? { id, username: null, level: 1, reputation: NO_REPUTATION };
 }
 
-const MAX_MENTION_SUGGESTIONS = 8;
-
-/** @提及候选：按名字包含输入过滤。后端还没有用户搜索接口，候选是本页出现过的用户。 */
-export function filterMentionable(users: UserCardView[], query: string): UserCardView[] {
-  const q = query.trim().toLowerCase();
-  return users
-    .filter((u) => userName(u).toLowerCase().includes(q))
-    .slice(0, MAX_MENTION_SUGGESTIONS);
-}
-
 // 服务端渲染、游客页整页缓存，所以时间按站点时区格式化，而不是访问者的时区。
 const SITE_TIME_ZONE = "Asia/Shanghai";
 const dateTime = new Intl.DateTimeFormat("zh-CN", {
@@ -50,12 +41,31 @@ const dateTime = new Intl.DateTimeFormat("zh-CN", {
   hourCycle: "h23",
 });
 
+function timeParts(iso: string): Record<string, string> {
+  return Object.fromEntries(dateTime.formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
+}
+
 /** RFC 3339 → 「2026-10-19 09:04」。 */
 export function formatTime(iso: string): string {
-  const parts = Object.fromEntries(
-    dateTime.formatToParts(new Date(iso)).map((p) => [p.type, p.value]),
-  );
-  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+  const p = timeParts(iso);
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+
+/** 聊天里的时间：今年的省掉年份 →「10-19 09:04」。 */
+export function formatShortTime(iso: string, now: Date = new Date()): string {
+  const p = timeParts(iso);
+  const thisYear = timeParts(now.toISOString()).year;
+  const day = p.year === thisYear ? `${p.month}-${p.day}` : `${p.year}-${p.month}-${p.day}`;
+  return `${day} ${p.hour}:${p.minute}`;
+}
+
+/** 名片上的信誉 → 用户名片组件的格式（成功率万分比 → 千分比；不满 10 笔后端不给成功率）。 */
+export function tradeReputation(r: Schemas["ReputationView"]): TradeReputation {
+  return {
+    successPermille: Math.floor((r.success_rate_bps ?? 0) / 10),
+    deals: r.success,
+    disputesLost: r.disputes_lost,
+  };
 }
 
 /** 秒数 → 整天数文案（交易期限都是整天）。 */

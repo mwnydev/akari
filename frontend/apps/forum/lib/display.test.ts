@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   NO_REPUTATION,
   cardLookup,
-  filterMentionable,
   formatDays,
+  formatShortTime,
   formatTime,
   profileHref,
+  tradeReputation,
   userName,
-  type UserCardView,
 } from "./display";
 
 describe("display helpers", () => {
@@ -30,16 +30,26 @@ describe("display helpers", () => {
     expect(formatDays(36 * 3600)).toBe("36 小时");
   });
 
-  it("filters mention candidates case-insensitively and caps the list", () => {
-    const users: UserCardView[] = Array.from({ length: 12 }, (_, i) => ({
-      id: i + 1,
-      username: null,
-      level: 1,
-      reputation: NO_REPUTATION,
-    }));
-    users.push({ id: 99, username: "Momo", level: 1, reputation: NO_REPUTATION });
-    expect(filterMentionable(users, "mo").map((u) => u.id)).toEqual([99]);
-    expect(filterMentionable(users, "")).toHaveLength(8);
-    expect(filterMentionable(users, "用户 1").map((u) => u.id)).toEqual([1, 10, 11, 12]);
+  it("drops the year in chat times for this year only", () => {
+    const now = new Date("2026-12-01T00:00:00Z");
+    expect(formatShortTime("2026-10-18T17:04:00Z", now)).toBe("10-19 01:04");
+    expect(formatShortTime("2025-10-18T17:04:00Z", now)).toBe("2025-10-19 01:04");
+  });
+
+  it("converts reputation basis points to the card's permille", () => {
+    expect(
+      tradeReputation({
+        success: 12,
+        failed: 1,
+        settled: 0,
+        disputes_lost: 1,
+        success_rate_bps: 9231,
+      }),
+    ).toEqual({ successPermille: 923, deals: 12, disputesLost: 1 });
+    expect(tradeReputation(NO_REPUTATION)).toEqual({
+      successPermille: 0,
+      deals: 0,
+      disputesLost: 0,
+    });
   });
 });

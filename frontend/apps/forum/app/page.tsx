@@ -1,4 +1,4 @@
-import { ApiError, type Schemas } from "@akari/api-client";
+import { ApiError } from "@akari/api-client";
 import { Card, CardTitle, EmptyState, ErrorState } from "@akari/ui";
 import { ShieldCheck } from "lucide-react";
 import Link from "next/link";
@@ -7,35 +7,19 @@ import { SiteNav } from "../components/SiteNav";
 import { TopicRow } from "../components/TopicRow";
 import { load, serverApi } from "../lib/api";
 import { cardLookup } from "../lib/display";
-import { forumTree, listForums, type ForumView } from "../lib/forums";
+import { forumTree, listForums } from "../lib/forums";
 
-const LATEST = 20;
+type Search = Promise<Record<string, string | string[] | undefined>>;
 
-/**
- * 首页「最新主题」：后端还没有跨板块的最新列表，先并行取各板块第 1 页（不含置顶）再按最后回复时间合并。
- * 单个板块失败不影响其他板块。
- */
-async function latestTopics(forums: ForumView[]) {
+/** 首页：跨板块最新主题（后端按最后回复时间，只含访问者看得到的板块）+ 板块目录。`?cursor=` 翻到更早的。 */
+export default async function Home({ searchParams }: { searchParams: Search }) {
+  const raw = (await searchParams).cursor;
+  const cursor = typeof raw === "string" && raw ? raw : undefined;
   const api = await serverApi();
-  const pages = await Promise.all(
-    forums.map((f) =>
-      load(api.GET("/api/v1/forums/{slug}/topics", { params: { path: { slug: f.slug } } })),
-    ),
-  );
-  const ok = pages.filter((p): p is Schemas["BoardResponse"] => !(p instanceof ApiError));
-  const topics = ok
-    .flatMap((p) => p.topics)
-    .sort((a, b) => b.last_post_at.localeCompare(a.last_post_at))
-    .slice(0, LATEST);
-  return {
-    topics,
-    user: cardLookup(ok.flatMap((p) => p.users)),
-    failed: ok.length < pages.length,
-  };
-}
-
-export default async function Home() {
-  const forums = await listForums();
+  const [forums, latest] = await Promise.all([
+    listForums(),
+    load(api.GET("/api/v1/topics/latest", { params: { query: cursor ? { cursor } : {} } })),
+  ]);
   if (forums instanceof ApiError) {
     return (
       <>
@@ -45,7 +29,7 @@ export default async function Home() {
     );
   }
   const tree = forumTree(forums);
-  const latest = await latestTopics(forums);
+  const user = latest instanceof ApiError ? null : cardLookup(latest.users);
   return (
     <>
       <SiteNav active="/" />
@@ -62,14 +46,26 @@ export default async function Home() {
           </Card>
           <Card className="p-0 sm:p-0">
             <CardTitle className="px-4 pt-4">最新主题</CardTitle>
-            {latest.topics.length ? (
-              <ul className="divide-y divide-border">
-                {latest.topics.map((t) => (
-                  <TopicRow key={t.id} topic={t} user={latest.user} />
-                ))}
-              </ul>
-            ) : latest.failed ? (
+            {latest instanceof ApiError || !user ? (
               <ErrorState message="最新主题加载失败，请稍后刷新" />
+            ) : latest.topics.length ? (
+              <>
+                <ul className="divide-y divide-border" aria-label="最新主题">
+                  {latest.topics.map((t) => (
+                    <TopicRow key={t.id} topic={t} user={user} />
+                  ))}
+                </ul>
+                {latest.next_cursor ? (
+                  <p className="px-4 py-3 text-center text-sm">
+                    <Link
+                      href={`/?cursor=${encodeURIComponent(latest.next_cursor)}`}
+                      className="text-accent hover:underline"
+                    >
+                      更早的主题
+                    </Link>
+                  </p>
+                ) : null}
+              </>
             ) : (
               <EmptyState title="还没有主题" description="去板块里发第一帖吧" />
             )}

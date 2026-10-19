@@ -92,12 +92,13 @@ function ComposerForm({
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const titleRef = useRef(title);
 
-  const { editor, menu } = useForumEditor({
+  const ed = useForumEditor({
     content: initial.doc,
     placeholder: PLACEHOLDER[target.kind],
     mentionable,
     onChange: () => scheduleSave(),
   });
+  const editor = ed.editor;
 
   function scheduleSave() {
     clearTimeout(timer.current);
@@ -159,8 +160,7 @@ function ComposerForm({
           />
         </Field>
       ) : null}
-      <EditorField editor={editor} menu={menu} invalid={localError === "内容不能为空"} />
-      <p className="text-xs text-fg-muted">图片上传即将开放；现在可以粘贴文字、链接和代码。</p>
+      <EditorField {...ed} invalid={localError === "内容不能为空"} />
       {error ? (
         <p role="alert" className="text-sm text-danger">
           {error}
@@ -174,7 +174,10 @@ function ComposerForm({
           <Button variant="ghost" onClick={savedAt ? discard : onCancel}>
             {savedAt ? "放弃草稿" : "取消"}
           </Button>
-          <Button type="submit" disabled={mutation.isPending || !editor}>
+          <Button
+            type="submit"
+            disabled={mutation.isPending || !editor || ed.upload?.kind === "busy"}
+          >
             {mutation.isPending ? pending : idle}
           </Button>
         </div>

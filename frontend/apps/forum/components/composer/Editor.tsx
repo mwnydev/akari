@@ -1,8 +1,10 @@
 "use client";
 
-// Tiptap 富文本编辑器（plan 第 4 节）：加粗、斜体、删除线、行内代码、代码块、引用、列表、标题、@提及。
+// Tiptap 富文本编辑器（plan 第 4 节）：加粗、斜体、删除线、行内代码、代码块、引用、列表、标题、@提及、图片。
 // 只从按需加载的组件里引入（Composer、ListingForm），不进板块页与主题页的首屏 JS（plan 第 12 节）。
+import { errorMessage, type Schemas } from "@akari/api-client";
 import { cn } from "@akari/ui";
+import Image from "@tiptap/extension-image";
 import Mention from "@tiptap/extension-mention";
 import { Placeholder } from "@tiptap/extensions/placeholder";
 import {
@@ -28,25 +30,54 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { filterMentionable, userName, type UserCardView } from "../../lib/display";
+import { api, unwrap } from "../../lib/browser-api";
+import type { UserCardView } from "../../lib/display";
+import { mentionCandidates, mentionQuery, type MentionCandidate } from "../../lib/mentions";
 import { PROSE_CLASS } from "../../lib/prose";
+import {
+  IMAGE_ACCEPT,
+  imageProblem,
+  pickVariant,
+  uploadImage,
+  type UploadProgress,
+} from "../../lib/uploads";
 
 interface MentionMenu {
-  items: UserCardView[];
+  items: MentionCandidate[];
   selected: number;
   rect: DOMRect | null;
-  pick: (u: UserCardView) => void;
+  pick: (u: MentionCandidate) => void;
 }
+
+type UploadStatus =
+  | { kind: "busy"; name: string; progress: UploadProgress }
+  | { kind: "error"; message: string }
+  | null;
 
 export interface ForumEditorOptions {
   /** 初始内容（草稿或编辑器原稿）；为空时是空文档 */
   content: JSONContent | null;
   placeholder: string;
+  /** 本页出现过的人：输入 @ 后最先列出 */
   mentionable: UserCardView[];
   onChange?: () => void;
 }
 
-/** 创建编辑器并返回 @提及菜单的状态（菜单由 <EditorField> 渲染）。 */
+// 同一个前缀只搜一次（用户名搜索接口结果很稳定）；失败不影响继续打字
+const searches = new Map<string, Promise<Schemas["MentionView"][]>>();
+function searchUsers(q: string): Promise<Schemas["MentionView"][]> {
+  let found = searches.get(q);
+  if (!found) {
+    found = unwrap(api.GET("/api/v1/users/search", { params: { query: { q } } })).catch(() => {
+      searches.delete(q);
+      return [];
+    });
+    searches.set(q, found);
+  }
+  return found;
+}
+
+/** 创建编辑器，并返回 @提及菜单与图片上传的状态（由 <EditorField> 渲染）。 */
 export function useForumEditor({
   content,
   placeholder,
@@ -54,11 +85,14 @@ export function useForumEditor({
   onChange,
 }: ForumEditorOptions) {
   const [menu, setMenu] = useState<MentionMenu | null>(null);
+  const [upload, setUpload] = useState<UploadStatus>(null);
+  const uploadAbort = useRef<AbortController | null>(null);
   // 扩展只在创建时配置一次，回调里通过 ref 读最新的值
   const latest = useRef({ menu, mentionable, onChange });
   useEffect(() => {
     latest.current = { menu, mentionable, onChange };
   });
+  useEffect(() => () => uploadAbort.current?.abort(), []);
 
   const editor = useEditor({
     // 组件只在浏览器里渲染（next/dynamic ssr: false），可以立即创建
@@ -70,19 +104,24 @@ export function useForumEditor({
         link: { openOnClick: false, autolink: true },
       }),
       Placeholder.configure({ placeholder }),
+      Image.configure({ allowBase64: false }),
       Mention.configure({
         suggestion: {
           char: "@",
-          items: ({ query }) => filterMentionable(latest.current.mentionable, query),
+          items: async ({ query }) => {
+            const q = mentionQuery(query);
+            const remote = q ? await searchUsers(q) : [];
+            return mentionCandidates(latest.current.mentionable, remote, query);
+          },
           render: () => {
-            const show = (p: SuggestionProps<UserCardView>) =>
+            const show = (p: SuggestionProps<MentionCandidate>) =>
               setMenu(
                 p.items.length
                   ? {
                       items: p.items,
                       selected: 0,
                       rect: p.clientRect?.() ?? null,
-                      pick: (u) => p.command({ id: String(u.id), label: userName(u) }),
+                      pick: (u) => p.command({ id: String(u.id), label: u.name }),
                     }
                   : null,
               );
@@ -126,8 +165,41 @@ export function useForumEditor({
     onUpdate: () => latest.current.onChange?.(),
   });
 
-  return { editor, menu };
+  /** 选好图片：先在本地检查类型与大小，再直传、等服务器转成 WebP 后插入。 */
+  async function insertImage(file: File) {
+    const problem = imageProblem(file);
+    if (problem) {
+      setUpload({ kind: "error", message: problem });
+      return;
+    }
+    uploadAbort.current?.abort();
+    const abort = (uploadAbort.current = new AbortController());
+    const name = file.name;
+    setUpload({ kind: "busy", name, progress: { phase: "uploading", fraction: 0 } });
+    try {
+      const done = await uploadImage(
+        file,
+        (progress) => setUpload({ kind: "busy", name, progress }),
+        abort.signal,
+      );
+      const v = pickVariant(done.variants);
+      if (!v) throw new Error("no variants");
+      editor
+        ?.chain()
+        .focus()
+        .setImage({ src: v.url, alt: "", width: v.width, height: v.height })
+        .run();
+      setUpload(null);
+    } catch (e) {
+      if (abort.signal.aborted) return;
+      setUpload({ kind: "error", message: errorMessage(e) });
+    }
+  }
+
+  return { editor, menu, upload, insertImage };
 }
+
+export type ForumEditor = ReturnType<typeof useForumEditor>;
 
 function ToolButton({
   icon: Icon,
@@ -161,7 +233,15 @@ function ToolButton({
   );
 }
 
-function Toolbar({ editor }: { editor: Editor }) {
+function Toolbar({
+  editor,
+  uploading,
+  onPickImage,
+}: {
+  editor: Editor;
+  uploading: boolean;
+  onPickImage: () => void;
+}) {
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -237,8 +317,7 @@ function Toolbar({ editor }: { editor: Editor }) {
         active={s.codeBlock}
         onClick={() => chain().toggleCodeBlock().run()}
       />
-      {/* 图片上传接口（预签名直传 R2，plan 第 12 节）还没有，先占位 */}
-      <ToolButton icon={ImagePlus} label="插入图片（即将开放）" disabled />
+      <ToolButton icon={ImagePlus} label="插入图片" disabled={uploading} onClick={onPickImage} />
     </div>
   );
 }
@@ -267,23 +346,50 @@ function MentionPopup({ menu }: { menu: MentionMenu }) {
             i === menu.selected ? "bg-accent-soft text-accent" : "hover:bg-surface-2",
           )}
         >
-          @{userName(u)}
+          @{u.name}
         </li>
       ))}
     </ul>
   );
 }
 
-/** 编辑框 + 工具栏 + 提及菜单。 */
+function UploadLine({ status }: { status: NonNullable<UploadStatus> }) {
+  if (status.kind === "error") {
+    return (
+      <p role="alert" className="border-t border-border px-3 py-1.5 text-sm text-danger">
+        {status.message}
+      </p>
+    );
+  }
+  const { phase, fraction } = status.progress;
+  const pct = Math.round(fraction * 100);
+  return (
+    <div className="border-t border-border px-3 py-1.5 text-sm text-fg-muted" aria-live="polite">
+      <span className="flex justify-between gap-2">
+        <span className="truncate">{status.name}</span>
+        <span className="amount shrink-0">
+          {phase === "uploading" ? `上传中 ${pct}%` : "正在转换为 WebP…"}
+        </span>
+      </span>
+      <progress
+        className="mt-1 h-1 w-full accent-accent"
+        aria-label="图片上传进度"
+        max={100}
+        value={phase === "uploading" ? pct : undefined}
+      />
+    </div>
+  );
+}
+
+/** 编辑框 + 工具栏 + 提及菜单 + 图片上传进度。 */
 export function EditorField({
   editor,
   menu,
+  upload,
+  insertImage,
   invalid,
-}: {
-  editor: Editor | null;
-  menu: MentionMenu | null;
-  invalid?: boolean;
-}) {
+}: ForumEditor & { invalid?: boolean }) {
+  const fileRef = useRef<HTMLInputElement>(null);
   if (!editor) return null;
   return (
     <div
@@ -292,8 +398,25 @@ export function EditorField({
         invalid ? "border-danger" : "border-border",
       )}
     >
-      <Toolbar editor={editor} />
+      <Toolbar
+        editor={editor}
+        uploading={upload?.kind === "busy"}
+        onPickImage={() => fileRef.current?.click()}
+      />
+      <input
+        ref={fileRef}
+        type="file"
+        accept={IMAGE_ACCEPT}
+        className="hidden"
+        data-testid="image-input"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) void insertImage(file);
+        }}
+      />
       <EditorContent editor={editor} />
+      {upload ? <UploadLine status={upload} /> : null}
       {menu ? <MentionPopup menu={menu} /> : null}
     </div>
   );

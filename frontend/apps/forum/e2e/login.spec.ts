@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { uniqueEmail } from "./auth";
+import { uniqueEmail, useTestIp } from "./auth";
 import { latestCode } from "./mailpit";
 
 test("guest logs in with an emailed code, sees themselves in the nav, then logs out", async ({
   page,
 }, info) => {
   const email = uniqueEmail(info.project.name);
+  await useTestIp(page);
 
   await page.goto("/");
   await page.getByRole("link", { name: "登录" }).click();
@@ -27,6 +28,7 @@ test("guest logs in with an emailed code, sees themselves in the nav, then logs 
 });
 
 test("wrong code and bad email show Chinese errors", async ({ page }, info) => {
+  await useTestIp(page);
   await page.goto("/login");
   await page.getByLabel("邮箱").fill("not-an-email");
   await page.getByRole("button", { name: "获取验证码" }).click();

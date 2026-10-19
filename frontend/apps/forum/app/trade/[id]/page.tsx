@@ -5,12 +5,19 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import { PresenceDot } from "../../../components/live/PresenceDot";
 import { PageError } from "../../../components/PageError";
 import { Prose } from "../../../components/Prose";
 import { SiteNav } from "../../../components/SiteNav";
 import { OfferCard } from "../../../components/trade/OfferCard";
 import { load, serverApi } from "../../../lib/api";
-import { cardLookup, formatDays, profileHref, userName } from "../../../lib/display";
+import {
+  cardLookup,
+  formatDays,
+  profileHref,
+  tradeReputation,
+  userName,
+} from "../../../lib/display";
 import {
   cnyReference,
   FEE_PAYERS,
@@ -93,10 +100,16 @@ export default async function TradePage({ params }: { params: Params }) {
             {topic.topic.title}
           </h1>
           <Card>
-            <UserCard name={userName(seller)} level={seller.level} href={profileHref(seller)} />
-            {/* 信誉统计（成功率、成交、争议败诉、回复用时）要等链上订单统计接口，见 plan 第 7 节 */}
-            <p className="mt-1 text-sm text-fg-muted">
-              交易信誉：统计即将上线，可先查看卖家主页与历史帖子
+            <UserCard
+              name={userName(seller)}
+              avatar={seller.avatar_url ?? undefined}
+              level={seller.level}
+              reputation={tradeReputation(seller.reputation)}
+              href={profileHref(seller)}
+              avatarBadge={<PresenceDot userId={seller.id} avatarSize={44} />}
+            />
+            <p className="mt-1 text-xs text-fg-muted">
+              交易信誉只统计链上已最终确认的订单；详细记录见卖家主页
             </p>
             <div className="mt-4">
               {first && !first.deleted ? (

@@ -8,7 +8,7 @@ export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from ".
 export { Card, CardTitle } from "./components/Card";
 export { Input, Textarea, Field } from "./components/Input";
 export { Badge, type BadgeTone } from "./components/Badge";
-export { Avatar, type AvatarProps } from "./components/Avatar";
+export { Avatar, OnlineDot, type AvatarProps } from "./components/Avatar";
 export { Toolbar, GlassNav, type NavLink } from "./components/Toolbar";
 export { EmptyState, LoadingState, ErrorState } from "./components/States";
 export { NetworkBadge } from "./components/NetworkBadge";

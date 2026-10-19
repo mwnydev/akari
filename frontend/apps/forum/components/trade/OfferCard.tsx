@@ -1,5 +1,6 @@
 import type { Schemas } from "@akari/api-client";
 import { Amount, Badge, Button, Card, type BadgeTone } from "@akari/ui";
+import type { ReactNode } from "react";
 import { formatDays, formatTime } from "../../lib/display";
 import { FEE_PAYERS } from "../../lib/fees";
 import { WALLET_ORIGIN } from "../../lib/public-config";
@@ -15,8 +16,19 @@ const STATUS: Record<Schemas["CardStatus"], [string, BadgeTone]> = {
   paid: ["已成交", "accent"],
 };
 
-/** 卖家签名的报价卡片：条款以签名内容为准；待确认的公开报价可以直接去钱包担保购买。 */
-export function OfferCard({ offer }: { offer: Schemas["OfferView"] }) {
+/**
+ * 卖家签名的报价卡片：条款以签名内容为准；待确认的报价可以去钱包担保购买。
+ * `canPay` 为假时不显示购买按钮（卖家本人看自己发出的卡片）；`children` 放在卡片底部（拒绝、取消、查看订单）。
+ */
+export function OfferCard({
+  offer,
+  canPay = true,
+  children,
+}: {
+  offer: Schemas["OfferView"];
+  canPay?: boolean;
+  children?: ReactNode;
+}) {
   const o = offer.offer;
   const [statusLabel, tone] = STATUS[offer.status];
   const isPublic = ZERO_ADDRESS.test(o.buyer);
@@ -49,11 +61,12 @@ export function OfferCard({ offer }: { offer: Schemas["OfferView"] }) {
           <time dateTime={offer.expires_at}>{formatTime(offer.expires_at)}</time>
         </dd>
       </dl>
-      {offer.status === "pending" ? (
+      {offer.status === "pending" && canPay ? (
         <Button asChild size="lg" className="w-full">
           <a href={`${WALLET_ORIGIN}/pay?offer=${offer.id}`}>担保购买</a>
         </Button>
       ) : null}
+      {children}
     </Card>
   );
 }

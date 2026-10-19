@@ -40,11 +40,12 @@ function Form({ forumSlug, params }: Props) {
     },
   });
   const [bodyError, setBodyError] = useState<string | null>(null);
-  const { editor, menu } = useForumEditor({
+  const ed = useForumEditor({
     content: null,
     placeholder: "商品或服务说明：交付内容、发货方式、售后约定。这份说明会锁进报价的内容快照。",
     mentionable: [],
   });
+  const editor = ed.editor;
 
   const create = useMutation({
     mutationFn: (v: ListingInput) => {
@@ -84,7 +85,7 @@ function Form({ forumSlug, params }: Props) {
       </Field>
       <div>
         <span className="mb-1 block text-sm font-medium">说明</span>
-        <EditorField editor={editor} menu={menu} invalid={bodyError !== null} />
+        <EditorField {...ed} invalid={bodyError !== null} />
         {bodyError ? (
           <span role="alert" className="mt-1 block text-sm text-danger">
             {bodyError}
@@ -139,7 +140,7 @@ function Form({ forumSlug, params }: Props) {
         </p>
       ) : null}
       <div className="flex justify-end">
-        <Button type="submit" disabled={create.isPending || !editor}>
+        <Button type="submit" disabled={create.isPending || !editor || ed.upload?.kind === "busy"}>
           {create.isPending ? "发布中…" : "发布交易帖"}
         </Button>
       </div>

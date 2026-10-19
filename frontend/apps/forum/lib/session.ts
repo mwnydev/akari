@@ -1,7 +1,9 @@
 import "server-only";
 import { ApiError, type Me } from "@akari/api-client";
+import { redirect } from "next/navigation";
 import { cache } from "react";
 import { hasSession, load, serverApi } from "./api";
+import { loginHref } from "./links";
 
 /**
  * 当前登录用户；游客或会话失效返回 null。
@@ -13,3 +15,10 @@ export const getMe = cache(async (): Promise<Me | null> => {
   const me = await load((await serverApi()).GET("/api/v1/me"));
   return me instanceof ApiError ? null : me;
 });
+
+/** 只给登录用户的页面：游客跳到登录页，登录后回到 `next`。 */
+export async function requireMe(next: string): Promise<Me> {
+  const me = await getMe();
+  if (!me) redirect(loginHref(next));
+  return me;
+}
