@@ -23,6 +23,10 @@ export type WalletInitVersionView = Schemas["WalletInitVersionView"];
 export type OrderView = Schemas["OrderView"];
 export type OrderPage = Schemas["OrderPage"];
 export type OrderRole = paths["/api/v1/orders"]["get"]["parameters"]["query"]["role"];
+/** 钱包余额（最小单位十进制字符串）、读取时的区块号与免费代付提币次数。 */
+export type WalletBalances = Schemas["Balances"];
+export type WithdrawAddressView = Schemas["WithdrawAddressView"];
+export type NewWithdrawAddress = Schemas["NewWithdrawAddressRequest"];
 
 /**
  * 钱包前端依赖的全部后端接口。页面与 SDK 只依赖这个接口；单元测试换成内存实现（见 ./sdk.test.ts）。
@@ -53,6 +57,14 @@ export interface WalletApi {
   orders(role: OrderRole, cursor?: number): Promise<OrderPage>;
   /** 某张报价卡片付款后生成的订单（indexer 同步到之前为 NOT_FOUND） */
   offerOrder(offerId: number): Promise<OrderView>;
+  /** 钱包的 USDT 与 ETH 余额（后端读链并缓存） */
+  balances(): Promise<WalletBalances>;
+  /** 保存的提币地址（含冷却中与已撤销的） */
+  withdrawAddresses(): Promise<WithdrawAddressView[]>;
+  /** 新增提币地址（需近期 Passkey 验证）：第一个立即生效，之后的 24 小时后生效 */
+  addWithdrawAddress(req: NewWithdrawAddress): Promise<WithdrawAddressView>;
+  /** 撤销提币地址（需近期 Passkey 验证） */
+  removeWithdrawAddress(id: number): Promise<void>;
 }
 
 interface Options {
@@ -127,6 +139,18 @@ export function createWalletApi({ baseUrl = API_BASE, fetch: f = fetch }: Option
     orders: (role, cursor) =>
       unwrap(api.GET("/api/v1/orders", { params: { query: { role, cursor: cursor ?? null } } })),
     offerOrder: (id) => unwrap(api.GET("/api/v1/offers/{id}/order", { params: { path: { id } } })),
+    balances: () => unwrap(api.GET("/api/v1/wallet/balances")),
+    async withdrawAddresses() {
+      const { addresses } = await unwrap(api.GET("/api/v1/wallet/withdraw-addresses"));
+      return addresses;
+    },
+    addWithdrawAddress: (req) =>
+      unwrap(api.POST("/api/v1/wallet/withdraw-addresses", { body: req })),
+    async removeWithdrawAddress(id) {
+      await unwrap(
+        api.DELETE("/api/v1/wallet/withdraw-addresses/{id}", { params: { path: { id } } }),
+      );
+    },
   };
 }
 

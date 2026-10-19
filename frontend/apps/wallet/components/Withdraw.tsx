@@ -1,39 +1,97 @@
 "use client";
 
-import { DEFAULT_PARAMS } from "@akari/fees";
-import { Amount, Badge, Button, Field, Input, formatUsdt, shortAddress } from "@akari/ui";
+import { Amount, Button, Field, Input, formatUsdt, parseUsdt, shortAddress } from "@akari/ui";
 import { SignConfirmDialog } from "@akari/ui/sign-confirm";
-import { toast } from "@akari/ui/toast";
+import { CircleCheck } from "lucide-react";
 import { useState } from "react";
-import { parseUsdt } from "../lib/amount";
-import { wallet } from "../lib/mock";
+import type { WithdrawAddressView } from "../lib/wallet/api";
+import { NETWORK_LABEL, chain } from "../lib/wallet/config";
+import type { Wallet } from "../lib/wallet/sdk";
+import { sponsorFeeFor } from "../lib/wallet/sponsor-fee";
+import { TxLink } from "./TxLink";
+import {
+  addressUsable,
+  canSponsorWithdraw,
+  checkAddress,
+  maxWithdraw,
+  withdrawError,
+} from "../lib/wallet/withdraw";
 
-export function Withdraw() {
-  const [to, setTo] = useState(0);
+interface Done {
+  hash: string;
+  amount: bigint;
+  label: string;
+}
+
+/** 去掉千分位，填回输入框。 */
+const plain = (v: bigint) => formatUsdt(v).replaceAll(",", "");
+
+/**
+ * 提回交易所：只能提到已生效的提币地址（forum-sponsor 只代付这种转账）。代付费从钱包另扣，
+ * 「全部提回」= 余额 − 代付费；确认页明文显示金额、地址前后 6 位、网络与代付费，再 Face ID。
+ */
+export function Withdraw({
+  wallet,
+  balance,
+  credits,
+  addresses,
+  now,
+  onWithdrawn,
+}: {
+  wallet: Wallet;
+  /** USDT 余额；读取中为 null */
+  balance: bigint | null;
+  /** 免费代付提币：剩余次数、今日还可几次；读取中为 null */
+  credits: { left: number; today: number } | null;
+  addresses: WithdrawAddressView[];
+  now: number;
+  onWithdrawn: () => void;
+}) {
+  const usable = addresses.filter((a) => addressUsable(a, now));
+  const [toId, setToId] = useState<number | null>(null);
   const [raw, setRaw] = useState("");
   const [open, setOpen] = useState(false);
-  const balance = BigInt(wallet.balance);
-  const fee = DEFAULT_PARAMS.sponsorFee;
+  const [done, setDone] = useState<Done | null>(null);
+  const fee = sponsorFeeFor("transfer");
+  const target = usable.find((a) => a.id === toId) ?? usable[0];
+  // 后端给的地址也再校验一遍：不能是自己或本站合约
+  const dest =
+    target &&
+    checkAddress(target.address, {
+      self: wallet.address,
+      contracts: Object.values(chain.contracts),
+    });
   const amount = parseUsdt(raw);
-  const valid = amount !== null && amount > fee && amount <= balance;
-  const target = wallet.savedAddresses[to];
+  const amountError =
+    raw.trim() === "" || balance === null ? null : withdrawError(amount, balance, fee);
+  const error = dest && !dest.ok ? dest.error : amountError;
+  const sponsored = credits !== null && canSponsorWithdraw(credits.left, credits.today);
+  const ready = sponsored && balance !== null && amount !== null && amount > 0n && error === null;
 
+  if (!target) {
+    return (
+      <p className="text-sm text-fg-muted">
+        {addresses.some((a) => a.status !== "revoked")
+          ? "新地址还在 24 小时冷却期，生效后就能提回。"
+          : "先在下方「提币地址」里保存交易所的 Arbitrum One 充值地址，再来提回。"}
+      </p>
+    );
+  }
   return (
     <div className="space-y-3">
       <fieldset>
         <legend className="mb-1 text-sm font-medium">提到</legend>
         <div className="space-y-2">
-          {wallet.savedAddresses.map((a, i) => (
+          {usable.map((a) => (
             <label
-              key={a.address}
-              className="flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-checked:border-accent has-disabled:cursor-not-allowed has-disabled:opacity-60"
+              key={a.id}
+              className="flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3 has-checked:border-accent"
             >
               <input
                 type="radio"
-                name="to"
-                checked={to === i}
-                disabled={a.activeAt !== null}
-                onChange={() => setTo(i)}
+                name="withdraw-to"
+                checked={target.id === a.id}
+                onChange={() => setToId(a.id)}
                 className="accent-(--color-accent)"
               />
               <span className="min-w-0 flex-1">
@@ -42,53 +100,93 @@ export function Withdraw() {
                   {shortAddress(a.address)}
                 </span>
               </span>
-              {a.activeAt ? <Badge tone="warning">{a.activeAt}</Badge> : null}
             </label>
           ))}
         </div>
       </fieldset>
-      <Field label="金额" hint={`代付费 ${formatUsdt(fee)} USDT 从提出金额中扣除`}>
+      <Field label="到账金额（USDT）" hint={`代付费 ${formatUsdt(fee)} USDT 另从钱包扣除`}>
         <div className="flex gap-2">
           <Input
             inputMode="decimal"
             placeholder="0.00"
             value={raw}
-            onChange={(e) => setRaw(e.target.value)}
+            onChange={(e) => {
+              setRaw(e.target.value);
+              setDone(null);
+            }}
             className="amount"
+            aria-invalid={error !== null}
           />
           <Button
             variant="secondary"
-            onClick={() => setRaw(formatUsdt(balance).replaceAll(",", ""))}
+            disabled={balance === null || maxWithdraw(balance, fee) === 0n}
+            onClick={() => {
+              if (balance !== null) setRaw(plain(maxWithdraw(balance, fee)));
+              setDone(null);
+            }}
           >
-            全部
+            全部提回
           </Button>
         </div>
       </Field>
-      {amount !== null ? (
-        <p className="text-sm text-fg-muted">
-          交易所到账 <Amount value={amount > fee ? amount - fee : 0n} />
+      {credits ? (
+        <p className="text-sm text-fg-muted" data-testid="withdraw-credits">
+          免费代付提币剩余 {credits.left} 次（今日还可 {credits.today} 次）
         </p>
       ) : null}
-      <Button className="w-full" disabled={!valid || !target} onClick={() => setOpen(true)}>
+      {credits && !sponsored ? (
+        <p role="alert" className="rounded-md bg-warning-soft p-3 text-sm text-warning">
+          {/* 与 NO_WITHDRAW_CREDIT 同一句话，「紧急取回」做成链接 */}
+          完成一笔担保交易后可再获得 1 次；也可在
+          <a href="/emergency" className="underline">
+            「紧急取回」
+          </a>
+          页自付 ETH 提取
+        </p>
+      ) : null}
+      {error ? (
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      ) : ready ? (
+        <p className="text-sm text-fg-muted">
+          钱包共扣除 <Amount value={amount + fee} />
+          （含代付费）
+        </p>
+      ) : null}
+      <Button className="w-full" disabled={!ready} onClick={() => setOpen(true)}>
         提回交易所
       </Button>
-      {target && amount !== null ? (
+      {done ? (
+        <p
+          role="status"
+          className="flex flex-wrap items-center gap-1 text-sm text-success"
+          data-testid="withdraw-done"
+        >
+          <CircleCheck size={16} aria-hidden />
+          已提回 <Amount value={done.amount} /> 到{done.label}，交易 <TxLink hash={done.hash} />
+        </p>
+      ) : null}
+      {ready && dest?.ok ? (
         <SignConfirmDialog
           open={open}
           onOpenChange={setOpen}
           action="提回交易所"
-          amount={amount.toString()}
-          to={target.address}
+          amount={(amount + fee).toString()}
+          to={dest.address}
           toLabel={`${target.label} 充值地址`}
+          network={NETWORK_LABEL}
           rows={[
+            { label: "交易所到账", value: <Amount value={amount} /> },
             { label: "代付费", value: <Amount value={fee} /> },
-            { label: "到账", value: <Amount value={amount - fee} /> },
           ]}
-          note="请确认交易所充值页选择的也是 Arbitrum One 网络。"
+          note="请确认交易所充值页选择的也是 Arbitrum One 网络，转出后无法撤回。"
           onConfirm={async () => {
-            await new Promise((r) => setTimeout(r, 900));
+            const hash = await wallet.withdraw(dest.address, amount);
             setOpen(false);
-            toast.success("已提交，约 1 分钟内上链");
+            setRaw("");
+            setDone({ hash, amount, label: target.label });
+            onWithdrawn();
           }}
         />
       ) : null}

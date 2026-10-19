@@ -1,4 +1,3 @@
-import { DEFAULT_PARAMS } from "@akari/fees";
 import { http, type Address, type Hex, type Transport } from "viem";
 import {
   createPaymasterClient,
@@ -7,17 +6,7 @@ import {
   type GetPaymasterStubDataParameters,
 } from "viem/account-abstraction";
 import { AA_RPC_URL, DEV_SPONSOR, chain } from "./config";
-
-/** 需要平台代付的操作。费用档位（ADR 0004）：付款前的操作收固定代付费，付款后的操作免费（结算时扣固定 gas 费）。 */
-export type SponsoredAction = "createAndFund" | "markDelivered" | "release";
-
-/**
- * 确认页展示的代付费，与 forum-sponsor 的规则一致：付款前的操作收费，付款后的操作免费。
- * 站长调价后这里与代付服务不一致时，`assertSponsorFee` 会拒签，不会多扣用户的钱。
- */
-export function sponsorFeeFor(action: SponsoredAction): bigint {
-  return action === "createAndFund" ? DEFAULT_PARAMS.sponsorFee : 0n;
-}
+import type { SponsoredAction } from "./sponsor-fee";
 
 /** 填进 UserOperation 的 Paymaster 字段；`paymasterData` 布局见 FixedFeePaymaster.sol。 */
 export interface PaymasterFields {

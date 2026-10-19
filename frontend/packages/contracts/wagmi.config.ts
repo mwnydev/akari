@@ -10,6 +10,7 @@ export default defineConfig({
       project: "../../../contracts",
       include: [
         "Escrow.sol/**",
+        "StreamEscrow.sol/**",
         "EscrowConfig.sol/**",
         "MockUSDT.sol/**",
         "FixedFeePaymaster.sol/**",

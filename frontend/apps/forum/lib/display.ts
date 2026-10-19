@@ -13,10 +13,19 @@ export function profileHref(u: { id: number; username?: string | null | undefine
   return `/u/${encodeURIComponent(u.username || String(u.id))}`;
 }
 
+/** 还没有任何交易记录的信誉。 */
+export const NO_REPUTATION: Schemas["ReputationView"] = {
+  success: 0,
+  failed: 0,
+  settled: 0,
+  disputes_lost: 0,
+  success_rate_bps: null,
+};
+
 /** 接口里的用户名片列表 → 按 ID 查找；缺失时给出占位名片，页面不因个别用户缺失而报错。 */
 export function cardLookup(users: UserCardView[]): (id: number) => UserCardView {
   const byId = new Map(users.map((u) => [u.id, u]));
-  return (id) => byId.get(id) ?? { id, username: null, level: 1 };
+  return (id) => byId.get(id) ?? { id, username: null, level: 1, reputation: NO_REPUTATION };
 }
 
 const MAX_MENTION_SUGGESTIONS = 8;

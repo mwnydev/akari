@@ -8,24 +8,6 @@ export const MY_WALLET = "0x3f9a6c21d84b07e5a1c2d3e4f5a6b7c8d9e0b1c2";
 export const wallet = {
   address: MY_WALLET,
   balance: "52340000",
-  savedAddresses: [
-    {
-      label: "币安",
-      address: "0x8b1e4a7c2d9f05b3e6a1c8d4f7b2e9a5c3d6f0e8",
-      activeAt: null as string | null,
-    },
-    {
-      label: "OKX（新）",
-      address: "0x2d7f9a3c5e1b8d4a6c0e2f4b7d9a1c3e5f7b9d0c",
-      activeAt: "18 小时后生效",
-    },
-  ],
-  history: [
-    { id: "a", kind: "充值", amount: "50000000", at: "10-19 09:40", tx: "0x41c2…9e0a" },
-    { id: "b", kind: "担保付款", amount: "-45050000", at: "10-19 10:02", tx: "0x93ad…71b4" },
-    { id: "c", kind: "订单退款", amount: "47440000", at: "10-15 22:18", tx: "0x0b77…c3d1" },
-    { id: "d", kind: "提回交易所", amount: "-120000000", at: "10-12 16:05", tx: "0x6e1f…2a90" },
-  ],
 };
 
 export const listing = {

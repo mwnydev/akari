@@ -47,6 +47,13 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   OFFER_UNAVAILABLE: "报价已失效",
   CONFLICT: "已经存在，不能重复创建",
   USERNAME_REQUIRED: "请先设置用户名",
+  INVALID_USERNAME: "用户名需为 2–20 个字，只能包含汉字、字母、数字和下划线，不能是纯数字或保留名",
+  USERNAME_TAKEN: "用户名已被使用",
+  USERNAME_CHANGE_TOO_SOON: "用户名 30 天内只能修改一次",
+  TRADE_NOT_ALLOWED: "这个板块不能发交易帖",
+  UNSUPPORTED_IMAGE: "只支持 JPG、PNG、GIF、WebP、HEIC 图片",
+  IMAGE_TOO_LARGE: "图片不能超过 10 MB",
+  UPLOADS_UNAVAILABLE: "图片上传暂时不可用，请稍后再试",
   REVERIFY_REQUIRED: "请先完成邮箱验证",
   PASSKEY_REQUIRED: "请先用钱包 Passkey 确认",
   PASSKEY_FAILED: "Passkey 验证失败，请重试",
@@ -59,6 +66,14 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   SPONSOR_SUSPENDED: "链上失败次数过多，代付已暂停 24 小时",
   SIMULATION_FAILED: "交易预演失败，请检查余额和订单状态",
   SPONSOR_UNAVAILABLE: "代付服务暂时不可用，请稍后再试",
+  WITHDRAW_ADDRESS_INVALID: "地址格式不正确，请检查后重新粘贴",
+  WITHDRAW_ADDRESS_FORBIDDEN: "不能使用本人钱包地址或平台合约地址",
+  WITHDRAW_ADDRESS_LIMIT: "最多保存 10 个提币地址",
+  WITHDRAW_ADDRESS_NOT_ACTIVE: "只能提到已生效的提币地址",
+  WITHDRAW_CREDIT_REQUIRED:
+    "免费代付提币次数已用完：完成一笔担保交易后可再获得 1 次；也可在「紧急取回」页自付 ETH 提取",
+  CHAIN_UNAVAILABLE: "暂时无法读取链上数据，请稍后再试",
+  USER_BLOCKED: "你已屏蔽对方或被对方屏蔽，无法发送私信",
   INTERNAL: "服务暂时不可用，请稍后再试",
 };
 

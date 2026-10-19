@@ -1,10 +1,11 @@
 import type { BadgeTone, OnceState } from "@akari/ui";
 import type { OrderView } from "./api";
+import { StreamState, canStart, claimCheck, type ClaimCheck, type StreamOrder } from "./stream";
 
 // 订单页的展示与按钮规则（纯函数，不依赖钱包 SDK，可以进首屏 JS）。数据来自 indexer（GET /api/v1/orders/{id}）。
 // 订单 ID 是站内 ID；链上操作用 `chain_order_id` + `contract`（两份担保合约各自编号，链上订单号会重复）。
 
-/** 一次性担保订单（`mode = escrow`）。分期担保（`stream`）目前只显示状态。 */
+/** 一次性担保订单（`mode = escrow`）；否则是分期担保（`stream`）。 */
 export function isOnce(o: OrderView): boolean {
   return o.mode === "escrow";
 }
@@ -69,7 +70,13 @@ export function isFinal(o: OrderView): boolean {
 }
 
 export type OrderAction =
-  { kind: "markDelivered"; label: "标记已发货" } | { kind: "release"; label: "确认收货" };
+  | { kind: "markDelivered"; label: "标记已发货" }
+  | { kind: "release"; label: "确认收货" }
+  | { kind: "start"; label: "开始服务" }
+  /** 领取按钮一直显示，条件不满足时禁用并说明原因 */
+  | { kind: "claim"; label: "领取已解锁部分" | "领取剩余并结清"; claim: ClaimCheck };
+
+const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /**
  * 当前钱包在这单上能做的操作，与合约条件一致：卖家在发货期限内、尚未发货时标记发货；
@@ -81,8 +88,8 @@ export function availableAction(
   now: number,
   escrow: string,
 ): OrderAction | null {
-  const mine = (a: string) => a.toLowerCase() === me.toLowerCase();
-  if (!isOnce(o) || o.contract.toLowerCase() !== escrow.toLowerCase()) return null;
+  const mine = (a: string) => same(a, me);
+  if (!isOnce(o) || !same(o.contract, escrow)) return null;
   if (o.state !== "funded") return null;
   const { ship, confirm } = o.deadlines;
   const shipOpen = !ship || Date.parse(ship) >= now;
@@ -91,6 +98,44 @@ export function availableAction(
   }
   if (mine(o.buyer.address)) return { kind: "release", label: "确认收货" };
   return null;
+}
+
+/**
+ * 分期订单卖家能做的操作（买家只看进度）：开始期限内 `start`；服务进行中 `claim`（条件见 `claimCheck`）。
+ * `chainOrder` 是链上 latest 的订单（还没读到时为 undefined，不给按钮）。只对链配置里那份 StreamEscrow 给按钮。
+ */
+export function streamAction(
+  o: OrderView,
+  chainOrder: StreamOrder | undefined,
+  me: string,
+  now: number,
+  streamEscrow: string,
+): OrderAction | null {
+  if (isOnce(o) || !same(o.contract, streamEscrow) || !chainOrder) return null;
+  if (!same(o.seller.address, me) || chainOrder.state !== StreamState.Funded) return null;
+  const t = BigInt(Math.floor(now / 1000));
+  if (canStart(chainOrder, t)) return { kind: "start", label: "开始服务" };
+  if (chainOrder.startedAt === 0n) return null;
+  const claim = claimCheck(chainOrder, t);
+  return {
+    kind: "claim",
+    label: claim.ok && claim.settles ? "领取剩余并结清" : "领取已解锁部分",
+    claim,
+  };
+}
+
+/**
+ * 订单「版本」：提交上链后记下当时的版本，indexer 反映出变化（状态、确认期限、开始时间、已领取、更新区块）
+ * 之前不再给按钮，避免重复提交。
+ */
+export function orderVersion(o: OrderView): string {
+  return [
+    o.state,
+    o.updated_block,
+    o.deadlines.confirm,
+    o.stream?.started_at,
+    o.stream?.claimed,
+  ].join("|");
 }
 
 /** 截止时间 → 「还剩 2 天 3 小时」/「已到期」，冷却与期限要显示倒计时（plan 第 14 节）。 */

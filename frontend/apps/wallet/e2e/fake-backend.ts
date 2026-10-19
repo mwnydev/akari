@@ -1,4 +1,4 @@
-import { escrowAbi, localChain as chain } from "@akari/contracts";
+import { escrowAbi, localChain as chain, mockUsdtAbi } from "@akari/contracts";
 import type { BrowserContext, Route } from "@playwright/test";
 import { createPublicKey, randomBytes } from "node:crypto";
 import type {
@@ -9,8 +9,10 @@ import type {
   PasskeyView,
   PaymentData,
   TradeParams,
+  WalletBalances,
   WalletOverview,
   WalletView,
+  WithdrawAddressView,
 } from "../lib/wallet/api";
 import { toView } from "../lib/wallet/init-version";
 import { publicClient } from "./env";
@@ -22,6 +24,8 @@ import { publicClient } from "./env";
 /** 开通交易邮件里的验证码（模拟） */
 export const FAKE_EMAIL_CODE = "123456";
 const RECENT_SECONDS = 300;
+/** 第二个起的提币地址冷却 24 小时（plan 第 5 节） */
+const ADDRESS_COOLDOWN_MS = 86_400_000;
 const STATES = ["none", "funded", "disputed", "released", "refunded", "settled"];
 
 interface User {
@@ -33,6 +37,7 @@ interface User {
   wallets: WalletView[];
   verifiedUntil: number | null;
   verifiedPasskey?: number;
+  addresses: WithdrawAddressView[];
 }
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -79,6 +84,7 @@ export class FakeBackend {
       passkeys: [],
       wallets: [],
       verifiedUntil: null,
+      addresses: [],
     };
     this.users.push(user);
     await context.route("**/api/v1/**", async (route) => {
@@ -207,6 +213,62 @@ export class FakeBackend {
         };
         user.wallets.push(wallet);
         return [201, wallet];
+      }
+      case "GET /api/v1/wallet/balances": {
+        const address = this.walletOf(user).address as `0x${string}`;
+        const [usdt, eth, block, transfers] = await Promise.all([
+          publicClient.readContract({
+            address: chain.contracts.MockUSDT,
+            abi: mockUsdtAbi,
+            functionName: "balanceOf",
+            args: [address],
+          }),
+          publicClient.getBalance({ address }),
+          publicClient.getBlockNumber(),
+          publicClient.getContractEvents({
+            address: chain.contracts.MockUSDT,
+            abi: mockUsdtAbi,
+            eventName: "Transfer",
+            args: { from: address },
+            fromBlock: (await publicClient.getBlockNumber()) - 1000n,
+          }),
+        ]);
+        // 模拟次数：每个钱包送 1 次、每天 3 次；钱包转给自己保存的提币地址算用掉一次（不模拟完成订单 +1）
+        const saved = new Set(user.addresses.map((a) => a.address.toLowerCase()));
+        const used = transfers.filter((t) => saved.has(String(t.args.to).toLowerCase())).length;
+        const balances: WalletBalances = {
+          usdt: usdt.toString(),
+          eth: eth.toString(),
+          block: Number(block),
+          withdraw_credits: Math.max(0, 1 - used),
+          withdraws_left_today: Math.max(0, 3 - used),
+        };
+        return [200, balances];
+      }
+      case "GET /api/v1/wallet/withdraw-addresses":
+        return [200, { addresses: user.addresses }];
+      case "POST /api/v1/wallet/withdraw-addresses": {
+        this.recent(user);
+        const req = body as { label: string; address: string };
+        const first = !user.addresses.some((a) => a.status !== "revoked");
+        const created = new Date();
+        const address: WithdrawAddressView = {
+          id: user.id * 1000 + user.addresses.length + 1,
+          label: req.label,
+          address: req.address,
+          status: first ? "active" : "pending",
+          active_at: new Date(created.getTime() + (first ? 0 : ADDRESS_COOLDOWN_MS)).toISOString(),
+          created_at: created.toISOString(),
+        };
+        user.addresses.push(address);
+        return [201, address];
+      }
+      case "DELETE /api/v1/wallet/withdraw-addresses/{id}": {
+        this.recent(user);
+        const address = user.addresses.find((a) => a.id === Number(id));
+        if (!address) throw new HttpError(404, "NOT_FOUND", "内容不存在或已被删除");
+        address.status = "revoked";
+        return [204, null];
       }
       case "POST /api/v1/offers": {
         this.recent(user);

@@ -27,6 +27,8 @@ export interface SignConfirmDialogProps {
   note?: ReactNode;
   /** 网络名，默认 Arbitrum One；开发 / 测试网必须传真实网络名 */
   network?: string | undefined;
+  /** 底部的 gas 说明，默认「平台代付」；用户自付 ETH 的场景（紧急取回）必须改写 */
+  gasNote?: ReactNode;
   /** 调起 Passkey 签名；抛错时显示人话错误 */
   onConfirm: () => Promise<void>;
 }
@@ -45,6 +47,7 @@ export function SignConfirmDialog({
   rows = [],
   note,
   network,
+  gasNote = "gas 由平台代付，钱包无需 ETH",
   onConfirm,
 }: SignConfirmDialogProps) {
   const [phase, setPhase] = useState<"idle" | "signing" | "error">("idle");
@@ -111,7 +114,7 @@ export function SignConfirmDialog({
         </Button>
         <p className="mt-3 flex items-center justify-center gap-1 text-xs text-fg-muted">
           <ShieldCheck size={14} aria-hidden />
-          gas 由平台代付，钱包无需 ETH
+          {gasNote}
         </p>
       </DialogContent>
     </Dialog>

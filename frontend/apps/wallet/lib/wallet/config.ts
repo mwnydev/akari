@@ -20,8 +20,29 @@ export const FORUM_ORIGIN = process.env.NEXT_PUBLIC_FORUM_ORIGIN ?? "http://loca
 /** ERC-7677 代付 + ERC-4337 bundler 的 JSON-RPC 入口（ADR 0009），forum-api 校验会话后转给 forum-sponsor。 */
 export const AA_RPC_URL = `${API_BASE}/api/v1/aa/rpc`;
 
+/** 本地 AA 开发链（deploy/dev/aa.sh）的链 ID。 */
+export const LOCAL_CHAIN_ID = 31337;
+
+/**
+ * 钱包读链用的 JSON-RPC：浏览器不直连第三方 RPC（plan 第 2 节），走 forum-api 的只读代理（带缓存、限流，
+ * 密钥只在服务器）；本地开发链直接连 anvil。紧急取回页不用它，见 lib/emergency。
+ */
+export const READ_RPC_URL =
+  chain.chainId === LOCAL_CHAIN_ID ? chain.rpcUrl : `${API_BASE}/api/v1/chain/rpc`;
+
+const EXPLORERS: Record<number, string> = {
+  42161: "https://arbiscan.io",
+  421614: "https://sepolia.arbiscan.io",
+};
+
+/** 交易在区块浏览器上的链接；本地链没有浏览器，返回 null（只显示哈希）。 */
+export function txUrl(hash: string): string | null {
+  const base = EXPLORERS[chain.chainId];
+  return base ? `${base}/tx/${hash}` : null;
+}
+
 /** 仅开发：用公开的开发私钥直接给 UserOperation 签代付（./dev-sponsor.ts）。`next build` 时开启会直接报错，见 next.config.ts。 */
 export const DEV_SPONSOR = process.env.NEXT_PUBLIC_DEV_SPONSOR === "1";
 
 /** 确认页、余额卡显示的网络名：主网固定「Arbitrum One」，本地链明确标出来，避免误以为在主网签名。 */
-export const NETWORK_LABEL = chain.chainId === 31337 ? "本地测试链" : chain.name;
+export const NETWORK_LABEL = chain.chainId === LOCAL_CHAIN_ID ? "本地测试链" : chain.name;

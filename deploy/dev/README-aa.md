@@ -114,4 +114,9 @@ pnpm e2e:aa                                                 # Playwright + CDP �
   上面四个后端程序都在跑时就是完整的真实流程：卖家发交易帖并签公开报价 → 买家经 forum-sponsor 代付、代发付款 →
   indexer 把报价标为已付款 → 卖家标记发货 → 买家确认收货 → 等到 finalized。订单页按站内订单 ID 打开，
   链上操作用订单的 `chain_order_id` 与 `contract`。
+- 钱包首页（余额、提币地址、提回交易所）与紧急取回页也各有一组测试：`e2e/withdraw.spec.ts`、`e2e/emergency.spec.ts`。
+  紧急取回页不连后端（测试里掐断全部 `/api/v1` 请求），经 Alto 不带 Paymaster 提交，ETH 用 `anvil_setBalance` 打进钱包；
+  超时取回那条会把链上时间往后拨一天，用 `evm_snapshot` / `evm_revert` 包住，跑完时间复原。
+- fork 来的状态是按需从 `AA_FORK_URL` 拉的，公共 RPC 不保留太旧区块的状态：`up` 之后隔得久了，新钱包地址会报
+  `historical state … is not available`，`aa.sh down && aa.sh up` 重新 fork 即可。
 - 合约 ABI 改了以后：`pnpm --filter @akari/contracts generate`（先 `forge build`，再用 @wagmi/cli 重新生成 `src/generated.ts`）。

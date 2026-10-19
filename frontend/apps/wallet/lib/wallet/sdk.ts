@@ -1,15 +1,17 @@
 // 钱包 SDK（viem + ZeroDev）。体积大，只能经 ./load.ts 动态加载，不得被页面静态 import（plan 第 12 节）。
-import { escrowAbi, escrowConfigAbi, mockUsdtAbi, type WalletInitVersion } from "@akari/contracts";
+import {
+  escrowAbi,
+  escrowConfigAbi,
+  mockUsdtAbi,
+  streamEscrowAbi,
+  type WalletInitVersion,
+} from "@akari/contracts";
 import { orderCost } from "@akari/fees";
-import { PasskeyValidatorContractVersion, toPasskeyValidator } from "@zerodev/passkey-validator";
-import { createKernelAccount, createKernelAccountClient, encodeCallDataEpV07 } from "@zerodev/sdk";
-import { KERNEL_V3_3 } from "@zerodev/sdk/constants";
+import { createKernelAccountClient } from "@zerodev/sdk";
 import {
   bytesToHex,
-  createClient,
   createPublicClient,
   defineChain,
-  encodeFunctionData,
   hashTypedData,
   hexToBigInt,
   http,
@@ -17,7 +19,6 @@ import {
   isHex,
   keccak256,
   parseEventLogs,
-  rpcSchema,
   stringToHex,
   zeroAddress,
   type Address,
@@ -27,46 +28,46 @@ import {
 } from "viem";
 import { getEip712Domain } from "viem/actions";
 import type { PasskeyView, WalletApi, WalletOverview } from "./api";
-import { chain } from "./config";
+import { READ_RPC_URL, chain } from "./config";
 import { humanizeError } from "./errors";
 import { InitVersions } from "./init-version";
+import { bundlerGasPrice, kernelAccount } from "./kernel";
 import { FEE_PAYERS, offerToJson, parseOffer, type Offer, type SignedOffer } from "./offer";
 import { assertPasskey, ensureRecentPasskey, registerPasskey, toWebAuthnKey } from "./passkey";
 import {
   assertSponsorFee,
   bundlerTransport,
   getSponsorClient,
-  sponsorFeeFor,
   type PaymasterFields,
-  type SponsoredAction,
 } from "./sponsor";
+import { sponsorFeeFor, type SponsoredAction } from "./sponsor-fee";
 import { OFFER_TYPES } from "./typed-data";
 
 const viemChain = defineChain({
   id: chain.chainId,
   name: chain.name,
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: [chain.rpcUrl] } },
+  rpcUrls: { default: { http: [READ_RPC_URL] } },
 });
-const publicClient = createPublicClient({ chain: viemChain, transport: http(chain.rpcUrl) });
-const { MockUSDT: token, Escrow: escrow, EscrowConfig: escrowConfig } = chain.contracts;
+// forum-api 的只读代理按会话限流，要带论坛会话 Cookie（ADR 0009）；本地 anvil 不能带（它的 CORS 是 `*`）
+const publicClient = createPublicClient({
+  chain: viemChain,
+  transport:
+    READ_RPC_URL === chain.rpcUrl
+      ? http(READ_RPC_URL)
+      : http(READ_RPC_URL, { fetchOptions: { credentials: "include" } }),
+});
+const {
+  MockUSDT: token,
+  Escrow: escrow,
+  EscrowConfig: escrowConfig,
+  StreamEscrow: streamEscrow,
+} = chain.contracts;
 
 /** 与 EscrowConfig.SCOPE_ESCROW 相同（一次性担保）。 */
 const SCOPE_ESCROW = 1;
 
-type GasPriceTier = { maxFeePerGas: Hex; maxPriorityFeePerGas: Hex };
-const bundlerRpc = createClient({
-  transport: bundlerTransport(),
-  rpcSchema: rpcSchema<
-    [
-      {
-        Method: "pimlico_getUserOperationGasPrice";
-        Parameters: [];
-        ReturnType: Record<"slow" | "standard" | "fast", GasPriceTier>;
-      },
-    ]
-  >(),
-});
+const gasPrice = bundlerGasPrice(bundlerTransport());
 
 /** 链配置里的版本，与后端 `wallet_init_versions` 核对后使用（见 ./init-version.ts 的信任边界）。 */
 async function initVersions(api: WalletApi): Promise<InitVersions> {
@@ -74,45 +75,9 @@ async function initVersions(api: WalletApi): Promise<InitVersions> {
   return InitVersions.resolve(chain.walletInitVersions, params.wallet_init_versions);
 }
 
-/**
- * 账户部署时（initCode 里的 Kernel initConfig）给该版本的 Paymaster 授权（plan 第 5 节、ADR 0004）：
- * 付款前操作的代付费在验证阶段扣，必须在 callData 之前就有授权。这是账户初始参数的一部分，改了地址就变。
- */
-async function initConfig(v: WalletInitVersion): Promise<Hex[]> {
-  const approve = encodeFunctionData({
-    abi: mockUsdtAbi,
-    functionName: "approve",
-    args: [v.paymaster, BigInt(v.approveAmount)],
-  });
-  return [await encodeCallDataEpV07([{ to: v.approveToken, value: 0n, data: approve }])];
-}
-
-/** 按钱包自己的初始化参数版本组装 Kernel v3.3 账户（ADR 0008：绝不用「当前」配置推算老钱包）。 */
-async function kernelAccount(passkey: PasskeyView, v: WalletInitVersion) {
-  const entryPoint = { address: v.entryPoint, version: "0.7" } as const;
-  const validator = await toPasskeyValidator(publicClient, {
-    webAuthnKey: toWebAuthnKey(passkey),
-    entryPoint,
-    kernelVersion: KERNEL_V3_3,
-    validatorContractVersion: PasskeyValidatorContractVersion.V0_0_3_PATCHED,
-    validatorAddress: v.webauthnValidator,
-  });
-  return createKernelAccount(publicClient, {
-    plugins: { sudo: validator },
-    entryPoint,
-    kernelVersion: KERNEL_V3_3,
-    accountImplementationAddress: v.kernelImpl,
-    factoryAddress: v.factory,
-    metaFactoryAddress: v.metaFactory,
-    index: 0n,
-    // SDK 的类型只给 "0.3.1" 开放 initConfig，运行时 v3.1+ 都支持（Kernel v3.3 initialize 第 5 个参数）
-    initConfig: (await initConfig(v)) as never,
-  });
-}
-
 /** 该 Passkey 在该版本下的 counterfactual 地址（CREATE2，未部署也能算，不需要 Face ID）。 */
 export async function walletAddress(passkey: PasskeyView, v: WalletInitVersion): Promise<Address> {
-  return (await kernelAccount(passkey, v)).address;
+  return (await kernelAccount(publicClient, toWebAuthnKey(passkey), v)).address;
 }
 
 export interface CheckoutQuote {
@@ -207,7 +172,7 @@ function randomNonce(): bigint {
 }
 
 async function openKernel(passkey: PasskeyView, v: WalletInitVersion, versions: InitVersions) {
-  const account = await kernelAccount(passkey, v);
+  const account = await kernelAccount(publicClient, toWebAuthnKey(passkey), v);
   const paymasters = versions.paymasters();
 
   // 调用带 abi，bundler 估算失败时 viem 能把合约 revert 解码成错误名（errors.ts 再翻译成人话）
@@ -230,27 +195,17 @@ async function openKernel(passkey: PasskeyView, v: WalletInitVersion, versions: 
         getPaymasterStubData: async (op) => checked(await sponsor.getPaymasterStubData(action, op)),
         getPaymasterData: async (op) => checked(await sponsor.getPaymasterData(action, op)),
       },
-      userOperation: {
-        async estimateFeesPerGas() {
-          const { standard } = await bundlerRpc.request({
-            method: "pimlico_getUserOperationGasPrice",
-            params: [],
-          });
-          return {
-            maxFeePerGas: hexToBigInt(standard.maxFeePerGas),
-            maxPriorityFeePerGas: hexToBigInt(standard.maxPriorityFeePerGas),
-          };
-        },
-      },
+      userOperation: { estimateFeesPerGas: gasPrice },
     });
     try {
       const hash = await client.sendUserOperation({ calls });
       const receipt = await client.waitForUserOperationReceipt({ hash });
       if (!receipt.success) {
+        const check = action === "transfer" ? "余额" : "订单状态";
         throw new Error(
           expectedFee > 0n
-            ? "链上执行失败（代付费已扣除），请刷新后查看订单状态"
-            : "链上执行失败，请刷新后查看订单状态",
+            ? `链上执行失败（代付费已扣除），请刷新后查看${check}`
+            : `链上执行失败，请刷新后查看${check}`,
         );
       }
       return receipt;
@@ -335,7 +290,57 @@ async function openKernel(passkey: PasskeyView, v: WalletInitVersion, versions: 
       ]);
       return r.receipt.transactionHash;
     },
+
+    /**
+     * 提回交易所：USDT `transfer(to, amount)`，代付费另由 Paymaster 在验证阶段扣（钱包共转出 amount + 代付费）。
+     * forum-sponsor 只代付转到本人已生效提币地址的转账。先按链上余额核对，不够就不弹 Face ID。
+     */
+    async withdraw(to: Address, amount: bigint) {
+      const fee = sponsorFeeFor("transfer");
+      if ((await readBalance(account.address)) < amount + fee) {
+        throw new Error("余额不足（还要留出代付费），请刷新后重试");
+      }
+      const r = await send("transfer", [
+        { to: token, abi: mockUsdtAbi, functionName: "transfer", args: [to, amount] },
+      ]);
+      return r.receipt.transactionHash;
+    },
+
+    /** 分期订单卖家：开始服务，解锁从现在开始计时。 */
+    async start(orderId: bigint) {
+      const r = await send("start", [
+        { to: streamEscrow, abi: streamEscrowAbi, functionName: "start", args: [orderId] },
+      ]);
+      return r.receipt.transactionHash;
+    },
+
+    /** 分期订单卖家：领取已解锁部分（当次扣领取 gas 费；到期后领取即结清）。 */
+    async claim(orderId: bigint) {
+      const r = await send("claim", [
+        { to: streamEscrow, abi: streamEscrowAbi, functionName: "claim", args: [orderId] },
+      ]);
+      return r.receipt.transactionHash;
+    },
   };
+}
+
+/** 分期订单的链上状态（latest）：净本金、已领取、上次领取时间、领取 gas 费等 indexer 不提供的字段。 */
+export async function streamOrder(orderId: bigint) {
+  return publicClient.readContract({
+    address: streamEscrow,
+    abi: streamEscrowAbi,
+    functionName: "getOrder",
+    args: [orderId],
+  });
+}
+
+/** 敏感操作（改提币地址）前的近期 Passkey 验证；已有就不再弹 Face ID。 */
+export async function confirmWithPasskey(api: WalletApi): Promise<void> {
+  try {
+    await ensureRecentPasskey(api);
+  } catch (e) {
+    throw humanizeError(e);
+  }
 }
 
 export type Wallet = Awaited<ReturnType<typeof openKernel>>;

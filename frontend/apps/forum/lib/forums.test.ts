@@ -13,6 +13,7 @@ const f = (id: number, parent_id: number | null, position = id) => ({
   view_min_level: 0,
   post_min_level: 1,
   reply_min_level: 1,
+  allow_trade: false,
 });
 
 describe("forumTree", () => {

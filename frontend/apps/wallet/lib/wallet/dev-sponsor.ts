@@ -6,7 +6,8 @@ import { createPublicClient, encodePacked, http, type Hex } from "viem";
 import { toPackedUserOperation, type GetPaymasterDataParameters } from "viem/account-abstraction";
 import { privateKeyToAccount } from "viem/accounts";
 import { chain } from "./config";
-import { sponsorFeeFor, type PaymasterFields, type SponsorClient } from "./sponsor";
+import type { PaymasterFields, SponsorClient } from "./sponsor";
+import { sponsorFeeFor } from "./sponsor-fee";
 
 /** cast keccak "akari-dev-only:sponsor"——公开的开发密钥，aa.sh 把它的地址设为本地 Paymaster 的 signer。 */
 const DEV_SPONSOR_KEY: Hex = "0xdccc2a137d5ed46c4b46ea12b6e50feb5565cfa60bda1c3814b0e25d3f52eb98";

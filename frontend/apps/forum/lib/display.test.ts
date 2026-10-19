@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  NO_REPUTATION,
   cardLookup,
   filterMentionable,
   formatDays,
@@ -18,9 +19,9 @@ describe("display helpers", () => {
   });
 
   it("falls back to a placeholder card for users missing from the response", () => {
-    const user = cardLookup([{ id: 1, username: "a", level: 3 }]);
+    const user = cardLookup([{ id: 1, username: "a", level: 3, reputation: NO_REPUTATION }]);
     expect(user(1).level).toBe(3);
-    expect(user(2)).toEqual({ id: 2, username: null, level: 1 });
+    expect(user(2)).toEqual({ id: 2, username: null, level: 1, reputation: NO_REPUTATION });
   });
 
   it("formats times in the site time zone and windows in days", () => {
@@ -34,8 +35,9 @@ describe("display helpers", () => {
       id: i + 1,
       username: null,
       level: 1,
+      reputation: NO_REPUTATION,
     }));
-    users.push({ id: 99, username: "Momo", level: 1 });
+    users.push({ id: 99, username: "Momo", level: 1, reputation: NO_REPUTATION });
     expect(filterMentionable(users, "mo").map((u) => u.id)).toEqual([99]);
     expect(filterMentionable(users, "")).toHaveLength(8);
     expect(filterMentionable(users, "用户 1").map((u) => u.id)).toEqual([1, 10, 11, 12]);
