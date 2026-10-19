@@ -16,7 +16,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const o = orders[id as OrderId];
   return (
     <>
-      <WalletNav active="/orders/1001" />
+      <WalletNav />
       <main className="mx-auto grid max-w-5xl gap-4 px-4 py-5 lg:grid-cols-[1fr_24rem]">
         <section className="min-w-0 space-y-4">
           <div>

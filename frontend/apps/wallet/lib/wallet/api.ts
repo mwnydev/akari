@@ -1,122 +1,144 @@
+import { ApiError, createApi, errorMessage, type Schemas, type paths } from "@akari/api-client";
 import type {
+  AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from "@simplewebauthn/browser";
-import type { Address } from "viem";
-import { RP_ID, RP_NAME } from "./config";
+import { API_BASE } from "./config";
 
-/** 后端登记过的钱包 Passkey：凭证 ID 与公钥（SPKI DER），都是 base64url。 */
-export interface StoredPasskey {
-  credentialId: string;
-  publicKey: string;
-  rpId: string;
-}
+export type PasskeyView = Schemas["PasskeyView"];
+export type ApiOffer = Schemas["Offer"];
+export type OfferView = Schemas["OfferView"];
+export type NewOfferRequest = Schemas["NewOfferRequest"];
+export type PaymentData = Schemas["PaymentData"];
+export type ListingView = Schemas["ListingView"];
+export type ReverifyStarted = Schemas["ReverifyStarted"];
+export type Verified = Schemas["Verified"];
+export type WalletView = Schemas["WalletView"];
+export type WalletOverview = Schemas["WalletOverview"];
+export type NewWallet = Schemas["NewWallet"];
+export type TradeParams = Schemas["TradeParams"];
+export type WalletInitVersionView = Schemas["WalletInitVersionView"];
+export type OrderView = Schemas["OrderView"];
+export type OrderPage = Schemas["OrderPage"];
+export type OrderRole = paths["/api/v1/orders"]["get"]["parameters"]["query"]["role"];
 
 /**
- * 钱包前端依赖的后端接口（forum-api 正在实现：challenge 存 Valkey 5 分钟，webauthn-rs 验证）。
- * 页面只依赖这个接口；接入真实 API 时新增一个实现替换 `walletApi`，不改调用方。
+ * 钱包前端依赖的全部后端接口。页面与 SDK 只依赖这个接口；单元测试换成内存实现（见 ./sdk.test.ts）。
+ * 所有方法失败时抛 `ApiError`（message 已是中文，可直接显示）。
  */
 export interface WalletApi {
-  /** 当前登录用户已开通的钱包 Passkey；未开通返回 null */
-  getPasskey(): Promise<StoredPasskey | null>;
-  /** 开通交易第 1 步：后端生成一次性 challenge 与创建参数 */
+  /** 我的钱包 Passkey、钱包地址、近期 Passkey 验证截止时间；未登录抛 UNAUTHORIZED */
+  overview(): Promise<WalletOverview>;
+  tradeParams(): Promise<TradeParams>;
+  /** 开通交易第 1 步：向账号邮箱发「开通交易」验证码 */
+  startReverify(): Promise<ReverifyStarted>;
+  verifyReverify(code: string): Promise<void>;
+  /** 第 2 步：后端出 challenge（Valkey 5 分钟）→ 浏览器创建 Passkey → 后端 webauthn-rs 验证并保存 */
   registrationOptions(): Promise<PublicKeyCredentialCreationOptionsJSON>;
-  /** 开通交易第 2 步：后端验证注册结果并保存凭证 */
-  verifyRegistration(response: RegistrationResponseJSON): Promise<StoredPasskey>;
-  /** 开通交易第 3 步：前端算出的智能账户地址写入 wallets 表 */
-  saveWalletAddress(address: Address): Promise<void>;
+  finishRegistration(credential: RegistrationResponseJSON): Promise<PasskeyView>;
+  /** 敏感操作前的 Passkey 再验证（有效 5 分钟） */
+  assertionOptions(): Promise<PublicKeyCredentialRequestOptionsJSON>;
+  finishAssertion(credential: AuthenticationResponseJSON): Promise<Verified>;
+  /** 第 3 步：前端算出的智能账户地址写入 wallets 表（需近期 Passkey 验证；注册成功本身算一次） */
+  bindWallet(wallet: NewWallet): Promise<WalletView>;
+  listing(id: number): Promise<ListingView>;
+  /** 提交卖家签好的报价卡片（需近期 Passkey 验证） */
+  createOffer(req: NewOfferRequest): Promise<OfferView>;
+  /** 买家接受卡片，拿到付款数据 */
+  acceptOffer(id: number): Promise<PaymentData>;
+  /** `id` 为订单的站内 ID（`OrderView.id`），不是链上订单号（链上订单号按合约各自编号） */
+  order(id: number): Promise<OrderView>;
+  orders(role: OrderRole, cursor?: number): Promise<OrderPage>;
+  /** 某张报价卡片付款后生成的订单（indexer 同步到之前为 NOT_FOUND） */
+  offerOrder(offerId: number): Promise<OrderView>;
 }
 
-const STORE_KEY = "akari.mock-wallet-api.v1";
-
-interface MockState {
-  userId: string;
-  userName: string;
-  challenge?: string;
-  passkey?: StoredPasskey;
-  address?: Address;
+interface Options {
+  /** 默认 `API_BASE`（同源时为空串） */
+  baseUrl?: string;
+  fetch?: typeof fetch;
 }
 
-function randomBase64Url(bytes: number): string {
-  const buf = crypto.getRandomValues(new Uint8Array(bytes));
-  return btoa(String.fromCharCode(...buf))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replace(/=+$/, "");
+interface FetchResult<T> {
+  data?: T;
+  error?: unknown;
+  response: Response;
 }
 
-function decodeBase64Url(s: string): string {
-  return atob(s.replaceAll("-", "+").replaceAll("_", "/"));
+/** openapi-fetch 的结果 → 数据或 ApiError。网络层失败（fetch 抛错）也统一成 ApiError。 */
+async function unwrap<T>(pending: Promise<FetchResult<T>>): Promise<T> {
+  let result: FetchResult<T>;
+  try {
+    result = await pending;
+  } catch {
+    throw ApiError.from(undefined, 0);
+  }
+  const { data, error, response } = result;
+  if (!response.ok) throw ApiError.from(error, response.status);
+  return data as T;
 }
 
-/**
- * 后端就绪前的模拟实现：状态存在本浏览器 localStorage（每个浏览器 / Playwright 上下文各是一个「用户」）。
- * 只做 challenge 与类型核对，不验签——真正的验签在后端 webauthn-rs。
- */
-export function createMockWalletApi(storage: Storage = localStorage): WalletApi {
-  const load = (): MockState => {
-    const raw = storage.getItem(STORE_KEY);
-    if (raw) return JSON.parse(raw) as MockState;
-    return { userId: randomBase64Url(16), userName: `user-${randomBase64Url(3)}` };
-  };
-  const save = (s: MockState) => storage.setItem(STORE_KEY, JSON.stringify(s));
+/** webauthn-rs 的 `CreationChallengeResponse` / `RequestChallengeResponse` 外面包着一层 `publicKey`。 */
+function publicKeyOf<T>(options: unknown): T {
+  const inner = (options as { publicKey?: T } | null)?.publicKey;
+  if (!inner) throw new Error("Passkey 参数不完整，请刷新后重试");
+  return inner;
+}
+
+export function createWalletApi({ baseUrl = API_BASE, fetch: f = fetch }: Options = {}): WalletApi {
+  // 钱包子域名跨源调用论坛 API，必须带上论坛会话 Cookie（ADR 0009）
+  const api = createApi({ baseUrl, credentials: "include", fetch: (req) => f(req) });
 
   return {
-    async getPasskey() {
-      return load().passkey ?? null;
+    overview: () => unwrap(api.GET("/api/v1/wallet")),
+    tradeParams: () => unwrap(api.GET("/api/v1/trade/params")),
+    startReverify: () => unwrap(api.POST("/api/v1/wallet/reverify/start")),
+    async verifyReverify(code) {
+      await unwrap(api.POST("/api/v1/wallet/reverify/verify", { body: { code } }));
     },
     async registrationOptions() {
-      const s = { ...load(), challenge: randomBase64Url(32) };
-      save(s);
-      return {
-        challenge: s.challenge,
-        rp: { id: RP_ID, name: RP_NAME },
-        // 密码管理器里一眼可辨（plan 第 5 节）
-        user: {
-          id: s.userId,
-          name: s.userName,
-          displayName: `Akari 钱包签名（勿删）· ${s.userName}`,
-        },
-        // 只接受 P-256（ES256）：链上 WebAuthn 验证器只认这条曲线
-        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-        authenticatorSelection: { residentKey: "required", userVerification: "required" },
-        attestation: "none",
-        timeout: 60_000,
-      };
+      const { options } = await unwrap(api.POST("/api/v1/wallet/passkey/register/start"));
+      return publicKeyOf(options);
     },
-    async verifyRegistration(response) {
-      const s = load();
-      const clientData = JSON.parse(decodeBase64Url(response.response.clientDataJSON)) as {
-        type: string;
-        challenge: string;
-      };
-      if (
-        !s.challenge ||
-        clientData.type !== "webauthn.create" ||
-        clientData.challenge !== s.challenge
-      ) {
-        throw new Error("Passkey 注册校验失败，请重试");
-      }
-      if (!response.response.publicKey)
-        throw new Error("这个浏览器没有返回 Passkey 公钥，请换用最新版浏览器");
-      const passkey = {
-        credentialId: response.id,
-        publicKey: response.response.publicKey,
-        rpId: RP_ID,
-      };
-      save({ userId: s.userId, userName: s.userName, passkey });
-      return passkey;
+    finishRegistration: (credential) =>
+      unwrap(
+        api.POST("/api/v1/wallet/passkey/register/finish", {
+          body: { credential: credential as unknown as Record<string, never> },
+        }),
+      ),
+    async assertionOptions() {
+      const { options } = await unwrap(api.POST("/api/v1/wallet/passkey/assert/start"));
+      return publicKeyOf(options);
     },
-    async saveWalletAddress(address) {
-      save({ ...load(), address });
-    },
+    finishAssertion: (credential) =>
+      unwrap(
+        api.POST("/api/v1/wallet/passkey/assert/finish", {
+          body: { credential: credential as unknown as Record<string, never> },
+        }),
+      ),
+    bindWallet: (wallet) => unwrap(api.POST("/api/v1/wallet/account", { body: wallet })),
+    listing: (id) => unwrap(api.GET("/api/v1/listings/{id}", { params: { path: { id } } })),
+    createOffer: (req) => unwrap(api.POST("/api/v1/offers", { body: req })),
+    acceptOffer: (id) =>
+      unwrap(api.POST("/api/v1/offers/{id}/accept", { params: { path: { id } } })),
+    order: (id) => unwrap(api.GET("/api/v1/orders/{id}", { params: { path: { id } } })),
+    orders: (role, cursor) =>
+      unwrap(api.GET("/api/v1/orders", { params: { query: { role, cursor: cursor ?? null } } })),
+    offerOrder: (id) => unwrap(api.GET("/api/v1/offers/{id}/order", { params: { path: { id } } })),
   };
+}
+
+/** 给用户看的一句话：接口错误用后端的中文提示，SDK 抛出的中文提示原样显示，其他用兜底文案。 */
+export function userMessage(e: unknown, fallback: string): string {
+  if (e instanceof ApiError) return errorMessage(e);
+  return e instanceof Error && /[一-鿿]/.test(e.message) ? e.message : fallback;
 }
 
 let instance: WalletApi | undefined;
 
-/** 当前使用的实现。后端接口上线后在这里切换。 */
 export function walletApi(): WalletApi {
-  instance ??= createMockWalletApi();
+  instance ??= createWalletApi();
   return instance;
 }

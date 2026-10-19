@@ -2,12 +2,11 @@
 // `next build` 遇到 NEXT_PUBLIC_DEV_SPONSOR=1 会直接失败（next.config.ts），所以不会出现在任何部署产物里。
 // 生产的代付签名只在 forum-sponsor（后端独立进程）里完成，前端永远不持有 Paymaster 签名私钥。
 import { fixedFeePaymasterAbi } from "@akari/contracts";
-import { DEFAULT_PARAMS } from "@akari/fees";
 import { createPublicClient, encodePacked, http, type Hex } from "viem";
-import { toPackedUserOperation } from "viem/account-abstraction";
+import { toPackedUserOperation, type GetPaymasterDataParameters } from "viem/account-abstraction";
 import { privateKeyToAccount } from "viem/accounts";
 import { chain } from "./config";
-import type { PaymasterFields, SponsorClient, SponsorRequest, SponsoredAction } from "./sponsor";
+import { sponsorFeeFor, type PaymasterFields, type SponsorClient } from "./sponsor";
 
 /** cast keccak "akari-dev-only:sponsor"——公开的开发密钥，aa.sh 把它的地址设为本地 Paymaster 的 signer。 */
 const DEV_SPONSOR_KEY: Hex = "0xdccc2a137d5ed46c4b46ea12b6e50feb5565cfa60bda1c3814b0e25d3f52eb98";
@@ -18,16 +17,44 @@ const VERIFICATION_GAS = 120_000n;
 const VALIDITY_SECONDS = 120;
 const CLOCK_SKEW_SECONDS = 30;
 
-/** 与 forum-sponsor 规则一致：付款前的操作收代付费，付款后的操作免费。 */
-function feeFor(action: SponsoredAction): bigint {
-  return action === "createAndFund" ? DEFAULT_PARAMS.sponsorFee : 0n;
-}
-
 function encodeData(validUntil: number, validAfter: number, fee: bigint, signature: Hex): Hex {
   return encodePacked(
     ["uint48", "uint48", "uint128", "bytes"],
     [validUntil, validAfter, fee, signature],
   );
+}
+
+/** viem 在 getPaymasterData 时已经填好全部 gas 字段；缺字段说明调用顺序不对，宁可失败也不签不完整的操作。 */
+function completeUserOperation(op: GetPaymasterDataParameters) {
+  if ("initCode" in op) throw new Error("只支持 EntryPoint v0.7 的 UserOperation");
+  const {
+    callGasLimit,
+    verificationGasLimit,
+    preVerificationGas,
+    maxFeePerGas,
+    maxPriorityFeePerGas,
+  } = op;
+  if (
+    callGasLimit === undefined ||
+    verificationGasLimit === undefined ||
+    preVerificationGas === undefined ||
+    maxFeePerGas === undefined ||
+    maxPriorityFeePerGas === undefined
+  ) {
+    throw new Error("UserOperation 的 gas 字段不完整");
+  }
+  return {
+    sender: op.sender,
+    nonce: op.nonce,
+    callData: op.callData,
+    factory: "factory" in op ? op.factory : undefined,
+    factoryData: "factoryData" in op ? op.factoryData : undefined,
+    callGasLimit,
+    verificationGasLimit,
+    preVerificationGas,
+    maxFeePerGas,
+    maxPriorityFeePerGas,
+  };
 }
 
 export function createDevSponsorClient(): SponsorClient {
@@ -48,21 +75,18 @@ export function createDevSponsorClient(): SponsorClient {
   });
 
   return {
-    async fee(action) {
-      return feeFor(action);
-    },
-    async stub(action) {
+    async getPaymasterStubData(action) {
       const now = Math.floor(Date.now() / 1000);
       return fields(
-        encodeData(now + VALIDITY_SECONDS, now, feeFor(action), `0x${"00".repeat(65)}`),
+        encodeData(now + VALIDITY_SECONDS, now, sponsorFeeFor(action), `0x${"00".repeat(65)}`),
       );
     },
-    async sponsor({ action, userOperation }: SponsorRequest) {
+    async getPaymasterData(action, params) {
       const validAfter = Math.floor(Date.now() / 1000) - CLOCK_SKEW_SECONDS;
       const validUntil = validAfter + CLOCK_SKEW_SECONDS + VALIDITY_SECONDS;
-      const fee = feeFor(action);
+      const fee = sponsorFeeFor(action);
       const packed = toPackedUserOperation({
-        ...userOperation,
+        ...completeUserOperation(params),
         ...fields("0x"),
         signature: "0x",
       });

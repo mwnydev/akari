@@ -1,5 +1,6 @@
 "use client";
 
+import { ApiError } from "@akari/api-client";
 import {
   Amount,
   Button,
@@ -11,73 +12,59 @@ import {
   shortAddress,
 } from "@akari/ui";
 import { SignConfirmDialog } from "@akari/ui/sign-confirm";
+import { useQuery } from "@tanstack/react-query";
 import { CircleCheck, ScanFace } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
+import { userMessage, walletApi } from "../lib/wallet/api";
 import { NETWORK_LABEL, chain } from "../lib/wallet/config";
 import { loadWalletSdk } from "../lib/wallet/load";
-import { decodeSignedOffer, type SignedOffer } from "../lib/wallet/offer";
-import type { CheckoutQuote, Wallet } from "../lib/wallet/sdk";
+import type { Checkout, Wallet } from "../lib/wallet/sdk";
 import { WalletGate } from "./WalletGate";
 
 const DAY = 86_400;
 
-type Check =
-  | { status: "loading" }
-  | { status: "invalid"; message: string }
-  | { status: "ok"; quote: CheckoutQuote; balance: bigint };
+function OrderLink({ orderId, children }: { orderId: number | string; children: string }) {
+  return (
+    <Button asChild>
+      <a data-testid="order-link" href={`/order?id=${orderId}`}>
+        {children}
+      </a>
+    </Button>
+  );
+}
 
-/** 买家：核对卖家签名与费用 → 确认页 → 一次 Face ID 完成授权 + 付款建单（一个 UserOperation）。 */
-export function PayOffer({ signed, wallet }: { signed: SignedOffer; wallet: Wallet }) {
-  const { offer } = signed;
-  const [check, setCheck] = useState<Check>({ status: "loading" });
-  const [open, setOpen] = useState(false);
-  const [orderId, setOrderId] = useState<bigint | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      const sdk = await loadWalletSdk();
-      if (
-        !/^0x0{40}$/.test(offer.buyer) &&
-        offer.buyer.toLowerCase() !== wallet.address.toLowerCase()
-      ) {
-        return { status: "invalid", message: "这份报价指定了别的买家" } as const;
-      }
-      if (!(await sdk.verifyOffer(signed)))
-        return { status: "invalid", message: "卖家签名无效，请不要付款" } as const;
-      const [quote, balance] = await Promise.all([sdk.quoteCheckout(offer), wallet.balance()]);
-      return { status: "ok", quote, balance } as const;
-    })().then(
-      (c) => live && setCheck(c),
-      (e: unknown) =>
-        live &&
-        setCheck({ status: "invalid", message: e instanceof Error ? e.message : "报价校验失败" }),
-    );
-    return () => {
-      live = false;
-    };
-  }, [signed, offer, wallet]);
-
-  if (orderId !== null) {
+/** 卡片已失效时看看是不是已经付过款（买家刷新了付款页），是就直接带去订单。 */
+function Unavailable({ offerId, message }: { offerId: number; message: string }) {
+  const order = useQuery({
+    queryKey: ["offer-order", offerId],
+    queryFn: () => walletApi().offerOrder(offerId),
+    retry: false,
+  });
+  if (order.isPending) return <LoadingState rows={1} label="正在查询订单" />;
+  if (order.isSuccess) {
     return (
       <Card className="space-y-3">
-        <p className="flex items-center gap-2 font-medium text-success">
-          <CircleCheck size={20} aria-hidden />
-          付款成功，订单 #{orderId.toString()} 已建立
-        </p>
-        <Button asChild>
-          <a data-testid="order-link" href={`/order?id=${orderId}`}>
-            查看订单
-          </a>
-        </Button>
+        <p className="font-medium">这份报价已经付款，订单 #{order.data.id}</p>
+        <OrderLink orderId={order.data.id}>查看订单</OrderLink>
       </Card>
     );
   }
-  if (check.status === "loading") return <LoadingState rows={2} label="正在核对报价" />;
-  if (check.status === "invalid") return <ErrorState title="不能付款" message={check.message} />;
+  return <ErrorState title="不能付款" message={message} />;
+}
 
-  const { quote, balance } = check;
+function Confirm({
+  checkout,
+  wallet,
+  onPaid,
+}: {
+  checkout: Checkout;
+  wallet: Wallet;
+  onPaid: (orderId: bigint) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const { signed, quote, balance } = checkout;
+  const { offer } = signed;
   const enough = balance >= quote.total;
   return (
     <Card className="space-y-3">
@@ -123,9 +110,10 @@ export function PayOffer({ signed, wallet }: { signed: SignedOffer; wallet: Wall
           付款 <Amount value={quote.total} />
         </Button>
       ) : (
-        <p className="rounded-lg bg-warning-soft p-3 text-sm text-warning">
-          余额不足，请先从交易所选 Arbitrum One 网络提币到钱包。
-        </p>
+        <div className="space-y-1 rounded-lg bg-warning-soft p-3 text-sm text-warning">
+          <p>余额不足，请先从交易所选 Arbitrum One 网络提币到钱包：</p>
+          <p className="amount font-mono break-all">{wallet.address}</p>
+        </div>
       )}
       <SignConfirmDialog
         open={open}
@@ -141,20 +129,55 @@ export function PayOffer({ signed, wallet }: { signed: SignedOffer; wallet: Wall
         ]}
         note="授权与付款合成一次 Face ID。付款成功的那一刻订单才成立；余额不足时整笔不会上链，也不扣代付费。"
         onConfirm={async () => {
-          const { orderId: id } = await wallet.pay(signed, quote);
+          const { orderId } = await wallet.pay(signed, quote);
           setOpen(false);
-          setOrderId(id);
+          onPaid(orderId);
         }}
       />
     </Card>
   );
 }
 
-/** `/pay?offer=…`：解码付款链接里的报价（页面需包在 Suspense 里，静态导出读查询参数的要求）。 */
+/** 买家：后端给出付款数据 → 核对网络、钱包、卖家签名与费用 → 确认页 → 一次 Face ID 完成授权 + 付款建单。 */
+export function PayOffer({ offerId, wallet }: { offerId: number; wallet: Wallet }) {
+  const [orderId, setOrderId] = useState<bigint | null>(null);
+  const checkout = useQuery({
+    queryKey: ["checkout", offerId, wallet.address],
+    queryFn: async () => (await loadWalletSdk()).prepareCheckout(walletApi(), wallet, offerId),
+    retry: false,
+    staleTime: Infinity,
+    structuralSharing: false,
+  });
+
+  if (orderId !== null) {
+    return (
+      <Card className="space-y-3">
+        <p className="flex items-center gap-2 font-medium text-success">
+          <CircleCheck size={20} aria-hidden />
+          付款成功，订单 #{orderId.toString()} 已建立
+        </p>
+        <OrderLink orderId={orderId.toString()}>查看订单</OrderLink>
+      </Card>
+    );
+  }
+  if (checkout.isPending) return <LoadingState rows={2} label="正在核对报价" />;
+  if (checkout.isError) {
+    const message = userMessage(checkout.error, "报价校验失败，请稍后再试");
+    return checkout.error instanceof ApiError && checkout.error.code === "OFFER_UNAVAILABLE" ? (
+      <Unavailable offerId={offerId} message={message} />
+    ) : (
+      <ErrorState title="不能付款" message={message} />
+    );
+  }
+  return <Confirm checkout={checkout.data} wallet={wallet} onPaid={setOrderId} />;
+}
+
+/** `/pay?offer=<报价卡片 ID>`（页面需包在 Suspense 里，静态导出读查询参数的要求）。 */
 export function PaySection() {
-  const code = useSearchParams().get("offer");
-  const signed = useMemo(() => (code ? decodeSignedOffer(code) : null), [code]);
-  if (!signed)
-    return <ErrorState title="报价链接无效" message="链接不完整或被改动过，请向卖家重新索取" />;
-  return <WalletGate>{(wallet) => <PayOffer signed={signed} wallet={wallet} />}</WalletGate>;
+  const raw = useSearchParams().get("offer");
+  if (!raw || !/^[1-9]\d{0,15}$/.test(raw)) {
+    return <ErrorState title="付款链接无效" message="链接不完整，请从私信里的报价卡片进入" />;
+  }
+  const offerId = Number(raw);
+  return <WalletGate>{(wallet) => <PayOffer offerId={offerId} wallet={wallet} />}</WalletGate>;
 }

@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "订单" };
 export default function OrderPage() {
   return (
     <>
-      <WalletNav />
+      <WalletNav active="/order" />
       <main className="mx-auto max-w-5xl px-4 py-5">
         <Suspense fallback={<LoadingState rows={2} />}>
           <OrderSection />

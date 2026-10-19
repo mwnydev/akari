@@ -1,6 +1,7 @@
 import { Toaster } from "@akari/ui/toast";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { Providers } from "../components/Providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -12,7 +13,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN">
       <body className="backdrop-tint min-h-dvh pb-10">
-        {children}
+        <Providers>{children}</Providers>
         <Toaster position="top-center" />
       </body>
     </html>

@@ -52,7 +52,7 @@ fork 来的状态（EntryPoint、Kernel 工厂等）不受影响。
 | MockUSDT          | `0x8c313D0eC280837325fA5aB05AC04Be31F46AbBC` | 任何人可 `mint`                                   |
 | EscrowConfig      | `0x5b8A58E060327C720Db5FCb1a2BB7C217B292c89` | `contracts/script/Deploy.s.sol`，默认参数         |
 | Escrow            | `0xFb3ca740dac6A93a5110a0F8d9cc584ACE80940C` | 同上                                              |
-| FixedFeePaymaster | `0x6022875397e11A32BbAEB91d80258CBF4AA6F4A8` | `forge create`；押金 10 ETH、质押 1 ETH（1 天）   |
+| FixedFeePaymaster | `0x3dd2Fe1Ec5Cfe2EE0ABe62c1e3D81e3d18ee4E1e` | `forge create`；押金 10 ETH、质押 1 ETH（1 天）   |
 
 | 开发账户        | 地址                                         | 用途                                                        |
 | --------------- | -------------------------------------------- | ----------------------------------------------------------- |
@@ -81,4 +81,9 @@ pnpm e2e:aa                                                 # Playwright + CDP �
   只对 `next dev` 生效：`next build` 带这个变量会直接失败，构建产物里 `akari-dev-sponsor` 解析到不含私钥的空实现，
   `pnpm build` 最后还会扫一遍 `out/` 确认私钥不在里面。生产代付签名只在 forum-sponsor 里做。
 - Passkey 的 RP ID 默认 `localhost`（`NEXT_PUBLIC_WALLET_RP_ID`）。
+- 钱包页面同源请求 `/api/v1`，`next dev` 转发到 `API_ORIGIN`（默认 `http://127.0.0.1:8080`）；生产构建用
+  `NEXT_PUBLIC_API_ORIGIN` 直连论坛 API（ADR 0009）。forum-api 的 `WALLET_ORIGINS` 要包含钱包页面的源。
+- 端到端测试按接口逐个选择后端：`WALLET_E2E_API`（默认 `http://127.0.0.1:8080`）上的 forum-api 实现了的接口走真实后端
+  （登录与开通验证码经 Mailpit，需要 forum-worker；用户名直接写数据库，`WALLET_E2E_DATABASE` 指定库名），
+  没实现的（或 forum-api 没运行）由 `e2e/fake-backend.ts` 模拟；有 `/api/v1/aa/rpc` 时不用 DEV 代付。
 - 合约 ABI 改了以后：`pnpm --filter @akari/contracts generate`（先 `forge build`，再用 @wagmi/cli 重新生成 `src/generated.ts`）。
