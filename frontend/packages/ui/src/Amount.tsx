@@ -8,7 +8,9 @@ export interface AmountProps {
 
 export function Amount({ value, className }: AmountProps) {
   return (
-    <span className={className ? `amount ${className}` : "amount"}>
+    <span
+      className={className ? `amount whitespace-nowrap ${className}` : "amount whitespace-nowrap"}
+    >
       {formatUsdt(value)} <span className="text-[0.85em] text-fg-muted">USDT</span>
     </span>
   );

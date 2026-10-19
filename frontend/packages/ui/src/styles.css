@@ -34,13 +34,52 @@
   --color-success: #1a7f37;
   --color-warning: #9a6700;
   --color-danger: #c62828;
+  --color-surface-2: #ececf0;
+  --color-accent-fg: #ffffff;
+  /* 蓝色实底（按钮、我方气泡）：深色模式下比链接色更深，保证白字对比度 ≥ 4.5 */
+  --color-accent-fill: #0a66d8;
+  --color-accent-soft: rgb(10 102 216 / 0.1);
+  --color-success-soft: rgb(26 127 55 / 0.1);
+  --color-warning-soft: rgb(154 103 0 / 0.12);
+  --color-danger-soft: rgb(198 40 40 / 0.1);
+  --color-online: #28a745;
 
   /* 玻璃材质 */
   --color-glass: rgb(255 255 255 / 0.62);
   --color-glass-border: rgb(255 255 255 / 0.5);
+  /* 弹窗与签名确认用更实的玻璃：动钱的信息必须清楚可读 */
+  --color-glass-strong: rgb(255 255 255 / 0.9);
   --blur-glass: 24px;
 
   --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --animate-sheet-in: sheet-in 0.32s var(--ease-glass);
+  --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-pulse-soft: pulse-soft 1.6s ease-in-out infinite;
+
+  @keyframes sheet-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -46%) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes pulse-soft {
+    50% {
+      opacity: 0.45;
+    }
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -54,8 +93,17 @@
     --color-success: #3fb950;
     --color-warning: #d29922;
     --color-danger: #ff6b6b;
+    --color-surface-2: #2c2c2e;
+    --color-accent-fg: #ffffff;
+    --color-accent-fill: #0a66d8;
+    --color-accent-soft: rgb(76 155 255 / 0.16);
+    --color-success-soft: rgb(63 185 80 / 0.16);
+    --color-warning-soft: rgb(210 153 34 / 0.16);
+    --color-danger-soft: rgb(255 107 107 / 0.16);
+    --color-online: #30d158;
     --color-glass: rgb(28 28 30 / 0.6);
     --color-glass-border: rgb(255 255 255 / 0.1);
+    --color-glass-strong: rgb(36 36 38 / 0.9);
   }
 }
 
@@ -64,12 +112,28 @@
   :root {
     --color-glass: var(--color-surface);
     --color-glass-border: var(--color-border);
+    --color-glass-strong: var(--color-surface);
     --blur-glass: 0px;
   }
 }
 
+/* 浮动层背后的柔和色彩，让玻璃材质有内容可「透」；只在页面背景用一次 */
+@utility backdrop-tint {
+  background-image:
+    radial-gradient(60rem 30rem at 10% -10%, var(--color-accent-soft), transparent 70%),
+    radial-gradient(40rem 24rem at 100% 0%, var(--color-success-soft), transparent 70%);
+  background-attachment: fixed;
+}
+
 @utility glass {
   background-color: var(--color-glass);
+  border: 1px solid var(--color-glass-border);
+  backdrop-filter: saturate(180%) blur(var(--blur-glass));
+  -webkit-backdrop-filter: saturate(180%) blur(var(--blur-glass));
+}
+
+@utility glass-strong {
+  background-color: var(--color-glass-strong);
   border: 1px solid var(--color-glass-border);
   backdrop-filter: saturate(180%) blur(var(--blur-glass));
   -webkit-backdrop-filter: saturate(180%) blur(var(--blur-glass));
@@ -97,7 +161,8 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  html[data-no-blur] .glass {
+  html[data-no-blur] .glass,
+  html[data-no-blur] .glass-strong {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background-color: var(--color-surface);

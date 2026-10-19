@@ -85,3 +85,14 @@ export function claimPayout(unlocked: bigint, claimed: bigint, claimGas: bigint)
   const claimable = unlocked - claimed;
   return claimable > claimGas ? claimable - claimGas : null;
 }
+
+/** plan 第 9 节链上参数默认值。上线后以链上 / API 返回的参数为准，这里只供设计稿和测试使用。 */
+export const DEFAULT_PARAMS = {
+  feeBps: 100n,
+  minFee: 1_000_000n,
+  baseGas: 100_000n,
+  claimGas: 20_000n,
+  disputeMulBps: 10_000n,
+  /** 付款前操作的代付费，由 Paymaster 在验证阶段预扣（ADR 0004），不进担保合约 */
+  sponsorFee: 50_000n,
+} as const;

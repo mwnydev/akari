@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { formatUsdt } from "./format";
 
 describe("formatUsdt", () => {
-  it("formats smallest units with 6 decimals and thousands separators", () => {
-    expect(formatUsdt("0")).toBe("0.000000");
+  it("formats with thousands separators, ≥ 2 decimals, trailing zeros trimmed", () => {
+    expect(formatUsdt("0")).toBe("0.00");
     expect(formatUsdt("1")).toBe("0.000001");
-    expect(formatUsdt(1_000_000n)).toBe("1.000000");
+    expect(formatUsdt(1_000_000n)).toBe("1.00");
     expect(formatUsdt("124124072")).toBe("124.124072");
     expect(formatUsdt("1234567890123456")).toBe("1,234,567,890.123456");
-    expect(formatUsdt("-50000")).toBe("-0.050000");
+    expect(formatUsdt("-50000")).toBe("-0.05");
   });
 
   it("is exact beyond float precision", () => {
