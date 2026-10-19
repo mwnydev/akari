@@ -48,6 +48,13 @@ tower = { version = "0.5", features = ["util"] }
 async-trait = "0.1"
 reqwest = { version = "=0.13.5", default-features = false, features = ["json", "rustls"] }
 ammonia = "=4.2.4" # 4.2.3 有 RUSTSEC-2026-0373，计划锁定版本因安全补丁上调
+# 钱包 Passkey（plan 第 5 节）。状态需存 Valkey 5 分钟，故开启状态序列化。
+webauthn-rs = { version = "=0.5.5", features = ["danger-allow-state-serialisation"] }
+webauthn-authenticator-rs = { version = "=0.5.5", default-features = false, features = ["softpasskey"] }
+# webauthn-rs 依赖 OpenSSL；musl 静态构建时用 vendored 源码编译。
+openssl = { version = "0.10", features = ["vendored"] }
+# EIP-712 报价哈希（keccak256），与合约 `Escrow.hashOffer` 逐字节一致。
+sha3 = "=0.12.0"
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 
 [workspace.lints.rust]

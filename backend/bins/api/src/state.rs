@@ -6,6 +6,8 @@ use forum_auth::{AnyCaptcha, CodeStore};
 use forum_db::PgPool;
 use forum_kv::{ForumCache, Pool};
 
+use crate::wallet::WalletState;
+
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
@@ -20,6 +22,8 @@ pub struct AppState {
     pub cache: ForumCache,
     /// 本站域名：帖子里指向这些主机的绝对链接不算站外链接。
     pub internal_hosts: Arc<[String]>,
+    /// 钱包 Passkey、钱包地址与报价（plan 第 5–7 节）。
+    pub wallet: Arc<WalletState>,
 }
 
 impl FromRef<AppState> for Key {

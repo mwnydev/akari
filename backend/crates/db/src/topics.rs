@@ -11,6 +11,10 @@ pub const FLAG_HIDDEN: i16 = 8;
 /// 不进普通列表的标志：置顶（单独展示）与隐藏。
 pub const FLAGS_NOT_LISTED: i16 = FLAG_PINNED | FLAG_HIDDEN;
 
+/// `topics.kind`：普通 / 交易 / 争议。
+pub const KIND_NORMAL: i16 = 0;
+pub const KIND_TRADE: i16 = 1;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Topic {
     pub id: i64,
@@ -50,6 +54,7 @@ pub struct NewTopic<'a> {
     pub plain_text: &'a str,
     pub source: &'a Value,
     pub mentions: &'a [i64],
+    pub kind: i16,
 }
 
 pub async fn create(db: impl PgExecutor<'_>, t: NewTopic<'_>) -> Result<Created, sqlx::Error> {
@@ -61,7 +66,8 @@ pub async fn create(db: impl PgExecutor<'_>, t: NewTopic<'_>) -> Result<Created,
         t.html,
         t.plain_text,
         t.source,
-        t.mentions
+        t.mentions,
+        t.kind
     )
     .fetch_one(db)
     .await?;

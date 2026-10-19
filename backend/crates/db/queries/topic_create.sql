@@ -1,10 +1,10 @@
 -- 发主题：主题 + 1 楼 + 原稿 + @提及通知，一条语句完成（post id 先取自序列，主题行直接写 last_post_id）。
--- $1 forum_id, $2 author_id, $3 title, $4 html, $5 plain_text, $6 source, $7 mentions
+-- $1 forum_id, $2 author_id, $3 title, $4 html, $5 plain_text, $6 source, $7 mentions, $8 kind
 WITH pid AS (
   SELECT nextval(pg_get_serial_sequence('posts', 'id')) AS id
 ), t AS (
-  INSERT INTO topics (forum_id, author_id, title, last_post_id, last_poster_id, last_post_at)
-  SELECT $1, $2, $3, pid.id, $2, now() FROM pid
+  INSERT INTO topics (forum_id, author_id, title, kind, last_post_id, last_poster_id, last_post_at)
+  SELECT $1, $2, $3, $8, pid.id, $2, now() FROM pid
   RETURNING id, last_post_at
 ), p AS (
   INSERT INTO posts (id, topic_id, floor, author_id, html, plain_text)

@@ -6,7 +6,9 @@ pub mod outbox;
 pub mod posts;
 pub mod staff;
 pub mod topics;
+pub mod trade;
 pub mod users;
+pub mod wallet;
 
 pub use sqlx::{PgPool, Postgres, Transaction};
 

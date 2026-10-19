@@ -142,3 +142,94 @@ async fn view_counts_flush_to_topics(pool: PgPool) {
         .unwrap();
     assert_eq!(views, 3);
 }
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn wallet_code_is_rendered(pool: PgPool) {
+    outbox::enqueue(
+        &pool,
+        "email.wallet_code",
+        &json!({"to": "c@example.com", "code": "654321"}),
+        outbox::PRIORITY_HIGH,
+    )
+    .await
+    .unwrap();
+    let mailer = Recorder::default();
+    assert_eq!(forum_worker::drain_once(&pool, &mailer).await.unwrap(), 1);
+    let sent = mailer.sent.lock().unwrap();
+    assert!(sent[0].subject.contains("开通交易") && sent[0].text.contains("654321"));
+}
+
+/// 插入一张私信报价卡片，`expiry` 为 Unix 秒。
+async fn offer(pool: &PgPool, seller: i64, hash_byte: u8, expiry: i64) -> i64 {
+    let addr = [hash_byte; 20];
+    forum_db::trade::insert_offer(
+        pool,
+        forum_db::trade::NewOffer {
+            listing_id: None,
+            conversation_id: Some(1),
+            seller_id: seller,
+            buyer_id: None,
+            replaces_id: None,
+            chain_id: 421_614,
+            verifying_contract: &addr,
+            seller: &addr,
+            buyer: &addr,
+            token: &addr,
+            amount: "5000000",
+            fee_payer: 0,
+            max_fee_bps: 100,
+            max_base_gas: "100000",
+            max_min_fee: "1000000",
+            bond: "0",
+            late_slash_bps: 0,
+            instant: false,
+            ship_window: 86_400,
+            confirm_window: 86_400,
+            listing_hash: &[0; 32],
+            expiry,
+            max_fills: 1,
+            nonce: "1",
+            signature: &[1],
+            offer_hash: &[hash_byte; 32],
+        },
+    )
+    .await
+    .unwrap()
+    .unwrap()
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn expired_offers_are_marked(pool: PgPool) {
+    let (user, _) = forum_db::users::upsert_by_email(&pool, "s@example.com")
+        .await
+        .unwrap();
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    let old = offer(&pool, user.id, 1, now - 10).await;
+    let live = offer(&pool, user.id, 2, now + 3600).await;
+    let cancelled = offer(&pool, user.id, 3, now - 10).await;
+    sqlx::query("UPDATE offers SET status = 'cancelled' WHERE id = $1")
+        .bind(cancelled)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(forum_worker::expire_offers(&pool).await.unwrap(), 1);
+    assert_eq!(forum_worker::expire_offers(&pool).await.unwrap(), 0);
+    let status = |id: i64| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, String>("SELECT status::text FROM offers WHERE id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(status(old).await, "expired");
+    assert_eq!(status(live).await, "pending");
+    assert_eq!(
+        status(cancelled).await,
+        "cancelled",
+        "closed cards stay closed"
+    );
+}

@@ -35,6 +35,29 @@ async fn sliding_window_limits_and_recovers() {
 }
 
 #[tokio::test]
+async fn ephemeral_take_is_single_use_and_expires() {
+    let Some(pool) = pool() else { return };
+    let key = format!("test:eph:{}", unique());
+    forum_kv::ephemeral::put(&pool, &key, "a", Duration::from_secs(5))
+        .await
+        .unwrap();
+    // 覆盖写入：旧值作废
+    forum_kv::ephemeral::put(&pool, &key, "b", Duration::from_secs(5))
+        .await
+        .unwrap();
+    assert_eq!(
+        forum_kv::ephemeral::take(&pool, &key).await.unwrap(),
+        Some("b".to_owned())
+    );
+    assert_eq!(forum_kv::ephemeral::take(&pool, &key).await.unwrap(), None);
+    forum_kv::ephemeral::put(&pool, &key, "c", Duration::from_millis(100))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_eq!(forum_kv::ephemeral::take(&pool, &key).await.unwrap(), None);
+}
+
+#[tokio::test]
 async fn session_store_roundtrip_and_expiry() {
     let Some(pool) = pool() else { return };
     let store = ValkeySessionStore::new(pool);

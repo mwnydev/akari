@@ -1,4 +1,4 @@
-//! 发件箱投递。
+//! 发件箱投递、浏览数回写、报价卡片过期。
 //!
 //! 现在是最小实现：轮询 `outbox`，`FOR UPDATE SKIP LOCKED` 锁一批、投递、标记，失败按指数退避重试。
 //! 发薪、超时处理等关键任务按 plan 第 2 节接入 apalis（PostgreSQL 队列）时，发件箱改为向 apalis 入队，这里只保留转发。
@@ -54,6 +54,10 @@ fn render_email(msg: &outbox::Message) -> Result<Email, RenderError> {
             let p: LoginCode = serde_json::from_value(msg.payload.clone())?;
             (p.to, templates::login_code(&p.code))
         }
+        "email.wallet_code" => {
+            let p: LoginCode = serde_json::from_value(msg.payload.clone())?;
+            (p.to, templates::wallet_code(&p.code))
+        }
         "email.new_device" => {
             let p: NewDevice = serde_json::from_value(msg.payload.clone())?;
             (p.to, templates::new_device(&p.at))
@@ -90,6 +94,23 @@ pub async fn drain_once<M: Mailer>(db: &PgPool, mailer: &M) -> Result<usize, sql
     }
     tx.commit().await?;
     Ok(batch.len())
+}
+
+/// 报价卡片过期检查间隔。卡片过期时间到了之后，接口读取时已按「已过期」展示，这里只是落库。
+pub const OFFER_EXPIRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+/// 每批最多标记的过期卡片数。
+pub const OFFER_EXPIRY_BATCH: i64 = 500;
+
+/// 把到期的待确认报价卡片标为已过期（plan 第 7 节），返回总条数。一批满了就继续。
+pub async fn expire_offers(db: &PgPool) -> Result<u64, sqlx::Error> {
+    let mut total = 0;
+    loop {
+        let n = forum_db::trade::expire_due(db, OFFER_EXPIRY_BATCH).await?;
+        total += n;
+        if n < OFFER_EXPIRY_BATCH as u64 {
+            return Ok(total);
+        }
+    }
 }
 
 /// 浏览数回写间隔（plan 第 8 节）。

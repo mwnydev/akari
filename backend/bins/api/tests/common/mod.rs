@@ -12,14 +12,41 @@ use axum::body::{Body, to_bytes};
 use axum::extract::connect_info::MockConnectInfo;
 use axum::http::{Request, StatusCode, header};
 use axum_extra::extract::cookie::Key;
+use forum_api::wallet::{NoopAddressVerifier, WalletState};
 use forum_api::{AppState, app};
+use forum_auth::passkey::webauthn::{CreationChallengeResponse, RequestChallengeResponse, Url};
+use forum_auth::passkey::{UserHandles, wallet_webauthn};
 use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha};
+use forum_core::trade::TradeLimits;
 use forum_db::PgPool;
 use serde_json::{Value, json};
 use tower::ServiceExt;
+use webauthn_authenticator_rs::WebauthnAuthenticator;
+use webauthn_authenticator_rs::softpasskey::SoftPasskey;
 
 pub const ORIGIN: &str = "https://forum.test";
 pub const SECRET: [u8; 64] = [9; 64];
+pub const WALLET_ORIGIN: &str = "https://wallet.test";
+pub const CHAIN_ID: u64 = 421_614;
+pub const ESCROW: &str = "0x4444444444444444444444444444444444444444";
+pub const USDT: &str = "0x3333333333333333333333333333333333333333";
+
+pub fn wallet_state() -> WalletState {
+    let origin = Url::parse(WALLET_ORIGIN).unwrap();
+    WalletState {
+        webauthn: wallet_webauthn("wallet.test", "Akari", &[origin]).unwrap(),
+        origins: vec![WALLET_ORIGIN.to_owned()],
+        brand: "Akari".to_owned(),
+        handles: UserHandles::new(&SECRET).unwrap(),
+        chain: forum_api::config::ChainConfig {
+            chain_id: CHAIN_ID,
+            escrow: Some(ESCROW.parse().unwrap()),
+            usdt: Some(USDT.parse().unwrap()),
+        },
+        limits: TradeLimits::default(),
+        verifier: Arc::new(NoopAddressVerifier),
+    }
+}
 
 fn nanos() -> u128 {
     std::time::SystemTime::now()
@@ -44,6 +71,7 @@ pub fn build(db: PgPool) -> Option<Router> {
         cookie_secure: true,
         cache: forum_kv::ForumCache::new(kv, format!("test{}:", nanos())),
         internal_hosts: Arc::from(vec!["forum.test".to_owned()]),
+        wallet: Arc::new(wallet_state()),
     };
     // 每个用例用不同的假 IP，避免 IP 限流互相影响
     Some(app(state, &SECRET).layer(MockConnectInfo(SocketAddr::from((rand_ip(), 40000)))))
@@ -71,10 +99,22 @@ pub async fn call(
     body: Option<Value>,
     cookies: &[String],
 ) -> Res {
+    call_from(app, ORIGIN, method, uri, body, cookies).await
+}
+
+/// 同 [`call`]，但指定 `Origin`（钱包接口只接受钱包页面来源）。
+pub async fn call_from(
+    app: &Router,
+    origin: &str,
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+    cookies: &[String],
+) -> Res {
     let mut req = Request::builder()
         .method(method)
         .uri(uri)
-        .header(header::ORIGIN, ORIGIN);
+        .header(header::ORIGIN, origin);
     if !cookies.is_empty() {
         req = req.header(header::COOKIE, cookies.join("; "));
     }
@@ -97,7 +137,9 @@ pub async fn call(
     let body = if bytes.is_empty() {
         Value::Null
     } else {
-        serde_json::from_slice(&bytes).unwrap()
+        // axum 的请求体解析错误是纯文本
+        serde_json::from_slice(&bytes)
+            .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()))
     };
     Res {
         status,
@@ -154,6 +196,146 @@ pub async fn age(db: &PgPool, user_id: i64) {
     sqlx::query("UPDATE users SET created_at = now() - interval '2 days' WHERE id = $1")
         .bind(user_id)
         .execute(db)
+        .await
+        .unwrap();
+}
+
+/// 从钱包页面发请求。
+pub async fn wallet_call(
+    app: &Router,
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+    cookies: &[String],
+) -> Res {
+    call_from(app, WALLET_ORIGIN, method, uri, body, cookies).await
+}
+
+pub async fn set_username(db: &PgPool, user_id: i64, name: &str) {
+    sqlx::query("UPDATE users SET username = $2 WHERE id = $1")
+        .bind(user_id)
+        .bind(name)
+        .execute(db)
+        .await
+        .unwrap();
+}
+
+/// 软件 Passkey（webauthn-authenticator-rs），代替浏览器 + 平台认证器。
+pub type SoftAuth = WebauthnAuthenticator<SoftPasskey>;
+
+pub fn soft_passkey() -> SoftAuth {
+    // true：声称做过用户验证（UV），钱包 Passkey 要求 UV。
+    WebauthnAuthenticator::new(SoftPasskey::new(true))
+}
+
+/// 开通交易用的邮箱再验证：发码 → 从发件箱取码 → 校验。
+pub async fn reverify(app: &Router, db: &PgPool, cookies: &[String]) {
+    let r = wallet_call(app, "POST", "/api/v1/wallet/reverify/start", None, cookies).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{:?}", r.body);
+    let code: String = sqlx::query_scalar(
+        "SELECT payload->>'code' FROM outbox WHERE kind = 'email.wallet_code' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(db)
+    .await
+    .unwrap();
+    let r = wallet_call(
+        app,
+        "POST",
+        "/api/v1/wallet/reverify/verify",
+        Some(json!({"code": code})),
+        cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{:?}", r.body);
+}
+
+/// 用软件 Passkey 完成注册，返回 finish 的响应。
+pub async fn register_passkey(app: &Router, auth: &mut SoftAuth, cookies: &[String]) -> Res {
+    let r = wallet_call(
+        app,
+        "POST",
+        "/api/v1/wallet/passkey/register/start",
+        None,
+        cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let ccr: CreationChallengeResponse = serde_json::from_value(r.body["options"].clone()).unwrap();
+    let cred = auth
+        .do_registration(Url::parse(WALLET_ORIGIN).unwrap(), ccr)
+        .unwrap();
+    wallet_call(
+        app,
+        "POST",
+        "/api/v1/wallet/passkey/register/finish",
+        Some(json!({"credential": cred})),
+        cookies,
+    )
+    .await
+}
+
+/// 用软件 Passkey 完成一次再验证。
+pub async fn assert_passkey(app: &Router, auth: &mut SoftAuth, cookies: &[String]) -> Res {
+    let r = wallet_call(
+        app,
+        "POST",
+        "/api/v1/wallet/passkey/assert/start",
+        None,
+        cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let rcr: RequestChallengeResponse = serde_json::from_value(r.body["options"].clone()).unwrap();
+    let cred = auth
+        .do_authentication(Url::parse(WALLET_ORIGIN).unwrap(), rcr)
+        .unwrap();
+    wallet_call(
+        app,
+        "POST",
+        "/api/v1/wallet/passkey/assert/finish",
+        Some(json!({"credential": cred})),
+        cookies,
+    )
+    .await
+}
+
+/// 开通交易的完整流程：用户名 → 邮箱再验证 → 注册 Passkey → 登记钱包地址。
+/// 返回软件 Passkey，会话随之获得 5 分钟近期验证。
+pub async fn enable_trading(
+    app: &Router,
+    db: &PgPool,
+    user_id: i64,
+    cookies: &[String],
+    address: &str,
+) -> SoftAuth {
+    set_username(db, user_id, &format!("u{user_id}")).await;
+    reverify(app, db, cookies).await;
+    let mut auth = soft_passkey();
+    let r = register_passkey(app, &mut auth, cookies).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let r = wallet_call(
+        app,
+        "POST",
+        "/api/v1/wallet/account",
+        Some(json!({"chain_id": CHAIN_ID, "address": address})),
+        cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    auth
+}
+
+/// 清掉登录验证码的 60 秒重发间隔，让同一用户在测试里马上再登录一次（模拟另一台设备）。
+pub async fn clear_resend(email: &str) {
+    let url = std::env::var("VALKEY_URL").unwrap();
+    let kv = forum_kv::pool(&url).unwrap();
+    let tag = CodeStore::new(kv.clone(), &SECRET)
+        .unwrap()
+        .email_tag(email);
+    let mut conn = kv.get().await.unwrap();
+    redis::cmd("DEL")
+        .arg(format!("auth:resend:{tag}"))
+        .query_async::<()>(&mut conn)
         .await
         .unwrap();
 }

@@ -6,8 +6,10 @@ use std::time::Duration;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+use forum_content::Cleaned;
 use forum_core::ErrorCode;
 use forum_db::topics::{self, FLAG_HIDDEN, FLAG_PINNED, Topic};
+use forum_db::users::Actor;
 use forum_kv::forum_cache::{self, BOARD_CAP};
 use serde::Deserialize;
 use serde_json::Value;
@@ -250,13 +252,68 @@ pub async fn create_topic(
     Path(slug): Path<String>,
     Json(req): Json<NewTopicRequest>,
 ) -> ApiResult<(StatusCode, Json<CreatedTopic>)> {
-    let viewer = Viewer::load(&state, &session).await?;
+    let p = prepare_topic(&state, &session, &slug, &req).await?;
+    let created = topics::create(&state.db, p.new_topic(&req, topics::KIND_NORMAL)).await?;
+    p.after_create(&state, &created).await;
+    Ok((
+        StatusCode::CREATED,
+        Json(CreatedTopic {
+            topic_id: created.topic_id,
+            post_id: created.post_id,
+        }),
+    ))
+}
+
+/// 通过发帖检查（权限、过滤、限流）的新主题；交易帖与普通主题共用。
+pub struct PreparedTopic {
+    pub actor: Actor,
+    pub forum_id: i32,
+    pub title: String,
+    pub cleaned: Cleaned,
+}
+
+impl PreparedTopic {
+    pub fn new_topic<'a>(&'a self, req: &'a NewTopicRequest, kind: i16) -> topics::NewTopic<'a> {
+        topics::NewTopic {
+            forum_id: self.forum_id,
+            author_id: self.actor.id,
+            title: &self.title,
+            html: &self.cleaned.html,
+            plain_text: &self.cleaned.plain_text,
+            source: &req.source,
+            mentions: &self.cleaned.mentions,
+            kind,
+        }
+    }
+
+    /// 提交后把新主题放进板块有序集合。
+    pub async fn after_create(&self, state: &AppState, created: &topics::Created) {
+        after_commit(
+            "board_touch",
+            state.cache.board_touch(
+                self.forum_id,
+                created.topic_id,
+                micros(created.last_post_at),
+            ),
+        )
+        .await;
+    }
+}
+
+/// 发主题前的检查：登录、板块权限、标题与内容过滤、新用户限制与限流。
+pub async fn prepare_topic(
+    state: &AppState,
+    session: &Session,
+    slug: &str,
+    req: &NewTopicRequest,
+) -> ApiResult<PreparedTopic> {
+    let viewer = Viewer::load(state, session).await?;
     let actor = viewer.require()?;
-    let forum = forum_db::forums::by_slug(&state.db, &slug)
+    let forum = forum_db::forums::by_slug(&state.db, slug)
         .await?
         .ok_or(ApiError(ErrorCode::NotFound))?;
     if actor.level < forum.view_min_level || actor.level < forum.post_min_level {
-        let staff = viewer.is_staff(&state, forum.id).await?;
+        let staff = viewer.is_staff(state, forum.id).await?;
         if !staff && actor.level < forum.view_min_level {
             return Err(ApiError(ErrorCode::NotFound));
         }
@@ -265,34 +322,12 @@ pub async fn create_topic(
         }
     }
     let title = forum_content::clean_title(&req.title)?;
-    let cleaned = posting::clean(&state, &actor, &req.html, &req.source)?;
-    posting::limit_new_content(&state, &actor, &TOPIC_RATE).await?;
-
-    let created = topics::create(
-        &state.db,
-        topics::NewTopic {
-            forum_id: forum.id,
-            author_id: actor.id,
-            title: &title,
-            html: &cleaned.html,
-            plain_text: &cleaned.plain_text,
-            source: &req.source,
-            mentions: &cleaned.mentions,
-        },
-    )
-    .await?;
-    after_commit(
-        "board_touch",
-        state
-            .cache
-            .board_touch(forum.id, created.topic_id, micros(created.last_post_at)),
-    )
-    .await;
-    Ok((
-        StatusCode::CREATED,
-        Json(CreatedTopic {
-            topic_id: created.topic_id,
-            post_id: created.post_id,
-        }),
-    ))
+    let cleaned = posting::clean(state, &actor, &req.html, &req.source)?;
+    posting::limit_new_content(state, &actor, &TOPIC_RATE).await?;
+    Ok(PreparedTopic {
+        actor,
+        forum_id: forum.id,
+        title,
+        cleaned,
+    })
 }

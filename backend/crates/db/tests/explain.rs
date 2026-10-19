@@ -20,6 +20,7 @@ const BIG_TABLES: &[&str] = &[
     "post_edits",
     "users",
     "outbox",
+    "offers",
 ];
 
 #[derive(Debug, Default)]
@@ -93,6 +94,20 @@ async fn seed(db: &PgPool) {
         INSERT INTO post_sources (post_id, source) SELECT id, '{}'::jsonb FROM posts;
         INSERT INTO post_edits (post_id, editor_id, html, source)
         SELECT 1 + g % 5000, 1, '<p>old</p>', '{}'::jsonb FROM generate_series(1, 20000) g;
+        -- 2 万张报价卡片：一半挂在 200 个交易帖下、一半在 2000 个私信会话里；5% 待确认
+        INSERT INTO trade_listings (topic_id, seller_id, chain_id, price, terms, content_hash)
+        SELECT g, g, 421614, 5000000, '{}'::jsonb, decode(repeat('ab', 32), 'hex') FROM generate_series(1, 200) g;
+        INSERT INTO offers (listing_id, conversation_id, seller_id, buyer_id, chain_id, verifying_contract, seller,
+          buyer, token, amount, fee_payer, max_fee_bps, max_base_gas, max_min_fee, bond, late_slash_bps, instant,
+          ship_window, confirm_window, listing_hash, expiry, max_fills, nonce, signature, offer_hash, status, expires_at)
+        SELECT CASE WHEN g % 2 = 0 THEN 1 + g % 200 END, CASE WHEN g % 2 = 1 THEN 1 + g % 2000 END,
+               1 + g % 200, CASE WHEN g % 2 = 1 THEN 201 + g % 500 END, 421614,
+               decode(repeat('44', 20), 'hex'), decode(repeat('11', 20), 'hex'), decode(repeat('22', 20), 'hex'),
+               decode(repeat('33', 20), 'hex'), 5000000, 0, 100, 100000, 1000000, 0, 0, false, 86400, 86400,
+               decode(repeat('ab', 32), 'hex'), 1800000000, 1, g, '\x01', sha256(int4send(g)),
+               CASE WHEN g % 20 = 0 THEN 'pending' ELSE 'expired' END::offer_status,
+               now() + ((g % 100 - 50) || ' hours')::interval
+        FROM generate_series(1, 20000) g;
         ANALYZE;
         ",
     )
@@ -245,10 +260,47 @@ async fn hot_queries_use_indexes(db: PgPool) {
             .bind("<p>x</p>")
             .bind("x")
             .bind(&src)
-            .bind(vec![3_i64]),
+            .bind(vec![3_i64])
+            .bind(0_i16),
     )
     .await;
     assert!(info.seq_scans.is_empty(), "topic_create: {plan:#}");
+
+    let sql = q!("offers_by_id.sql");
+    check(
+        &db,
+        "offers_by_id",
+        sqlx::query(sql).bind(77_i64),
+        "offers_pkey",
+    )
+    .await;
+
+    let sql = q!("offers_listing.sql");
+    check(
+        &db,
+        "offers_listing",
+        sqlx::query(sql).bind(7_i64).bind(Some(8_i64)).bind(50_i64),
+        "offers_listing",
+    )
+    .await;
+
+    let sql = q!("offers_conversation.sql");
+    check(
+        &db,
+        "offers_conversation",
+        sqlx::query(sql).bind(7_i64).bind(8_i64).bind(50_i64),
+        "offers_conversation",
+    )
+    .await;
+
+    let sql = q!("offers_expire.sql");
+    check(
+        &db,
+        "offers_expire",
+        sqlx::query(sql).bind(500_i64),
+        "offers_pending_expiry",
+    )
+    .await;
 
     let sql = q!("post_edit_save.sql");
     check(

@@ -2,6 +2,7 @@
 //!
 //! Valkey 只放可丢的数据（会话、验证码、限流计数、缓存），关键任务放 PostgreSQL（plan 第 2 节）。
 
+pub mod ephemeral;
 pub mod forum_cache;
 pub mod ratelimit;
 pub mod session_store;

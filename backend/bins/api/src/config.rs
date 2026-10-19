@@ -1,6 +1,9 @@
 //! 配置全部来自环境变量（生产由 systemd-creds 注入密钥）。
 
 use anyhow::{Context, bail};
+use forum_core::Usdt;
+use forum_core::eip712::Address;
+use forum_core::trade::{MAX_BASE_GAS, MAX_FEE_BPS, MAX_MIN_FEE, TradeLimits};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -19,6 +22,24 @@ pub struct Config {
     pub turnstile_secret: Option<String>,
     /// 本站主机名，逗号分隔（如 `forum.example,www.forum.example`）；判断帖子里的站外链接用。
     pub internal_hosts: Vec<String>,
+    /// 钱包 Passkey 的 RP ID = 钱包中心域名（plan 第 5 节），绝不是论坛主域名。
+    pub wallet_rp_id: String,
+    /// 钱包页面的 Origin，逗号分隔；第一个必须在 `WALLET_RP_ID` 之下，其余为关联来源。
+    /// 钱包接口只接受这些来源，这些来源也自动加入写操作白名单。
+    pub wallet_origins: Vec<String>,
+    /// 品牌名：Passkey 显示名称「品牌名 钱包签名（勿删）· 用户名」。
+    pub brand_name: String,
+    pub chain: ChainConfig,
+    pub trade_limits: TradeLimits,
+}
+
+/// 担保合约所在链。链配置表（chains）落地后改从数据库读取。
+#[derive(Debug, Clone, Copy)]
+pub struct ChainConfig {
+    pub chain_id: u64,
+    /// 未配置时报价接口不可用（开发环境可只测论坛与 Passkey）。
+    pub escrow: Option<Address>,
+    pub usdt: Option<Address>,
 }
 
 fn list(value: &str) -> Vec<String> {
@@ -41,6 +62,46 @@ fn hex_var(name: &str, min_len: usize) -> anyhow::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+fn opt_address(name: &str) -> anyhow::Result<Option<Address>> {
+    match std::env::var(name) {
+        Ok(v) if !v.is_empty() => {
+            Ok(Some(v.parse().map_err(|_| {
+                anyhow::anyhow!("{name} must be a 0x address")
+            })?))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn num_or<T: std::str::FromStr>(name: &str, default: T) -> anyhow::Result<T> {
+    match std::env::var(name) {
+        Ok(v) if !v.is_empty() => v
+            .parse()
+            .map_err(|_| anyhow::anyhow!("{name} must be a number")),
+        _ => Ok(default),
+    }
+}
+
+/// 链上当前参数（USDT 最小单位）；默认值即 plan 第 9 节初始值。站长经金库 Safe 调参后同步修改这里。
+fn trade_limits() -> anyhow::Result<TradeLimits> {
+    let d = TradeLimits::default();
+    let l = TradeLimits {
+        min_order: Usdt(num_or("TRADE_MIN_ORDER", d.min_order.0)?),
+        order_cap: Usdt(num_or("TRADE_ORDER_CAP", d.order_cap.0)?),
+        fee_bps: num_or("TRADE_FEE_BPS", d.fee_bps)?,
+        min_fee: Usdt(num_or("TRADE_MIN_FEE", d.min_fee.0)?),
+        base_gas: Usdt(num_or("TRADE_BASE_GAS", d.base_gas.0)?),
+    };
+    if l.min_order > l.order_cap
+        || l.fee_bps > MAX_FEE_BPS
+        || l.min_fee > MAX_MIN_FEE
+        || l.base_gas > MAX_BASE_GAS
+    {
+        bail!("TRADE_* limits outside the contract's hard bounds");
+    }
+    Ok(l)
+}
+
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         Ok(Self {
@@ -55,6 +116,25 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty()),
             internal_hosts: list(&std::env::var("INTERNAL_HOSTS").unwrap_or_default()),
+            wallet_rp_id: var("WALLET_RP_ID")?,
+            wallet_origins: {
+                let o = list(&var("WALLET_ORIGINS")?);
+                if o.is_empty() {
+                    bail!("WALLET_ORIGINS must not be empty");
+                }
+                o
+            },
+            brand_name: std::env::var("BRAND_NAME")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "Akari".to_owned()),
+            chain: ChainConfig {
+                // 默认 Arbitrum Sepolia；主网 42161。
+                chain_id: num_or("CHAIN_ID", 421_614)?,
+                escrow: opt_address("ESCROW_ADDRESS")?,
+                usdt: opt_address("USDT_ADDRESS")?,
+            },
+            trade_limits: trade_limits()?,
         })
     }
 }

@@ -1,4 +1,4 @@
-//! forum-worker：后台任务：发件箱投递、浏览数回写；之后接入 apalis 队列（通知、超时处理、发薪）与图片转换。
+//! forum-worker：后台任务：发件箱投递、浏览数回写、报价卡片过期；之后接入 apalis 队列（通知、超时处理、发薪）与图片转换。
 
 use std::time::Duration;
 
@@ -41,6 +41,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "forum-worker started");
 
     let views = tokio::spawn(view_flusher(db.clone(), cache, shutdown.clone()));
+    let offers = tokio::spawn(offer_expirer(db.clone(), shutdown.clone()));
     loop {
         match forum_worker::drain_once(&db, &mailer).await {
             // 本批满了说明还有积压，立刻继续。
@@ -55,6 +56,9 @@ async fn main() -> anyhow::Result<()> {
     }
     if let Err(e) = views.await {
         tracing::error!(error = %e, "view flusher panicked");
+    }
+    if let Err(e) = offers.await {
+        tracing::error!(error = %e, "offer expirer panicked");
     }
     tracing::info!("forum-worker stopped");
     Ok(())
@@ -77,6 +81,22 @@ async fn view_flusher(
         }
         if stopping {
             break;
+        }
+    }
+}
+
+/// 每分钟把到期的待确认报价卡片标为已过期。
+async fn offer_expirer(db: forum_db::PgPool, shutdown: tokio_util::sync::CancellationToken) {
+    let mut tick = tokio::time::interval(forum_worker::OFFER_EXPIRY_INTERVAL);
+    loop {
+        tokio::select! {
+            () = shutdown.cancelled() => break,
+            _ = tick.tick() => {}
+        }
+        match forum_worker::expire_offers(&db).await {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(count = n, "offers expired"),
+            Err(e) => tracing::error!(error = %e, "offer expiry failed"),
         }
     }
 }

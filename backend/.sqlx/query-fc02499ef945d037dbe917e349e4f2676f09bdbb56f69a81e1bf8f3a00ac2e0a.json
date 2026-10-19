@@ -1,0 +1,79 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO wallets (user_id, chain_id, address, passkey_id) VALUES ($1, $2, $3, $4)\n           ON CONFLICT DO NOTHING\n           RETURNING id, chain_id, address, passkey_id, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "chain_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "chain_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "address",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "address"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "passkey_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "passkey_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fc02499ef945d037dbe917e349e4f2676f09bdbb56f69a81e1bf8f3a00ac2e0a"
+}

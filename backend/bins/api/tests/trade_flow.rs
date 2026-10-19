@@ -1,0 +1,598 @@
+//! 交易帖与担保约定卡片：发帖、报价（EIP-712 哈希、范围校验）、修改 / 拒绝 / 取消 / 接受、可见性。
+//! 需要 PostgreSQL（`DATABASE_URL`）与 Valkey（`VALKEY_URL`，未设置则跳过）。
+
+#![allow(clippy::unwrap_used, clippy::expect_used)] // 测试代码
+
+mod common;
+
+use axum::Router;
+use axum::http::StatusCode;
+use common::{
+    CHAIN_ID, ESCROW, USDT, age, build, call, clear_resend, enable_trading, jar, login, user,
+};
+use forum_core::eip712::{Domain, Offer};
+use forum_db::PgPool;
+use forum_db::forums::{self, NewForum};
+use serde_json::{Value, json};
+
+const SELLER: &str = "0x1111111111111111111111111111111111111111";
+const BUYER: &str = "0x2222222222222222222222222222222222222222";
+
+async fn market(db: &PgPool) {
+    forums::create(
+        db,
+        &NewForum {
+            parent_id: None,
+            slug: "market",
+            name: "market",
+            description: "",
+            position: 0,
+            view_min_level: 0,
+            post_min_level: 1,
+            reply_min_level: 1,
+        },
+    )
+    .await
+    .unwrap();
+}
+
+struct Party {
+    id: i64,
+    cookies: Vec<String>,
+}
+
+/// 已开通交易、已解除新用户限制的用户；会话带 5 分钟近期 Passkey 验证。
+async fn trader(app: &Router, db: &PgPool, address: &str) -> Party {
+    let (id, cookies) = user(app, db).await;
+    age(db, id).await;
+    enable_trading(app, db, id, &cookies, address).await;
+    Party { id, cookies }
+}
+
+fn listing_body(price: &str, ship: u32) -> Value {
+    json!({
+        "title": "二手键盘",
+        "html": "<p>九成新</p>",
+        "source": {"type": "doc"},
+        "price": price,
+        "terms": {"ship_window": ship, "confirm_window": 7 * 86_400}
+    })
+}
+
+fn now() -> u64 {
+    time::OffsetDateTime::now_utc().unix_timestamp() as u64
+}
+
+fn offer(listing_hash: &str, buyer: &str) -> Value {
+    json!({
+        "seller": SELLER,
+        "buyer": buyer,
+        "token": USDT,
+        "amount": "45000000",
+        "feePayer": 2,
+        "maxFeeBps": 100,
+        "maxBaseGas": "100000",
+        "maxMinFee": "1000000",
+        "bond": "0",
+        "lateSlashBps": 0,
+        "instant": false,
+        "shipWindow": 3 * 86_400,
+        "confirmWindow": 7 * 86_400,
+        "listingHash": listing_hash,
+        "expiry": now() + 86_400,
+        "maxFills": 1,
+        "nonce": "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+    })
+}
+
+const ZERO_ADDR: &str = "0x0000000000000000000000000000000000000000";
+const ZERO_HASH: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+async fn post_offer(app: &Router, cookies: &[String], body: Value) -> common::Res {
+    call(app, "POST", "/api/v1/offers", Some(body), cookies).await
+}
+
+/// 发交易帖，返回 `(listing_id, content_hash)`。
+async fn listing(app: &Router, seller: &Party) -> (i64, String) {
+    let r = call(
+        app,
+        "POST",
+        "/api/v1/forums/market/listings",
+        Some(listing_body("45000000", 3 * 86_400)),
+        &seller.cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    (
+        r.body["listing_id"].as_i64().unwrap(),
+        r.body["content_hash"].as_str().unwrap().to_owned(),
+    )
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn params_expose_domain_and_bounds(db: PgPool) {
+    let Some(app) = build(db) else { return };
+    let r = call(&app, "GET", "/api/v1/trade/params", None, &[]).await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.body["domain"]["name"], "AkariEscrow");
+    assert_eq!(r.body["domain"]["version"], "1");
+    assert_eq!(r.body["domain"]["chainId"], CHAIN_ID);
+    assert_eq!(r.body["domain"]["verifyingContract"], ESCROW);
+    assert_eq!(r.body["min_order"], "5000000");
+    assert_eq!(r.body["order_cap"], "200000000");
+    assert_eq!(r.body["min_window"], 86_400);
+    assert_eq!(r.body["max_window"], 30 * 86_400);
+    assert_eq!(r.body["defaults"]["private_offer_ttl"], 86_400);
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn listing_requires_wallet_and_valid_terms(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    market(&db).await;
+    let (id, plain) = user(&app, &db).await;
+    age(&db, id).await;
+    let path = "/api/v1/forums/market/listings";
+    let r = call(
+        &app,
+        "POST",
+        path,
+        Some(listing_body("45000000", 86_400)),
+        &plain,
+    )
+    .await;
+    assert_eq!(r.body["code"], "WALLET_REQUIRED");
+
+    let seller = trader(&app, &db, SELLER).await;
+    for (body, code) in [
+        (listing_body("4999999", 86_400), "AMOUNT_OUT_OF_RANGE"),
+        (listing_body("200000001", 86_400), "AMOUNT_OUT_OF_RANGE"),
+        (listing_body("45000000", 86_399), "WINDOW_OUT_OF_RANGE"),
+        (
+            listing_body("45000000", 30 * 86_400 + 1),
+            "WINDOW_OUT_OF_RANGE",
+        ),
+        (listing_body("4.5", 86_400), "INVALID_PARAMETER"),
+    ] {
+        let r = call(&app, "POST", path, Some(body), &seller.cookies).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST);
+        assert_eq!(r.body["code"], code);
+    }
+    let mut bond = listing_body("45000000", 86_400);
+    bond["terms"]["bond"] = json!("45000001");
+    let r = call(&app, "POST", path, Some(bond), &seller.cookies).await;
+    assert_eq!(r.body["code"], "BOND_INVALID");
+
+    let (listing_id, hash) = listing(&app, &seller).await;
+    assert_eq!(hash.len(), 66);
+    let (kind, topic_id): (i16, i64) = sqlx::query_as(
+        "SELECT t.kind, t.id FROM topics t JOIN trade_listings l ON l.topic_id = t.id WHERE l.id = $1",
+    )
+    .bind(listing_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(kind, 1, "trade topic");
+
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/v1/listings/{listing_id}"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.body["topic_id"], topic_id);
+    assert_eq!(r.body["price"], "45000000");
+    assert_eq!(r.body["content_hash"], hash);
+    assert_eq!(r.body["terms"]["bond"], "0");
+    // 主题帖本身照常可读
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/v1/topics/{topic_id}"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    // 隐藏后交易帖也看不到
+    sqlx::query("UPDATE topics SET flags = 8 WHERE id = $1")
+        .bind(topic_id)
+        .execute(&db)
+        .await
+        .unwrap();
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/v1/listings/{listing_id}"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn public_offer_hash_and_validation(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    market(&db).await;
+    let seller = trader(&app, &db, SELLER).await;
+    let buyer = trader(&app, &db, BUYER).await;
+    let (listing_id, hash) = listing(&app, &seller).await;
+    let body = |o: Value| json!({"listing_id": listing_id, "offer": o, "signature": "0x1234"});
+
+    // 条款超出合约范围：签名前就失败
+    let mut o = offer(&hash, ZERO_ADDR);
+    o["maxFeeBps"] = json!(99);
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body(o)).await.body["code"],
+        "FEE_LIMIT_INVALID"
+    );
+    let mut o = offer(&hash, ZERO_ADDR);
+    o["confirmWindow"] = json!(3600);
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body(o)).await.body["code"],
+        "WINDOW_OUT_OF_RANGE"
+    );
+    let mut o = offer(&hash, ZERO_ADDR);
+    o["expiry"] = json!(now() + 31 * 86_400);
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body(o)).await.body["code"],
+        "OFFER_EXPIRY_INVALID"
+    );
+    let mut o = offer(&hash, ZERO_ADDR);
+    o["token"] = json!(BUYER);
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body(o)).await.body["code"],
+        "INVALID_PARAMETER"
+    );
+    // listingHash 与交易帖不符
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body(offer(ZERO_HASH, ZERO_ADDR)))
+            .await
+            .body["code"],
+        "INVALID_PARAMETER"
+    );
+    // 报价里的卖家地址不是自己的钱包；别人的交易帖
+    let mut o = offer(&hash, ZERO_ADDR);
+    o["seller"] = json!(BUYER);
+    assert_eq!(
+        post_offer(&app, &buyer.cookies, body(o.clone()))
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body(o)).await.status,
+        StatusCode::FORBIDDEN
+    );
+    // 未知字段（防止前端签的结构与服务端理解的不一致）
+    let mut o = offer(&hash, ZERO_ADDR);
+    o["mode"] = json!(0);
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body(o)).await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+
+    let o = offer(&hash, ZERO_ADDR);
+    let r = post_offer(&app, &seller.cookies, body(o.clone())).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    // 服务端重算的哈希 = forum_core 的 hashOffer（其编码已与 Solidity 向量交叉校验）
+    let typed: Offer = serde_json::from_value(o.clone()).unwrap();
+    let domain = Domain {
+        chain_id: CHAIN_ID,
+        verifying_contract: ESCROW.parse().unwrap(),
+    };
+    assert_eq!(r.body["offer_hash"], typed.hash(&domain).to_string());
+    assert_eq!(r.body["offer"], o, "typed data round-trips unchanged");
+    assert_eq!(r.body["status"], "pending");
+    assert_eq!(r.body["buyer_id"], Value::Null);
+    // 同一份报价不能提交两次
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body(o)).await.status,
+        StatusCode::CONFLICT
+    );
+
+    // 公开报价：游客也能在交易帖下看到
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/v1/listings/{listing_id}/offers"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(r.body.as_array().unwrap().len(), 1);
+    let offer_id = r.body[0]["id"].as_i64().unwrap();
+
+    // 买家接受：拿到付款数据。各半：手续费 max(0.45, 1) = 1 USDT、gas 0.1 USDT，买家各付一半
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/offers/{offer_id}/accept"),
+        None,
+        &buyer.cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(r.body["escrow"], ESCROW);
+    assert_eq!(r.body["buyer_pays"], "45550000");
+    assert_eq!(r.body["buyer_fee"], "500000");
+    assert_eq!(r.body["buyer_gas"], "50000");
+    assert_eq!(r.body["buyer_wallet"], BUYER);
+    assert_eq!(r.body["signature"], "0x1234");
+    // 卖家不能接受自己的报价；公开报价不能拒绝
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/offers/{offer_id}/accept"),
+        None,
+        &seller.cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/offers/{offer_id}/reject"),
+        Some(json!({})),
+        &buyer.cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    // 未开通交易的用户不能接受
+    let (_, plain) = user(&app, &db).await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/offers/{offer_id}/accept"),
+        None,
+        &plain,
+    )
+    .await;
+    assert_eq!(r.body["code"], "WALLET_REQUIRED");
+
+    // 过期：读取时立即按已过期展示，接受被拒；worker 落库前后结果一致
+    sqlx::query("UPDATE offers SET expires_at = now() - interval '1 second' WHERE id = $1")
+        .bind(offer_id)
+        .execute(&db)
+        .await
+        .unwrap();
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/v1/offers/{offer_id}"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(r.body["status"], "expired");
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/offers/{offer_id}/accept"),
+        None,
+        &buyer.cookies,
+    )
+    .await;
+    assert_eq!(r.body["code"], "OFFER_UNAVAILABLE");
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/offers/{offer_id}/cancel"),
+        None,
+        &seller.cookies,
+    )
+    .await;
+    assert_eq!(r.body["code"], "OFFER_UNAVAILABLE");
+
+    // 公开报价跟随交易帖可见性：主题被隐藏后游客看不到，卖家本人仍可看
+    sqlx::query("UPDATE topics SET flags = 8 FROM trade_listings l WHERE l.id = $1 AND topics.id = l.topic_id")
+        .bind(listing_id)
+        .execute(&db)
+        .await
+        .unwrap();
+    let one = format!("/api/v1/offers/{offer_id}");
+    assert_eq!(
+        call(&app, "GET", &one, None, &[]).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(&app, "GET", &one, None, &seller.cookies).await.status,
+        StatusCode::OK
+    );
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn offer_needs_recent_passkey(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    let seller = trader(&app, &db, SELLER).await;
+    trader(&app, &db, BUYER).await;
+    let body = json!({"conversation_id": 9, "offer": offer(ZERO_HASH, BUYER), "signature": "0x12"});
+    // 另一台设备上的新会话：只凭邮箱登录发不出担保报价
+    let email: String = sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
+        .bind(seller.id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    clear_resend(&email).await;
+    let fresh = jar(&login(&app, &db, &email, &[]).await.cookies);
+    let r = post_offer(&app, &fresh, body.clone()).await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    assert_eq!(r.body["code"], "PASSKEY_REQUIRED");
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body).await.status,
+        StatusCode::CREATED
+    );
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn conversation_cards_modify_reject_cancel(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    let seller = trader(&app, &db, SELLER).await;
+    let buyer = trader(&app, &db, BUYER).await;
+    let (_, stranger) = user(&app, &db).await;
+    let conv = 77;
+    let body = |o: Value, replaces: Option<i64>| json!({"conversation_id": conv, "replaces": replaces, "offer": o, "signature": "0xabcd"});
+
+    // 私信报价必须指定买家且只能成交 1 次；买家必须已开通交易
+    assert_eq!(
+        post_offer(
+            &app,
+            &seller.cookies,
+            body(offer(ZERO_HASH, ZERO_ADDR), None)
+        )
+        .await
+        .body["code"],
+        "INVALID_PARAMETER"
+    );
+    let mut o = offer(ZERO_HASH, BUYER);
+    o["maxFills"] = json!(2);
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body(o, None)).await.body["code"],
+        "INVALID_PARAMETER"
+    );
+    let unknown = offer(ZERO_HASH, "0x9999999999999999999999999999999999999999");
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body(unknown, None))
+            .await
+            .body["code"],
+        "INVALID_PARAMETER"
+    );
+
+    let r = post_offer(&app, &seller.cookies, body(offer(ZERO_HASH, BUYER), None)).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let first = r.body["id"].as_i64().unwrap();
+    assert_eq!(r.body["buyer_id"], buyer.id);
+
+    // 只有买卖双方看得到
+    let list = format!("/api/v1/conversations/{conv}/offers");
+    assert_eq!(
+        call(&app, "GET", &list, None, &buyer.cookies)
+            .await
+            .body
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(
+        call(&app, "GET", &list, None, &stranger)
+            .await
+            .body
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let one = format!("/api/v1/offers/{first}");
+    assert_eq!(
+        call(&app, "GET", &one, None, &stranger).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(&app, "GET", &one, None, &[]).await.status,
+        StatusCode::NOT_FOUND
+    );
+    // 别人不能接受指定给买家的报价
+    let r = call(&app, "POST", &format!("{one}/accept"), None, &stranger).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    // 修改约定：新卡片替换旧卡片，旧卡片变为已修改
+    let mut changed = offer(ZERO_HASH, BUYER);
+    changed["amount"] = json!("40000000");
+    let r = post_offer(&app, &seller.cookies, body(changed.clone(), Some(first))).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let second = r.body["id"].as_i64().unwrap();
+    assert_eq!(r.body["replaces_id"], first);
+    assert_eq!(
+        call(&app, "GET", &one, None, &seller.cookies).await.body["status"],
+        "modified"
+    );
+    // 已作废的卡片不能再被修改、接受
+    let mut again = changed.clone();
+    again["nonce"] = json!("2");
+    let r = post_offer(&app, &seller.cookies, body(again, Some(first))).await;
+    assert_eq!(r.body["code"], "OFFER_UNAVAILABLE");
+    let r = call(&app, "POST", &format!("{one}/accept"), None, &buyer.cookies).await;
+    assert_eq!(r.body["code"], "OFFER_UNAVAILABLE");
+    // 买家不能替换卖家的卡片
+    let r = post_offer(
+        &app,
+        &buyer.cookies,
+        body(offer(ZERO_HASH, SELLER), Some(second)),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+
+    // 拒绝：只有指定买家能拒绝，可附理由
+    let reject = format!("/api/v1/offers/{second}/reject");
+    let r = call(
+        &app,
+        "POST",
+        &reject,
+        Some(json!({"reason": "太贵"})),
+        &seller.cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let long = "长".repeat(201);
+    let r = call(
+        &app,
+        "POST",
+        &reject,
+        Some(json!({"reason": long})),
+        &buyer.cookies,
+    )
+    .await;
+    assert_eq!(r.body["code"], "INVALID_PARAMETER");
+    let r = call(
+        &app,
+        "POST",
+        &reject,
+        Some(json!({"reason": " 太贵 "})),
+        &buyer.cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(r.body["status"], "rejected");
+    assert_eq!(r.body["reject_reason"], "太贵");
+    // 已拒绝的不能再取消
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/offers/{second}/cancel"),
+        None,
+        &seller.cookies,
+    )
+    .await;
+    assert_eq!(r.body["code"], "OFFER_UNAVAILABLE");
+
+    // 取消：只有卖家能取消
+    let mut third = changed;
+    third["nonce"] = json!("3");
+    let id3 = post_offer(&app, &seller.cookies, body(third, None))
+        .await
+        .body["id"]
+        .as_i64()
+        .unwrap();
+    let cancel = format!("/api/v1/offers/{id3}/cancel");
+    assert_eq!(
+        call(&app, "POST", &cancel, None, &buyer.cookies)
+            .await
+            .status,
+        StatusCode::FORBIDDEN
+    );
+    let r = call(&app, "POST", &cancel, None, &seller.cookies).await;
+    assert_eq!(r.body["status"], "cancelled");
+
+    let r = call(&app, "GET", &list, None, &seller.cookies).await;
+    let statuses: Vec<&str> = r
+        .body
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(statuses, ["cancelled", "rejected", "modified"]);
+}

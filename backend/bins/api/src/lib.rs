@@ -8,6 +8,7 @@ pub mod posting;
 pub mod routes;
 pub mod state;
 pub mod views;
+pub mod wallet;
 
 use std::time::Duration;
 
@@ -46,6 +47,24 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::posts::edit, routes::posts::delete))
         .routes(routes!(routes::posts::history))
         .routes(routes!(routes::posts::source))
+        .routes(routes!(routes::wallet::overview))
+        .routes(routes!(routes::wallet::reverify_start))
+        .routes(routes!(routes::wallet::reverify_verify))
+        .routes(routes!(routes::wallet::register_start))
+        .routes(routes!(routes::wallet::register_finish))
+        .routes(routes!(routes::wallet::assert_start))
+        .routes(routes!(routes::wallet::assert_finish))
+        .routes(routes!(routes::wallet::create_account))
+        .routes(routes!(routes::trade::params))
+        .routes(routes!(routes::trade::create_listing))
+        .routes(routes!(routes::trade::get_listing))
+        .routes(routes!(routes::trade::listing_offers))
+        .routes(routes!(routes::trade::create_offer))
+        .routes(routes!(routes::trade::get_offer))
+        .routes(routes!(routes::trade::conversation_offers))
+        .routes(routes!(routes::trade::reject_offer))
+        .routes(routes!(routes::trade::cancel_offer))
+        .routes(routes!(routes::trade::accept_offer))
         .split_for_parts()
 }
 

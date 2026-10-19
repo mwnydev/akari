@@ -119,7 +119,7 @@ pub async fn start(
     ))
 }
 
-fn code_error(e: CodeError) -> ApiError {
+pub(crate) fn code_error(e: CodeError) -> ApiError {
     match e {
         CodeError::ResendTooSoon => ApiError(ErrorCode::ResendTooSoon),
         CodeError::Invalid => ApiError(ErrorCode::InvalidCode),

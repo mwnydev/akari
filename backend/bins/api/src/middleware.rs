@@ -12,7 +12,7 @@ use forum_core::ErrorCode;
 use crate::error::ApiError;
 use crate::state::AppState;
 
-/// 非安全方法必须带白名单内的 `Origin`；缺失也拒绝。
+/// 非安全方法必须带白名单内的 `Origin`（含钱包页面来源）；缺失也拒绝。
 pub async fn require_origin(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let safe = matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
     if !safe {
@@ -20,7 +20,13 @@ pub async fn require_origin(State(state): State<AppState>, req: Request, next: N
             .headers()
             .get(header::ORIGIN)
             .and_then(|v| v.to_str().ok())
-            .is_some_and(|o| state.allowed_origins.iter().any(|a| a == o));
+            .is_some_and(|o| {
+                state
+                    .allowed_origins
+                    .iter()
+                    .chain(&state.wallet.origins)
+                    .any(|a| a == o)
+            });
         if !ok {
             return ApiError(ErrorCode::OriginRejected).into_response();
         }

@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use axum_extra::extract::cookie::Key;
 use forum_api::config::Config;
+use forum_api::wallet::{NoopAddressVerifier, WalletState};
 use forum_api::{AppState, app};
+use forum_auth::passkey::{UserHandles, wallet_webauthn, webauthn::Url};
 use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha, Turnstile};
 
 #[tokio::main]
@@ -26,6 +28,21 @@ async fn main() -> anyhow::Result<()> {
             AnyCaptcha::Noop(NoopCaptcha)
         }
     };
+    let origins = cfg
+        .wallet_origins
+        .iter()
+        .map(|o| Url::parse(o))
+        .collect::<Result<Vec<_>, _>>()?;
+    let wallet = WalletState {
+        webauthn: wallet_webauthn(&cfg.wallet_rp_id, &cfg.brand_name, &origins)?,
+        origins: cfg.wallet_origins.clone(),
+        brand: cfg.brand_name.clone(),
+        handles: UserHandles::new(&cfg.auth_secret)?,
+        chain: cfg.chain,
+        limits: cfg.trade_limits,
+        // 见 AddressVerifier 的 TODO：chain crate 落地后换成按 Kernel 工厂校验地址。
+        verifier: Arc::new(NoopAddressVerifier),
+    };
     let state = AppState {
         db,
         kv: kv.clone(),
@@ -37,6 +54,7 @@ async fn main() -> anyhow::Result<()> {
         cookie_secure: cfg.cookie_secure,
         cache: forum_kv::ForumCache::new(kv.clone(), ""),
         internal_hosts: Arc::from(cfg.internal_hosts.clone()),
+        wallet: Arc::new(wallet),
     };
 
     let addr: SocketAddr = cfg.listen.parse()?;

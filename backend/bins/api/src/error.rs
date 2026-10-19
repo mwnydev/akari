@@ -65,7 +65,11 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::CaptchaFailed
         | ErrorCode::Forbidden
         | ErrorCode::TopicLocked
-        | ErrorCode::ExternalLinkForbidden => StatusCode::FORBIDDEN,
+        | ErrorCode::ExternalLinkForbidden
+        | ErrorCode::ReverifyRequired
+        | ErrorCode::PasskeyRequired
+        | ErrorCode::WalletRequired => StatusCode::FORBIDDEN,
+        ErrorCode::OfferUnavailable | ErrorCode::Conflict => StatusCode::CONFLICT,
         ErrorCode::NotFound => StatusCode::NOT_FOUND,
         ErrorCode::ResendTooSoon | ErrorCode::RateLimited | ErrorCode::TooManyAttempts => {
             StatusCode::TOO_MANY_REQUESTS
@@ -79,7 +83,15 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::InvalidCode
         | ErrorCode::ContentEmpty
         | ErrorCode::ContentTooLong
-        | ErrorCode::InvalidTitle => StatusCode::BAD_REQUEST,
+        | ErrorCode::InvalidTitle
+        | ErrorCode::AmountOutOfRange
+        | ErrorCode::WindowOutOfRange
+        | ErrorCode::BondInvalid
+        | ErrorCode::FeeLimitInvalid
+        | ErrorCode::OfferExpiryInvalid
+        | ErrorCode::UsernameRequired
+        | ErrorCode::PasskeyFailed
+        | ErrorCode::TooManyPasskeys => StatusCode::BAD_REQUEST,
     }
 }
 

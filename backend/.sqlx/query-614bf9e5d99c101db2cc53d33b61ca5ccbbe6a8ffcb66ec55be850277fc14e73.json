@@ -1,0 +1,391 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 私信会话里的报价卡片，只有买卖双方可见，新的在前。$1 conversation_id, $2 viewer, $3 limit\nSELECT id, listing_id, conversation_id, seller_id, buyer_id, replaces_id, chain_id,\n  verifying_contract, seller, buyer, token, amount::text AS \"amount!\", fee_payer, max_fee_bps,\n  max_base_gas::text AS \"max_base_gas!\", max_min_fee::text AS \"max_min_fee!\", bond::text AS \"bond!\",\n  late_slash_bps, instant, ship_window, confirm_window, listing_hash, expiry, max_fills,\n  nonce::text AS \"nonce!\", signature, offer_hash, status AS \"status: OfferStatus\", reject_reason,\n  expires_at, created_at, updated_at\nFROM offers\nWHERE conversation_id = $1 AND (seller_id = $2 OR buyer_id = $2)\nORDER BY id DESC\nLIMIT $3\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "listing_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "listing_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "conversation_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "conversation_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "seller_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "seller_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "buyer_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "buyer_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "replaces_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "replaces_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "chain_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "chain_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "verifying_contract",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "verifying_contract"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "seller",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "seller"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "buyer",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "buyer"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "token",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "token"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "fee_payer",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "fee_payer"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "max_fee_bps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "max_fee_bps"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "max_base_gas!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "max_min_fee!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 16,
+        "name": "bond!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 17,
+        "name": "late_slash_bps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "late_slash_bps"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "instant",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "instant"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "ship_window",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "ship_window"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "confirm_window",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "confirm_window"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "listing_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "listing_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "expiry",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "expiry"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "max_fills",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "max_fills"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "nonce!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 25,
+        "name": "signature",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "signature"
+          }
+        }
+      },
+      {
+        "ordinal": 26,
+        "name": "offer_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "offer_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 27,
+        "name": "status: OfferStatus",
+        "type_info": {
+          "Custom": {
+            "name": "offer_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "modified",
+                "rejected",
+                "cancelled",
+                "expired",
+                "paid"
+              ]
+            }
+          }
+        },
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "reject_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "reject_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 29,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 30,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 31,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "offers",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      null,
+      null,
+      null,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "614bf9e5d99c101db2cc53d33b61ca5ccbbe6a8ffcb66ec55be850277fc14e73"
+}

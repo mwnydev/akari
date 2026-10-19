@@ -44,6 +44,32 @@ pub enum ErrorCode {
     InvalidTitle,
     #[error("external link not allowed")]
     ExternalLinkForbidden,
+    #[error("order amount out of range")]
+    AmountOutOfRange,
+    #[error("window out of range")]
+    WindowOutOfRange,
+    #[error("invalid bond")]
+    BondInvalid,
+    #[error("invalid fee limits")]
+    FeeLimitInvalid,
+    #[error("invalid offer expiry")]
+    OfferExpiryInvalid,
+    #[error("offer no longer available")]
+    OfferUnavailable,
+    #[error("already exists")]
+    Conflict,
+    #[error("username required")]
+    UsernameRequired,
+    #[error("email re-verification required")]
+    ReverifyRequired,
+    #[error("passkey verification required")]
+    PasskeyRequired,
+    #[error("passkey verification failed")]
+    PasskeyFailed,
+    #[error("too many passkeys")]
+    TooManyPasskeys,
+    #[error("wallet required")]
+    WalletRequired,
     #[error("internal error")]
     Internal,
 }
@@ -70,6 +96,19 @@ impl ErrorCode {
             Self::ContentTooLong => "内容太长",
             Self::InvalidTitle => "标题需为 1–120 个字",
             Self::ExternalLinkForbidden => "注册 24 小时内不能发站外链接",
+            Self::AmountOutOfRange => "订单金额超出允许范围",
+            Self::WindowOutOfRange => "发货期限和确认期需在 24 小时到 30 天之间",
+            Self::BondInvalid => "保证金不能超过订单金额，违约比例不能超过 100%",
+            Self::FeeLimitInvalid => "最高费率或最高 gas 费不能低于当前收费，也不能超过合约上限",
+            Self::OfferExpiryInvalid => "报价有效期不正确",
+            Self::OfferUnavailable => "报价已失效",
+            Self::Conflict => "已经存在，不能重复创建",
+            Self::UsernameRequired => "请先设置用户名",
+            Self::ReverifyRequired => "请先完成邮箱验证",
+            Self::PasskeyRequired => "请先用钱包 Passkey 确认",
+            Self::PasskeyFailed => "Passkey 验证失败，请重试",
+            Self::TooManyPasskeys => "Passkey 数量已达上限",
+            Self::WalletRequired => "请先开通交易",
             Self::Internal => "服务暂时不可用，请稍后再试",
         }
     }

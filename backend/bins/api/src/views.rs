@@ -215,3 +215,8 @@ pub struct PostSource {
     #[schema(value_type = Object)]
     pub source: serde_json::Value,
 }
+
+/// 字节串的 `0x` 小写十六进制形式（地址、哈希、签名、公钥坐标）。
+pub fn hex0x(b: &[u8]) -> String {
+    format!("0x{}", hex::encode(b))
+}

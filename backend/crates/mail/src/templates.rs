@@ -42,11 +42,34 @@ pub fn new_device(at: &str) -> Rendered {
     (subject, html, text)
 }
 
+/// 开通交易前的邮箱再验证码（plan 第 5 节）。正文写明用途，被盗号者触发时用户能察觉。
+pub fn wallet_code(code: &str) -> Rendered {
+    let subject = format!("开通交易验证码：{code}");
+    let html = layout(
+        "开通交易验证码",
+        &format!(
+            "<p>你正在开通交易（创建钱包 Passkey）。验证码是：</p><p style=\"font-size:32px;letter-spacing:6px;font-weight:600;font-variant-numeric:tabular-nums\">{code}</p>\
+             <p>10 分钟内有效。如果不是你本人操作，说明有人登录了你的账号：请勿把验证码告诉任何人，并立即在「设置 → 设备管理」里踢出其他设备。</p>"
+        ),
+    );
+    let text = format!(
+        "你正在开通交易（创建钱包 Passkey）。验证码是：{code}\n10 分钟内有效。如果不是你本人操作，说明有人登录了你的账号：请勿把验证码告诉任何人，并立即在「设置 → 设备管理」里踢出其他设备。\n\n官方永远不会向你索要验证码、恢复码，也不会要求私下转账。"
+    );
+    (subject, html, text)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn login_code_contains_code_in_both_parts() {
         let (subject, html, text) = super::login_code("123456");
         assert!(subject.contains("123456") && html.contains("123456") && text.contains("123456"));
+    }
+
+    #[test]
+    fn wallet_code_names_its_purpose() {
+        let (subject, html, text) = super::wallet_code("654321");
+        assert!(subject.contains("654321") && html.contains("654321") && text.contains("654321"));
+        assert!(subject.contains("开通交易") && text.contains("不是你本人"));
     }
 }
