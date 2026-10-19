@@ -54,7 +54,8 @@ services:
     volumes: [s3data:/data]
   # ── 本地 AA 开发链（profile `aa`，用法见 README-aa.md；由 aa.sh 编排，不随默认 `up` 启动）──
   # 两个服务都用宿主机网络：容器里能直接用宿主机上的 HTTP(S)_PROXY（127.0.0.1:*）去 fork 公共 RPC，
-  # 浏览器、forge、Playwright 都按 127.0.0.1 访问。端口只监听 127.0.0.1。
+  # 浏览器、forge、Playwright 都按 127.0.0.1 访问。端口只监听 127.0.0.1（Alto 见下面的 alto-loopback）。
+  # 端口由 aa.sh 的 ANVIL_PORT / BUNDLER_PORT 传入；多份检出同时运行时各用各的端口与 compose 项目名（AA_PROJECT）。
   anvil:
     profiles: [aa]
     image: ghcr.io/foundry-rs/foundry:v1.8.3@sha256:2e4287278639262de76db72477301d5d3212fa1b1cce710d7d148750a46ce9e7
@@ -63,7 +64,7 @@ services:
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       NO_PROXY: 127.0.0.1,localhost
-      PORT: ${AA_ANVIL_PORT:-8545}
+      PORT: ${ANVIL_PORT:-8545}
       FORK_URL: ${AA_FORK_URL:-https://sepolia-rollup.arbitrum.io/rpc}
       FORK_BLOCK: ${AA_FORK_BLOCK:-}
     # 链 ID 改成 31337：本地签的报价和代付签名不可能拿到真实 Sepolia 上重放。
@@ -73,7 +74,7 @@ services:
         exec anvil --host 127.0.0.1 --port $$PORT --fork-url $$FORK_URL --chain-id 31337
         $${FORK_BLOCK:+--fork-block-number $$FORK_BLOCK} --hardfork osaka --block-time 1
     healthcheck:
-      test: ["CMD", "cast", "chain-id", "--rpc-url", "http://127.0.0.1:${AA_ANVIL_PORT:-8545}"]
+      test: ["CMD", "cast", "chain-id", "--rpc-url", "http://127.0.0.1:${ANVIL_PORT:-8545}"]
       interval: 2s
       retries: 60
   alto:
@@ -82,11 +83,17 @@ services:
     network_mode: host
     depends_on:
       anvil: { condition: service_healthy }
+    # Alto 把监听地址写死成 0.0.0.0，宿主机网络下局域网可达；预加载脚本把它改成 127.0.0.1（aa.sh 启动后再核对）。
+    environment:
+      NODE_OPTIONS: --require /etc/alto/loopback.cjs
+    configs:
+      - source: alto-loopback
+        target: /etc/alto/loopback.cjs
     # 执行者 / 工具账户是 aa.sh 里由固定字符串派生的「仅开发」私钥，aa.sh 先给它们打 ETH 再启动本服务。
     command:
       - --entrypoints=0x0000000071727De22E5E9d8BAf0edAc6f37da032
-      - --rpc-url=http://127.0.0.1:${AA_ANVIL_PORT:-8545}
-      - --port=${AA_BUNDLER_PORT:-4337}
+      - --rpc-url=http://127.0.0.1:${ANVIL_PORT:-8545}
+      - --port=${BUNDLER_PORT:-4337}
       - --executor-private-keys=0x4b59fffb20b6a428033e838e647ab25b873c59287ad1778ee9faea5c91304df4 # gitleaks:allow 本地 Anvil 专用，由公开字符串派生，无真实价值
       - --utility-private-key=0xa94dbb4a79378cae9fcf3f94dcbc052d91bc563a60dc0df5f13b7af91e1568de # gitleaks:allow 本地 Anvil 专用
       - --safe-mode=false
@@ -94,6 +101,20 @@ services:
       - --block-time=1000
       - --log-level=info
 configs:
+  alto-loopback:
+    content: |
+      const net = require("node:net");
+      const listen = net.Server.prototype.listen;
+      net.Server.prototype.listen = function (...args) {
+        const opts = args[0];
+        const wildcard = (h) => h === undefined || h === "0.0.0.0" || h === "::";
+        if (opts && typeof opts === "object" && opts.path === undefined && wildcard(opts.host)) {
+          args[0] = { ...opts, host: "127.0.0.1" };
+        } else if (typeof opts === "number" && (typeof args[1] !== "string" || wildcard(args[1]))) {
+          args.splice(1, typeof args[1] === "string" ? 1 : 0, "127.0.0.1");
+        }
+        return listen.apply(this, args);
+      };
   s3-identities:
     content: |
       {"identities": [

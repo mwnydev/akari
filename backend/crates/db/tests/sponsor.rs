@@ -286,29 +286,3 @@ async fn third_failure_suspends(pool: PgPool) {
     tx.commit().await.unwrap();
     assert!(db::suspended_until(&pool, u).await.unwrap().is_none());
 }
-
-#[sqlx::test(migrator = "forum_db::MIGRATOR")]
-async fn alerts_are_deduplicated(pool: PgPool) {
-    let p = json!({"balance_wei": "1"});
-    assert!(
-        db::enqueue_alert(&pool, "alert.hot_wallet_low", &p, 3600.0)
-            .await
-            .unwrap()
-    );
-    assert!(
-        !db::enqueue_alert(&pool, "alert.hot_wallet_low", &p, 3600.0)
-            .await
-            .unwrap()
-    );
-    assert!(
-        db::enqueue_alert(&pool, "alert.paymaster_deposit_low", &p, 3600.0)
-            .await
-            .unwrap()
-    );
-    assert!(
-        !db::enqueue_alert(&pool, "email.login_code", &p, 3600.0)
-            .await
-            .unwrap(),
-        "alerts only"
-    );
-}

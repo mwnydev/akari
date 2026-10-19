@@ -28,10 +28,12 @@ use utoipa::ToSchema;
 
 use super::auth::code_error;
 use super::me::current_user_id;
-use super::wallet::{ReverifyRequest, ReverifyStarted, current_user};
+use super::wallet::{
+    ReverifyRequest, ReverifyStarted, current_user, save_challenge, take_challenge,
+};
 use crate::arbitration::{
     MAX_PASSKEYS, RulingOrigin, email_reverified, mark_email_reverified, mark_passkey_verified,
-    passkey_recent, save_challenge, take_challenge,
+    passkey_recent,
 };
 use crate::error::{ApiError, ApiResult, ErrorBody};
 use crate::posting::limit;
@@ -231,7 +233,7 @@ pub async fn ruling_register_start(
             (!exclude.is_empty()).then_some(exclude),
         )
         .map_err(ApiError::internal)?;
-    save_challenge(&state, "reg", user.id, 0, &reg).await?;
+    save_challenge(&state, "arbitration:reg", user.id, &reg).await?;
     Ok(Json(RulingRegistrationOptions { options }))
 }
 
@@ -260,7 +262,7 @@ pub async fn ruling_register_finish(
 ) -> ApiResult<(StatusCode, Json<RulingPasskeyView>)> {
     let me = current_user_id(&session).await?;
     require_eligible(&state, me).await?;
-    let reg: PasskeyRegistration = take_challenge(&state, "reg", me, 0).await?;
+    let reg: PasskeyRegistration = take_challenge(&state, "arbitration:reg", me).await?;
     let passkey = state
         .arbitration
         .webauthn
@@ -338,7 +340,7 @@ pub async fn ruling_assert_start(
         .webauthn
         .start_passkey_authentication(&creds)
         .map_err(ApiError::internal)?;
-    save_challenge(&state, "auth", me, 0, &auth).await?;
+    save_challenge(&state, "arbitration:auth", me, &auth).await?;
     Ok(Json(RulingAssertionOptions { options }))
 }
 
@@ -372,7 +374,7 @@ pub async fn ruling_assert_finish(
 ) -> ApiResult<Json<RulingVerified>> {
     let me = current_user_id(&session).await?;
     require_eligible(&state, me).await?;
-    let auth: PasskeyAuthentication = take_challenge(&state, "auth", me, 0).await?;
+    let auth: PasskeyAuthentication = take_challenge(&state, "arbitration:auth", me).await?;
     verify_assertion(&state, me, &req.credential, &auth).await?;
     Ok(Json(RulingVerified {
         verified_until: mark_passkey_verified(&session).await?,

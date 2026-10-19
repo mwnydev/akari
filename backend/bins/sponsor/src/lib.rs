@@ -19,6 +19,7 @@ pub mod sponsor;
 
 use std::sync::Arc;
 
+use alloy::primitives::B256;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol_types::SolCall;
 use anyhow::{Context, bail};
@@ -100,6 +101,17 @@ impl App {
         let ours = self.bundler.sponsor.signer_address();
         if onchain != ours {
             bail!("paymaster signer is {onchain}, but the loaded key is {ours}");
+        }
+        // 备用模拟靠覆盖这个存储槽换掉签名者，槽位不对时模拟会全部失败（不会放行），这里提前报错。
+        let slot = self
+            .chain
+            .storage_at(pm, sim::PAYMASTER_SIGNER_SLOT)
+            .await?;
+        if B256::from(slot) != onchain.into_word() {
+            bail!(
+                "paymaster signer is not in storage slot {}",
+                sim::PAYMASTER_SIGNER_SLOT
+            );
         }
         if self.chain.code_len(self.cfg.entry_point()).await? == 0 {
             bail!("no EntryPoint code at {}", self.cfg.entry_point());

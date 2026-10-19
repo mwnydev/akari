@@ -29,6 +29,16 @@ impl RpcSource {
     pub fn active(&self) -> usize {
         self.rpc.active()
     }
+
+    /// 当前节点在日志与告警里的名字（只有主机与端口）。
+    pub fn active_name(&self) -> &str {
+        self.rpc.endpoint_name(self.rpc.active())
+    }
+
+    /// 切到备用节点的累计次数。
+    pub fn failovers(&self) -> u64 {
+        self.rpc.failovers()
+    }
 }
 
 impl ChainSource for RpcSource {

@@ -46,7 +46,8 @@ use super::order_chat::ChainVerification;
 use super::orders::OrderView;
 use super::ruling_passkey::{CEREMONY_RATE, parse_passkey, require_eligible, verify_assertion};
 use super::uploads::UploadView;
-use crate::arbitration::{RulingOrigin, save_challenge, take_challenge};
+use super::wallet::{save_challenge, take_challenge};
+use crate::arbitration::RulingOrigin;
 use crate::error::{ApiError, ApiResult, ErrorBody};
 use crate::posting::limit;
 use crate::state::AppState;
@@ -58,6 +59,11 @@ const STATEMENT_RATE: SlidingWindow =
 const MAX_STATEMENTS_PER_PARTY: usize = 20;
 /// 聊天记录读入详情的批大小。
 const CHAT_BATCH: i64 = 1000;
+
+/// 裁决签名的 WebAuthn 仪式按案件区分：同一人同时打开两个案件的签名不会互相覆盖。
+fn ruling_challenge(case_id: i64) -> String {
+    format!("arbitration:ruling:{case_id}")
+}
 
 fn not_found() -> ApiError {
     ApiError(ErrorCode::NotFound)
@@ -994,9 +1000,8 @@ pub async fn ruling_options(
     let auth = bind_challenge(&mut options, &auth, &challenge).map_err(ApiError::internal)?;
     save_challenge(
         &state,
-        "ruling",
+        &ruling_challenge(id),
         me,
-        id,
         &PendingRuling {
             auth,
             nonce,
@@ -1049,7 +1054,7 @@ pub async fn submit_ruling(
 ) -> ApiResult<(StatusCode, Json<RulingSubmitted>)> {
     let me = current_user_id(&session).await?;
     // 先取出（作废）确认状态：无论成败，同一次确认只能用一次。
-    let pending: PendingRuling = take_challenge(&state, "ruling", me, id).await?;
+    let pending: PendingRuling = take_challenge(&state, &ruling_challenge(id), me).await?;
     let (case, _, seat) = load(&state, id, me).await?;
     let ruling = RulingRequest {
         kind: req.kind,

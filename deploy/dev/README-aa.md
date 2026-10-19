@@ -9,7 +9,7 @@ anvil fork Arbitrum Sepolia（EntryPoint v0.7、ZeroDev Kernel v3.3、WebAuthn �
 ## 启动 / 停止
 
 ```sh
-deploy/dev/aa.sh up       # 约 30 秒：anvil → 核对 AA 合约 → 部署 → 充押金 → 写前后端链配置 → Alto
+deploy/dev/aa.sh up       # 约 30 秒：anvil → 核对 AA 合约 → 部署 → 充押金 → 核对前端链配置 → 写后端链配置 → Alto
 deploy/dev/aa.sh status
 deploy/dev/aa.sh down     # 删除两个容器与 chain.local.toml、.env.aa；链状态不保留，下次 up 重新 fork
 ```
@@ -22,16 +22,37 @@ deploy/dev/aa.sh down     # 删除两个容器与 chain.local.toml、.env.aa；�
 | anvil   | `http://127.0.0.1:8545` | Foundry v1.8.3 镜像；`--hardfork osaka`（0x100 有 P-256 预编译）；**链 ID 改成 31337**  |
 | bundler | `http://127.0.0.1:4337` | `ghcr.io/pimlicolabs/alto:v1.2.8`（按 digest 锁定）；`--safe-mode=false`，开了 CORS     |
 
-可选环境变量：`AA_FORK_URL`（默认 `https://sepolia-rollup.arbitrum.io/rpc`）、`AA_FORK_BLOCK`（默认最新块）、
-`AA_ANVIL_PORT`、`AA_BUNDLER_PORT`、`AA_SPONSOR_PORT`（写进 `.env.aa` 的 forum-sponsor 端口，默认 8090）。
+两个服务都只监听 127.0.0.1（宿主机网络，局域网不可达）。Alto 把监听地址写死成 `0.0.0.0`，compose 用 Node 预加载脚本
+（`alto-loopback`）改成 127.0.0.1；`aa.sh up` 启动后用 `ss` 核对两个端口，监听了别的地址就报错退出。
+
+可选环境变量：
+
+| 变量              | 默认                                     | 说明                                                                  |
+| ----------------- | ---------------------------------------- | --------------------------------------------------------------------- |
+| `ANVIL_PORT`      | 8545                                     | anvil 端口                                                            |
+| `BUNDLER_PORT`    | 4337                                     | Alto 端口                                                             |
+| `AA_PROJECT`      | `akari-dev`                              | compose 项目名；同一台机器上多份检出同时运行时各取一个，容器互不覆盖  |
+| `AA_SPONSOR_PORT` | 8090                                     | 写进 `.env.aa` 的 forum-sponsor 端口                                  |
+| `AA_FORK_URL`     | `https://sepolia-rollup.arbitrum.io/rpc` | fork 来源                                                             |
+| `AA_FORK_BLOCK`   | 最新块                                   | fork 区块                                                             |
+
+`down` / `status` 要带上与 `up` 相同的 `ANVIL_PORT`、`BUNDLER_PORT`、`AA_PROJECT`。例如另开一套：
+
+```sh
+ANVIL_PORT=8445 BUNDLER_PORT=8446 AA_PROJECT=akari-mine AA_SPONSOR_PORT=8490 deploy/dev/aa.sh up
+```
+
+非默认端口只进后端配置（`chain.local.toml`、`.env.aa`）；钱包前端与 e2e 读入库的 `chain.local.json`，仍连默认端口。
 
 链 ID 改成 31337 是故意的：本地签的报价、代付签名的 EIP-712 域 / 哈希都绑定链 ID，拿到真实 Sepolia 上无法重放。
 fork 来的状态（EntryPoint、Kernel 工厂等）不受影响。
 
 ## 地址
 
-部署账户是新派生的地址（在 Sepolia 上 nonce 为 0），所以无论 fork 哪个区块，我们的合约地址都相同，
-`frontend/packages/contracts/src/chain.local.json` 可以入库，重新 `up` 不会产生改动。
+部署账户是新派生的地址（在 Sepolia 上 nonce 为 0），所以无论 fork 哪个区块，我们的合约地址都相同。
+`frontend/packages/contracts/src/chain.local.json` 因此是入库的固定文件：只含这些地址与默认端口的 URL，
+`aa.sh up` 不改写它，只核对它与本次部署一致（不一致就打印差异并退出）。确实要改（比如部署脚本多了一笔交易、
+地址跟着变了）时运行 `AA_WRITE_CHAIN_JSON=1 deploy/dev/aa.sh up`，再提交改动。
 
 链上现成合约（2026-10-19 在 Arbitrum Sepolia 用 `eth_getCode` 核对，`aa.sh up` 每次在 fork 上再核对一次）：
 
@@ -73,7 +94,7 @@ cast send 0x8c313D0eC280837325fA5aB05AC04Be31F46AbBC 'mint(address,uint256)' <�
 
 ## 后端接本地链
 
-`aa.sh up` 除了前端的 `chain.local.json`，还生成（都不入库）：
+`aa.sh up` 生成（都不入库，按检出各自一份）：
 
 - `deploy/dev/chain.local.toml`：后端链配置（`CHAIN_CONFIG`）。合约地址同上表；`start_block` 是部署前的区块
   （fork 的区块号很大，indexer 不能从 0 补拉）；`[aa]` 是 EntryPoint、Paymaster 与 Kernel meta factory；

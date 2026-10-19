@@ -37,19 +37,50 @@ pub async fn enqueue(
 /// 推送到管理员 Telegram 群的告警（ADR 0013 第 6 条）。
 pub const KIND_STAFF_ALERT: &str = "staff_alert";
 
-/// 管理员群告警：管理人员新设备登录、异常管理操作、仲裁裁决等都经这里入队，由 worker 推送。
-/// `event` 是简短的类型标识（如 `staff.new_device`），`text` 是给人看的正文（纯文本，不解析 Markdown）。
+/// 管理员群告警：管理人员新设备登录、异常管理操作、仲裁裁决、代付余额不足、indexer 节点切换等都经这里入队，
+/// 由 worker 推送。`event` 是简短的类型标识（如 `staff.new_device`），`text` 是给人看的正文（纯文本，不解析 Markdown）。
 pub async fn staff_alert(
     db: impl PgExecutor<'_>,
     event: &str,
     text: &str,
 ) -> Result<i64, sqlx::Error> {
-    enqueue(
-        db,
+    insert_staff_alert(db, event, text, None)
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)
+}
+
+/// 同 [`staff_alert`]，但 `dedupe_secs` 内已有同一 `event` 的告警时不再写入（持续存在的状况，如余额不足、
+/// 节点切换，不必每次巡检都推送）。返回是否写入。并发写入可能偶尔多发一条，不会漏发。
+pub async fn staff_alert_deduped(
+    db: impl PgExecutor<'_>,
+    event: &str,
+    text: &str,
+    dedupe_secs: f64,
+) -> Result<bool, sqlx::Error> {
+    Ok(insert_staff_alert(db, event, text, Some(dedupe_secs))
+        .await?
+        .is_some())
+}
+
+async fn insert_staff_alert(
+    db: impl PgExecutor<'_>,
+    event: &str,
+    text: &str,
+    dedupe_secs: Option<f64>,
+) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"INSERT INTO outbox (kind, payload, priority, dedupe_key)
+           SELECT $1, $2, $3, $4
+           WHERE $5::float8 IS NULL OR NOT EXISTS (
+             SELECT 1 FROM outbox WHERE dedupe_key = $4 AND created_at > now() - make_interval(secs => $5))
+           RETURNING id AS "id!""#,
         KIND_STAFF_ALERT,
-        &serde_json::json!({ "event": event, "text": text }),
+        serde_json::json!({ "event": event, "text": text }),
         PRIORITY_HIGH,
+        event,
+        dedupe_secs
     )
+    .fetch_optional(db)
     .await
 }
 

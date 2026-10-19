@@ -7,7 +7,7 @@
 
 use std::future::Future;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
@@ -25,6 +25,8 @@ pub struct FailoverRpc {
     active: AtomicUsize,
     switched_at: Mutex<Option<Instant>>,
     failback: Duration,
+    /// 切到备用节点（非主节点）的累计次数。
+    failovers: AtomicU64,
 }
 
 /// 本机地址（开发、测试用的 anvil 与 bundler）不走 `HTTP_PROXY`。
@@ -82,12 +84,23 @@ impl FailoverRpc {
             active: AtomicUsize::new(0),
             switched_at: Mutex::new(None),
             failback,
+            failovers: AtomicU64::new(0),
         })
     }
 
     /// 当前节点下标（测试与日志用）。
     pub fn active(&self) -> usize {
         self.active.load(Ordering::Relaxed)
+    }
+
+    /// 第 `i` 个节点在日志里的名字（只有主机与端口）。
+    pub fn endpoint_name(&self, i: usize) -> &str {
+        self.providers.get(i).map_or("?", |(name, _)| name.as_str())
+    }
+
+    /// 切到备用节点的累计次数（调用方据此发告警）。
+    pub fn failovers(&self) -> u64 {
+        self.failovers.load(Ordering::Relaxed)
     }
 
     fn start_index(&self) -> usize {
@@ -113,15 +126,27 @@ impl FailoverRpc {
         F: Fn(DynProvider) -> Fut,
         Fut: Future<Output = Result<T, ChainError>>,
     {
+        self.call_on(what, |_, p| f(p)).await
+    }
+
+    /// 同 [`Self::call`]，`f` 还拿到节点下标：按节点记住能力差异（如某家不支持的方法）时用。
+    pub async fn call_on<T, F, Fut>(&self, what: &str, f: F) -> Result<T, ChainError>
+    where
+        F: Fn(usize, DynProvider) -> Fut,
+        Fut: Future<Output = Result<T, ChainError>>,
+    {
         let start = self.start_index();
         let n = self.providers.len();
         let mut last = ChainError::Rpc("no rpc endpoints".into());
         for i in (0..n).map(|k| (start + k) % n) {
             let (name, provider) = &self.providers[i];
-            match f(provider.clone()).await {
+            match f(i, provider.clone()).await {
                 Ok(v) => {
                     if i != self.active() {
                         tracing::warn!(endpoint = %name, "rpc switched endpoint");
+                        if i != 0 {
+                            self.failovers.fetch_add(1, Ordering::Relaxed);
+                        }
                         self.active.store(i, Ordering::Relaxed);
                         if let Ok(mut at) = self.switched_at.lock() {
                             *at = Some(Instant::now());

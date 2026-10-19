@@ -12,6 +12,7 @@ use std::time::Duration;
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
+use forum_auth::challenge;
 use forum_auth::passkey::webauthn::{
     CreationChallengeResponse, CredentialID, Passkey, PasskeyAuthentication, PasskeyRegistration,
     PublicKeyCredential, RegisterPublicKeyCredential, RequestChallengeResponse,
@@ -22,7 +23,7 @@ use forum_core::ErrorCode;
 use forum_core::eip712::Address;
 use forum_db::outbox;
 use forum_db::wallet::{self as db, NewPasskey};
-use forum_kv::{SlidingWindow, ephemeral};
+use forum_kv::SlidingWindow;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -42,8 +43,6 @@ use crate::wallet::{
 };
 
 pub const KIND_WALLET_CODE: &str = "email.wallet_code";
-/// WebAuthn challenge 有效期（plan 第 5 节）。
-const CHALLENGE_TTL: Duration = Duration::from_secs(300);
 
 const REVERIFY_RATE: SlidingWindow =
     SlidingWindow::new("wallet-reverify", 5, Duration::from_secs(3600));
@@ -55,26 +54,17 @@ fn reverify_subject(email: &str) -> String {
     format!("wallet-reverify\0{email}")
 }
 
-/// `kind` 带用途前缀（`wallet:reg`、`admin:login` 等），钱包与后台的 challenge 互不覆盖。
-fn challenge_key(state: &AppState, kind: &str, user_id: i64) -> String {
-    format!("{}{kind}:{user_id}", state.cache.ns())
-}
-
+/// 保存 WebAuthn 仪式状态（[`challenge`]：5 分钟，取出即删除）。钱包、后台与论坛裁决 Passkey 共用，
+/// `kind` 带用途前缀（`wallet:reg`、`admin:login`、`arbitration:auth` 等）。
 pub(crate) async fn save_challenge<T: Serialize>(
     state: &AppState,
     kind: &str,
     user_id: i64,
     value: &T,
 ) -> ApiResult<()> {
-    let json = serde_json::to_string(value).map_err(ApiError::internal)?;
-    ephemeral::put(
-        &state.kv,
-        &challenge_key(state, kind, user_id),
-        &json,
-        CHALLENGE_TTL,
-    )
-    .await?;
-    Ok(())
+    challenge::save(&state.kv, state.cache.ns(), kind, user_id, value)
+        .await
+        .map_err(ApiError::internal)
 }
 
 /// 取出并作废 challenge 状态；过期或已用过返回 `PASSKEY_FAILED`。
@@ -83,10 +73,10 @@ pub(crate) async fn take_challenge<T: DeserializeOwned>(
     kind: &str,
     user_id: i64,
 ) -> ApiResult<T> {
-    let raw = ephemeral::take(&state.kv, &challenge_key(state, kind, user_id))
-        .await?
-        .ok_or(ApiError(ErrorCode::PasskeyFailed))?;
-    serde_json::from_str(&raw).map_err(ApiError::internal)
+    challenge::take(&state.kv, state.cache.ns(), kind, user_id)
+        .await
+        .map_err(ApiError::internal)?
+        .ok_or(ApiError(ErrorCode::PasskeyFailed))
 }
 
 fn parse_passkey(p: &db::Passkey) -> ApiResult<Passkey> {

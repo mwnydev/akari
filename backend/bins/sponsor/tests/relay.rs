@@ -7,7 +7,9 @@
 //! 2. 提回交易所：先用掉开通送的 1 次免费代付提币（同一 nonce 重签不多扣），签名后余额被转走、callData 在链上回滚：
 //!    照样收费，记一次链上失败，提币次数不退；被取代的旧签名过期后退回，之后没有次数再提回被拒。
 //!
-//! 以及：别人的钱包、白名单外的调用、待上链时换 nonce 都被拒绝；余额告警写入发件箱且去重。
+//! 以及：别人的钱包、白名单外的调用、待上链时换 nonce 都被拒绝；余额告警写入管理员群告警且去重。
+//! 另有一组经「Nitro 替身」代理连 anvil（`eth_simulateV1` 一律崩溃）：签前模拟改走 EntryPoint `eth_call`，
+//! 正常操作照样代付上链，执行会回滚或扣不到代付费的操作拒签。
 //!
 //! 需要 `DATABASE_URL`。找不到 anvil 或 forge（`~/.foundry/bin` 或 PATH）时跳过。
 
@@ -16,6 +18,8 @@
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use alloy::network::TransactionBuilder;
@@ -35,6 +39,7 @@ use forum_db::PgPool;
 use forum_sponsor::App;
 use forum_sponsor::config::{AlertConfig, Config, Policy, RelayerConfig};
 use forum_sponsor::kernel::{self, Call};
+use forum_sponsor::sim::MethodCounts;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
@@ -103,7 +108,13 @@ impl Anvil {
 }
 
 /// 在 `target/tmp` 下建一个临时 Foundry 工程编译 fixture（顺带编译 EntryPoint），返回产物目录。
+/// 同一进程里的用例共用一次编译（并发编译同一目录会互相覆盖）。
 fn compile_fixtures(forge: &Path) -> PathBuf {
+    static OUT: OnceLock<PathBuf> = OnceLock::new();
+    OUT.get_or_init(|| compile(forge)).clone()
+}
+
+fn compile(forge: &Path) -> PathBuf {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let lib = manifest
         .join("../../../contracts/lib")
@@ -553,18 +564,8 @@ fn usdt_call(to: Address, data: impl SolCall) -> Call {
     }
 }
 
-#[sqlx::test(migrator = "forum_db::MIGRATOR")]
-async fn sponsors_and_relays_user_operations(db: PgPool) {
-    let (Some(anvil_bin), Some(forge)) = (foundry_bin("anvil"), foundry_bin("forge")) else {
-        eprintln!("anvil or forge not found, skipping");
-        return;
-    };
-    forum_runtime::init_tracing();
-    let out = compile_fixtures(&forge);
-    let anvil = Anvil::spawn(&anvil_bin);
-    let w = World::deploy(&anvil.http(), &out).await;
-
-    // 代发热钱包：anvil 第 9 号账户（公开助记词），有 10000 ETH。
+/// 连接 `rpc` 的 forum-sponsor（启动检查已通过）。代发热钱包是 anvil 第 9 号账户（公开助记词），有 10000 ETH。
+async fn launch(db: &PgPool, w: &World, rpc: String) -> App {
     let hot: PrivateKeySigner =
         "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
             .parse()
@@ -577,25 +578,18 @@ async fn sponsors_and_relays_user_operations(db: PgPool) {
         opts.get_port(),
         opts.get_database().unwrap()
     );
-    let app = App::new(
-        w.config(anvil.http(), db_url),
-        db.clone(),
-        w.pm_signer.clone(),
-        hot,
-    )
-    .unwrap();
+    let app = App::new(w.config(rpc, db_url), db.clone(), w.pm_signer.clone(), hot).unwrap();
     app.verify_onchain().await.unwrap();
-    let shutdown = CancellationToken::new();
-    let tasks = app.spawn_background(&shutdown);
-    let router = app.router();
+    app
+}
 
-    // 用户 A 的钱包：尚未部署的 counterfactual 地址，先往里打 10 USDT。所有者用 anvil 第 2 号账户
-    // （公开助记词）：既能签 UserOperation，也能直接发交易调用自己的账户。
+/// 尚未部署的钱包（counterfactual 地址），先往里打 `usdt` 最小单位。所有者用 anvil 第 2 号账户（公开助记词）：
+/// 既能签 UserOperation，也能直接发交易调用自己的账户。返回所有者、钱包地址与部署用的 factoryData。
+async fn wallet(w: &World, salt: B256, usdt: u64) -> (PrivateKeySigner, Address, Vec<u8>) {
     let owner: PrivateKeySigner =
         "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
             .parse()
             .unwrap();
-    let salt = B256::ZERO;
     let factory_data = ITestKernelFactory::createAccountCall {
         entryPoint: w.entry_point,
         owner: owner.address(),
@@ -615,12 +609,33 @@ async fn sponsors_and_relays_user_operations(db: PgPool) {
         w.usdt,
         MockUSDT::mintCall {
             to: sender,
-            amount: U256::from(10 * U),
+            amount: U256::from(usdt),
         }
         .abi_encode(),
         U256::ZERO,
     )
     .await;
+    (owner, sender, factory_data)
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn sponsors_and_relays_user_operations(db: PgPool) {
+    let (Some(anvil_bin), Some(forge)) = (foundry_bin("anvil"), foundry_bin("forge")) else {
+        eprintln!("anvil or forge not found, skipping");
+        return;
+    };
+    forum_runtime::init_tracing();
+    let out = compile_fixtures(&forge);
+    let anvil = Anvil::spawn(&anvil_bin);
+    let w = World::deploy(&anvil.http(), &out).await;
+
+    let app = launch(&db, &w, anvil.http()).await;
+    let shutdown = CancellationToken::new();
+    let tasks = app.spawn_background(&shutdown);
+    let router = app.router();
+
+    // 用户 A 的钱包：尚未部署的 counterfactual 地址，先往里打 10 USDT。
+    let (owner, sender, factory_data) = wallet(&w, B256::ZERO, 10 * U).await;
     let user_a = new_user(&db, Some(sender)).await;
     let user_b = new_user(&db, Some(Address::repeat_byte(0xbb))).await;
 
@@ -862,7 +877,7 @@ async fn sponsors_and_relays_user_operations(db: PgPool) {
         "WITHDRAW_CREDIT_REQUIRED"
     );
 
-    // 3. 余额告警：告警线调高后写入发件箱，再查一次不重复写。
+    // 3. 余额告警：告警线调高后写入管理员群告警，再查一次不重复写。
     let high = AlertConfig {
         deposit_min: U256::from(10u128.pow(20)),
         hot_wallet_min: U256::from(10u128.pow(30)),
@@ -879,19 +894,227 @@ async fn sponsors_and_relays_user_operations(db: PgPool) {
         .await
         .unwrap();
     }
-    let kinds: Vec<String> =
-        sqlx::query_scalar("SELECT kind FROM outbox WHERE kind LIKE 'alert.%' ORDER BY kind")
-            .fetch_all(&db)
-            .await
-            .unwrap();
+    let events: Vec<String> = sqlx::query_scalar(
+        "SELECT payload->>'event' FROM outbox WHERE kind = 'staff_alert' ORDER BY 1",
+    )
+    .fetch_all(&db)
+    .await
+    .unwrap();
     assert_eq!(
-        kinds,
-        ["alert.hot_wallet_low", "alert.paymaster_deposit_low"]
+        events,
+        [
+            forum_sponsor::alerts::HOT_WALLET_LOW,
+            forum_sponsor::alerts::PAYMASTER_DEPOSIT_LOW
+        ]
     );
     assert!(
         !app.bundler.relayer.healthy(),
         "hot wallet below threshold marks the relayer unhealthy"
     );
+
+    shutdown.cancel();
+    for t in tasks {
+        t.await.unwrap();
+    }
+}
+
+/// anvil 前面的 Arbitrum Nitro 替身：`eth_simulateV1` 一律回 `-32603 method handler crashed`
+/// （OffchainLabs/nitro#3372），其他请求原样转发。返回地址与收到的 `eth_simulateV1` 次数。
+async fn nitro_proxy(upstream: String) -> (String, Arc<AtomicUsize>) {
+    let crashes = Arc::new(AtomicUsize::new(0));
+    let seen = crashes.clone();
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let app = Router::new().route(
+        "/",
+        axum::routing::post(move |body: axum::body::Bytes| {
+            let (client, upstream, seen) = (client.clone(), upstream.clone(), seen.clone());
+            async move {
+                let req: Value = serde_json::from_slice(&body).unwrap();
+                if req["method"] == "eth_simulateV1" {
+                    seen.fetch_add(1, Ordering::SeqCst);
+                    let crash = json!({"jsonrpc": "2.0", "id": req["id"],
+                        "error": {"code": -32603, "message": "method handler crashed"}});
+                    return crash.to_string();
+                }
+                let res = client
+                    .post(&upstream)
+                    .header("content-type", "application/json")
+                    .body(body)
+                    .send()
+                    .await
+                    .unwrap();
+                res.text().await.unwrap()
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (url, crashes)
+}
+
+/// 节点的 `eth_simulateV1` 崩溃时，签前模拟改走 EntryPoint `eth_call`：正常操作照样代付、上链成功；
+/// 执行会回滚、扣不到代付费的操作都拒签。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn simulates_through_the_entry_point_when_simulate_v1_crashes(db: PgPool) {
+    let (Some(anvil_bin), Some(forge)) = (foundry_bin("anvil"), foundry_bin("forge")) else {
+        eprintln!("anvil or forge not found, skipping");
+        return;
+    };
+    forum_runtime::init_tracing();
+    let out = compile_fixtures(&forge);
+    let anvil = Anvil::spawn(&anvil_bin);
+    let w = World::deploy(&anvil.http(), &out).await;
+    let (rpc, crashes) = nitro_proxy(anvil.http()).await;
+    let app = launch(&db, &w, rpc).await;
+    let shutdown = CancellationToken::new();
+    let tasks = app.spawn_background(&shutdown);
+    let router = app.router();
+    let ep = json!(w.entry_point);
+    let chain = json!(format!("{CHAIN_ID:#x}"));
+
+    let (owner, sender, factory_data) = wallet(&w, B256::repeat_byte(1), 10 * U).await;
+    let user = new_user(&db, Some(sender)).await;
+
+    // 1. 部署钱包 + approve + cancelOffer：估算与代付签名都经备用模拟，签出的操作上链成功、收了代付费。
+    let call_data = kernel::encode(&[
+        usdt_call(
+            w.usdt,
+            MockUSDT::approveCall {
+                spender: w.escrow,
+                value: U256::from(U),
+            },
+        ),
+        usdt_call(
+            w.escrow,
+            Escrow::cancelOfferCall {
+                nonce: U256::from(7),
+            },
+        ),
+    ]);
+    let op = UserOperation {
+        sender,
+        nonce: U256::ZERO,
+        factory: Some(w.factory),
+        factory_data: Some(factory_data.into()),
+        call_data,
+        ..UserOperation::default()
+    };
+    let signed = prepare(&router, user, &w, op, &owner).await;
+    assert_eq!(
+        app.bundler.sponsor.sim.counts(),
+        MethodCounts {
+            simulate_v1: 0,
+            entry_point: 2
+        }
+    );
+    assert_eq!(
+        crashes.load(Ordering::SeqCst),
+        1,
+        "the endpoint is not asked for eth_simulateV1 again during the cool-down"
+    );
+    let hash = ok(&router, user, "eth_sendUserOperation", json!([signed, ep])).await;
+    let r = receipt(&router, user, &hash).await;
+    assert_eq!(r["success"], true, "{r}");
+    assert_eq!(w.usdt_balance(w.paymaster).await, U256::from(FEE));
+    let cancelled = Escrow::new(w.escrow, &w.p)
+        .cancelledNonce(sender, U256::from(7))
+        .call()
+        .await
+        .unwrap();
+    assert!(cancelled, "callData executed");
+
+    // 2. 执行会回滚：转出比余额还多的 USDT（到已生效的提币地址，有提币次数，规则检查都能过）。
+    let exchange = Address::repeat_byte(0xe2);
+    sqlx::query(
+        "INSERT INTO withdraw_addresses (user_id, chain_id, address, label, active_at) VALUES ($1, $2, $3, 'ex', now())",
+    )
+    .bind(user)
+    .bind(CHAIN_ID as i64)
+    .bind(exchange.to_vec())
+    .execute(&db)
+    .await
+    .unwrap();
+    assert!(forum_db::credits::award_starter(&db, user).await.unwrap());
+    let overdraw = UserOperation {
+        nonce: U256::from(1),
+        factory: None,
+        factory_data: None,
+        call_data: kernel::encode(&[usdt_call(
+            w.usdt,
+            MockUSDT::transferCall {
+                to: exchange,
+                value: U256::from(100 * U),
+            },
+        )]),
+        paymaster: None,
+        paymaster_data: None,
+        signature: Bytes::new(),
+        ..signed.clone()
+    };
+    assert_eq!(
+        err_code(
+            &router,
+            user,
+            "eth_estimateUserOperationGas",
+            json!([overdraw, ep])
+        )
+        .await,
+        "SIMULATION_FAILED"
+    );
+    assert_eq!(
+        err_code(
+            &router,
+            user,
+            "pm_getPaymasterData",
+            json!([overdraw, ep, chain, {}])
+        )
+        .await,
+        "SIMULATION_FAILED"
+    );
+    assert_eq!(
+        credits(&db, user).await,
+        1,
+        "a refused signature takes no credit"
+    );
+
+    // 3. 扣不到代付费：所有者直接把 USDT 全部转走，Paymaster 验证阶段的 transferFrom 失败（AA33）。
+    let left = w.usdt_balance(sender).await;
+    let drain = kernel::encode(&[usdt_call(
+        w.usdt,
+        MockUSDT::transferCall {
+            to: Address::repeat_byte(0xd1),
+            value: left,
+        },
+    )]);
+    send(&w.p, owner.address(), sender, drain.to_vec(), U256::ZERO).await;
+    let unpaid = UserOperation {
+        call_data: kernel::encode(&[usdt_call(
+            w.usdt,
+            MockUSDT::approveCall {
+                spender: w.escrow,
+                value: U256::ZERO,
+            },
+        )]),
+        ..overdraw
+    };
+    assert_eq!(
+        err_code(
+            &router,
+            user,
+            "pm_getPaymasterData",
+            json!([unpaid, ep, chain, {}])
+        )
+        .await,
+        "SIMULATION_FAILED"
+    );
+    let signatures: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM sponsorships WHERE user_id = $1")
+            .bind(user)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(signatures, 1, "only the valid operation was signed");
 
     shutdown.cancel();
     for t in tasks {

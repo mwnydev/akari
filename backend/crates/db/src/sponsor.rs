@@ -376,26 +376,3 @@ pub async fn due_for_reconcile(
     .fetch_all(db)
     .await
 }
-
-/// 写一条告警到发件箱；`dedupe_secs` 内已有同类告警则跳过。返回是否写入。
-pub async fn enqueue_alert(
-    db: impl PgExecutor<'_>,
-    kind: &str,
-    payload: &Value,
-    dedupe_secs: f64,
-) -> Result<bool, sqlx::Error> {
-    let r = sqlx::query!(
-        "INSERT INTO outbox (kind, payload, priority)
-         SELECT $1, $2, $3
-         WHERE $1 LIKE 'alert.%' AND NOT EXISTS (
-           SELECT 1 FROM outbox WHERE kind = $1 AND kind LIKE 'alert.%'
-             AND created_at > now() - make_interval(secs => $4))",
-        kind,
-        payload,
-        crate::outbox::PRIORITY_HIGH,
-        dedupe_secs
-    )
-    .execute(db)
-    .await?;
-    Ok(r.rows_affected() == 1)
-}

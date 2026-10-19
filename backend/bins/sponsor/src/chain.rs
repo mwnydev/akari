@@ -5,8 +5,9 @@
 
 use alloy::eips::BlockId;
 use alloy::primitives::{Address, B256, Bytes, TxKind, U256};
-use alloy::providers::Provider;
+use alloy::providers::{DynProvider, Provider};
 use alloy::rpc::types::simulate::{SimBlock, SimCallResult, SimulatePayload};
+use alloy::rpc::types::state::StateOverride;
 use alloy::rpc::types::{Filter, Log, TransactionInput, TransactionReceipt, TransactionRequest};
 use alloy::sol_types::SolCall;
 use alloy::transports::{RpcError, TransportError};
@@ -47,6 +48,40 @@ fn split<T>(r: Result<T, TransportError>) -> Result<NodeResult<T>, ChainError> {
         })),
         Err(e) => Err(e.into()),
     }
+}
+
+/// `eth_simulateV1`：在 latest 状态上按顺序执行 `calls`（后一笔看得到前一笔的状态变化），不检查发送方余额与 nonce。
+/// 只在给定节点上执行（调用方按节点选择模拟方法，见 [`crate::sim`]）。
+pub async fn simulate_v1(
+    p: &DynProvider,
+    calls: Vec<TransactionRequest>,
+) -> Result<NodeResult<Vec<SimCallResult>>, ChainError> {
+    let payload = SimulatePayload {
+        block_state_calls: vec![SimBlock {
+            block_overrides: None,
+            state_overrides: None,
+            calls,
+        }],
+        trace_transfers: false,
+        validation: false,
+        return_full_transactions: false,
+    };
+    let r = split(p.simulate(&payload).latest().await)?;
+    Ok(r.map(|blocks| blocks.into_iter().flat_map(|b| b.calls).collect()))
+}
+
+/// 带状态覆盖的 `eth_call`（latest），只在给定节点上执行。
+pub async fn call_with_overrides(
+    p: &DynProvider,
+    tx: TransactionRequest,
+    overrides: StateOverride,
+) -> Result<NodeResult<Bytes>, ChainError> {
+    split(
+        p.call(tx)
+            .overrides(overrides)
+            .block(BlockId::latest())
+            .await,
+    )
 }
 
 pub fn call_request(from: Address, to: Address, data: Bytes) -> TransactionRequest {
@@ -148,28 +183,11 @@ impl Chain {
             .await
     }
 
-    /// 在 latest 状态上按顺序执行 `calls`（后一笔看得到前一笔的状态变化），不检查发送方余额与 nonce。
-    pub async fn simulate(
-        &self,
-        calls: Vec<TransactionRequest>,
-    ) -> Result<NodeResult<Vec<SimCallResult>>, ChainError> {
-        let payload = SimulatePayload {
-            block_state_calls: vec![SimBlock {
-                block_overrides: None,
-                state_overrides: None,
-                calls,
-            }],
-            trace_transfers: false,
-            validation: false,
-            return_full_transactions: false,
-        };
+    /// 合约存储槽的当前值（latest）。
+    pub async fn storage_at(&self, addr: Address, slot: U256) -> Result<U256, ChainError> {
         self.rpc
-            .call("eth_simulateV1", |p| {
-                let payload = payload.clone();
-                async move {
-                    let r = split(p.simulate(&payload).latest().await)?;
-                    Ok(r.map(|blocks| blocks.into_iter().flat_map(|b| b.calls).collect()))
-                }
+            .call("eth_getStorageAt", |p| async move {
+                Ok(p.get_storage_at(addr, slot).latest().await?)
             })
             .await
     }

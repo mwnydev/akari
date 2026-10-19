@@ -1,16 +1,12 @@
 //! 仲裁的共享状态：论坛裁决 Passkey 的 Webauthn 实例（RP ID 为论坛主域名，与钱包 Passkey 是两组凭证）、
 //! 裁决页面来源校验、会话里的「近期验证」标记、仲裁 Safe 地址。
 
-use std::time::Duration;
-
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::header;
 use axum::http::request::Parts;
 use forum_auth::passkey::UserHandles;
 use forum_auth::passkey::webauthn::Webauthn;
 use forum_core::ErrorCode;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use time::OffsetDateTime;
 use tower_sessions::Session;
 
@@ -23,8 +19,6 @@ pub const EMAIL_REVERIFY_SECS: i64 = 600;
 pub const PASSKEY_RECENT_SECS: i64 = 300;
 /// 每人最多登记的裁决 Passkey 数。
 pub const MAX_PASSKEYS: usize = 5;
-/// WebAuthn challenge 状态在 Valkey 里保存的时间。
-pub const CHALLENGE_TTL: Duration = Duration::from_secs(300);
 
 const SESSION_EMAIL_REVERIFIED: &str = "ruling_email_at";
 const SESSION_PASSKEY_VERIFIED: &str = "ruling_passkey_at";
@@ -97,40 +91,4 @@ pub async fn mark_passkey_verified(session: &Session) -> ApiResult<i64> {
 pub async fn passkey_recent(session: &Session) -> ApiResult<bool> {
     let at = session.get::<i64>(SESSION_PASSKEY_VERIFIED).await?;
     Ok(within(at, PASSKEY_RECENT_SECS))
-}
-
-fn challenge_key(state: &AppState, kind: &str, user_id: i64, scope: i64) -> String {
-    format!("{}arbitration:{kind}:{user_id}:{scope}", state.cache.ns())
-}
-
-/// 保存一次 WebAuthn 仪式的状态（5 分钟，取出即删除，不能重放）。`scope` 区分同一人的不同案件。
-pub async fn save_challenge<T: Serialize>(
-    state: &AppState,
-    kind: &str,
-    user_id: i64,
-    scope: i64,
-    value: &T,
-) -> ApiResult<()> {
-    let json = serde_json::to_string(value).map_err(ApiError::internal)?;
-    forum_kv::ephemeral::put(
-        &state.kv,
-        &challenge_key(state, kind, user_id, scope),
-        &json,
-        CHALLENGE_TTL,
-    )
-    .await?;
-    Ok(())
-}
-
-/// 取出并作废；过期或已用过返回 `PASSKEY_FAILED`。
-pub async fn take_challenge<T: DeserializeOwned>(
-    state: &AppState,
-    kind: &str,
-    user_id: i64,
-    scope: i64,
-) -> ApiResult<T> {
-    let raw = forum_kv::ephemeral::take(&state.kv, &challenge_key(state, kind, user_id, scope))
-        .await?
-        .ok_or(ApiError(ErrorCode::PasskeyFailed))?;
-    serde_json::from_str(&raw).map_err(ApiError::internal)
 }

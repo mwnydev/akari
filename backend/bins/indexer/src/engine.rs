@@ -26,6 +26,9 @@ use crate::chat;
 
 /// 发件箱消息类型：订单状态（含确认级别）每次变化一条。
 pub const ORDER_UPDATED: &str = "order.updated";
+/// 管理员群告警：回滚越过 safe 区块。反复回滚时 10 分钟内只推送一次。
+pub const DEEP_REORG_ALERT: &str = "indexer.deep_reorg";
+const DEEP_REORG_DEDUPE_SECS: f64 = 600.0;
 
 #[derive(Debug, thiserror::Error)]
 pub enum IndexerError {
@@ -229,6 +232,7 @@ impl Engine {
         let mut tx = self.pool.begin().await?;
         let mut touched: BTreeMap<OrderRef, Cause> = BTreeMap::new();
         if let Some(fork) = plan.rollback_after {
+            self.alert_deep_reorg(&mut tx, fork).await?;
             let refs = db::rollback_after(&mut *tx, self.chain_id, db_i64(fork)?).await?;
             tracing::warn!(
                 chain_id = self.chain_id,
@@ -275,6 +279,36 @@ impl Engine {
         tx.commit().await?;
         self.invalidate_cards(&r.cards).await;
         Ok(applied)
+    }
+
+    /// 回滚越过了已标为 safe 的区块：确认级别的假设被打破（safe 状态的订单可能已经通知过用户），告知管理员核查。
+    /// 与回滚同一事务写入。
+    async fn alert_deep_reorg(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        fork: u64,
+    ) -> Result<(), IndexerError> {
+        let Some(cursor) = db::cursor(&mut **tx, self.chain_id).await? else {
+            return Ok(());
+        };
+        if db_i64(fork)? >= cursor.safe_block {
+            return Ok(());
+        }
+        let depth = cursor.block_number - db_i64(fork)?;
+        tracing::error!(
+            chain_id = self.chain_id,
+            fork,
+            depth,
+            safe_block = cursor.safe_block,
+            "chain reorg deeper than the safe block"
+        );
+        let text = format!(
+            "链 {} 回滚到区块 {fork}（深度 {depth}），越过了已确认为 safe 的区块 {}；请核查 RPC 节点与近期订单状态",
+            self.chain_id, cursor.safe_block
+        );
+        let event = format!("{DEEP_REORG_ALERT}:{}", self.chain_id);
+        outbox::staff_alert_deduped(&mut **tx, &event, &text, DEEP_REORG_DEDUPE_SECS).await?;
+        Ok(())
     }
 
     /// WebSocket 推送的日志：游标之后的立即写入（状态标为 latest），游标及之前的已由校对覆盖，忽略。

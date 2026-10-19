@@ -1,5 +1,5 @@
 {
-  "//": "由 deploy/dev/aa.sh 生成，勿手改。本地 anvil（fork Arbitrum Sepolia，链 ID 改为 31337）。",
+  "//": "本地 anvil（fork Arbitrum Sepolia，链 ID 改为 31337）的固定配置，deploy/dev/aa.sh up 核对；改动方法见 deploy/dev/README-aa.md。",
   "chainId": 31337,
   "name": "Akari 本地链（Arbitrum Sepolia fork）",
   "rpcUrl": "http://127.0.0.1:8545",

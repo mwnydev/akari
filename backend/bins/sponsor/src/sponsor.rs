@@ -25,7 +25,7 @@ use crate::config::{MAX_SPONSOR_FEE, Policy, VALIDITY_SECS};
 use crate::jsonrpc::{Reject, Result};
 use crate::kernel;
 use crate::policy::{self, Action, Contracts, DAY_SECS, Facts, Priced, Tier};
-use crate::sim::{self, GasEstimate, PM_POST_OP_GAS, PM_VERIFICATION_GAS};
+use crate::sim::{self, GasEstimate, Limits, PM_POST_OP_GAS, PM_VERIFICATION_GAS, Sponsored};
 
 /// 占位签名：估算阶段用，合约验签失败只返回 SIG_VALIDATION_FAILED，不收费。
 const STUB_SIGNATURE: [u8; 65] = [0; 65];
@@ -51,6 +51,8 @@ pub struct Sponsor {
     signer: PrivateKeySigner,
     /// 代发热钱包（handleOps 的 beneficiary），估算 preVerificationGas 用。
     pub beneficiary: Address,
+    /// 各 RPC 节点的模拟方法选择。
+    pub sim: sim::Router,
 }
 
 /// 通过白名单后的一笔操作。
@@ -102,6 +104,7 @@ impl Sponsor {
             policy,
             signer,
             beneficiary,
+            sim: sim::Router::default(),
         }
     }
 
@@ -325,6 +328,14 @@ impl Sponsor {
         }
     }
 
+    fn sponsored(&self, terms: SponsorTerms) -> Sponsored {
+        Sponsored {
+            paymaster: self.aa.paymaster,
+            token: self.contracts.token,
+            terms,
+        }
+    }
+
     fn terms(&self, fee: u128) -> Result<SponsorTerms> {
         if fee > MAX_SPONSOR_FEE {
             return Err(anyhow::anyhow!("sponsor fee above hard cap").into());
@@ -360,14 +371,14 @@ impl Sponsor {
     ) -> Result<GasEstimate> {
         self.check_entry_point(entry_point)?;
         let ev = self.evaluate(user_id, op).await?;
-        let fee = ev.fee(&self.policy);
-        let stub = self.with_paymaster(op, self.terms(fee)?.encode(&STUB_SIGNATURE)?);
+        let terms = self.terms(ev.fee(&self.policy))?;
+        let stub = self.with_paymaster(op, terms.encode(&STUB_SIGNATURE)?);
         let s = sim::simulate(
             &self.chain,
+            &self.sim,
             &stub,
-            self.aa.paymaster,
-            self.contracts.token,
-            fee,
+            &self.sponsored(terms),
+            Limits::Estimate,
         )
         .await?;
         sim::estimate(&self.chain, &stub, s, self.beneficiary).await
@@ -388,15 +399,16 @@ impl Sponsor {
         let signed_block = self.chain.block_number().await?;
         let mut signed = self.with_paymaster(op, Bytes::new());
         sim::check_limits(&signed, &self.policy, gas_price)?;
-        sim::simulate(
+        let s = sim::simulate(
             &self.chain,
+            &self.sim,
             &signed,
-            self.aa.paymaster,
-            self.contracts.token,
-            fee,
+            &self.sponsored(self.terms(fee)?),
+            Limits::Signed,
         )
         .await?;
 
+        // 有效期从模拟之后算起。
         let terms = self.terms(fee)?;
         let hash = terms.hash(&signed, self.chain_id(), self.aa.paymaster)?;
         let signature = self
@@ -416,7 +428,14 @@ impl Sponsor {
             signed_block,
         )
         .await?;
-        tracing::info!(user_id, sender = %op.sender, fee, %user_op_hash, "sponsorship signed");
+        tracing::info!(
+            user_id,
+            sender = %op.sender,
+            fee,
+            %user_op_hash,
+            sim_method = s.method.as_str(),
+            "sponsorship signed"
+        );
         Ok(self.fields(data, None))
     }
 

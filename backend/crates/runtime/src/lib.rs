@@ -7,11 +7,12 @@ use tracing_subscriber::EnvFilter;
 pub fn init_tracing() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let builder = tracing_subscriber::fmt().with_env_filter(filter);
-    if std::env::var("LOG_FORMAT").is_ok_and(|v| v == "json") {
-        builder.json().init();
+    // 已经初始化过（同一进程里的多个测试用例）时保留第一次的设置。
+    let _ = if std::env::var("LOG_FORMAT").is_ok_and(|v| v == "json") {
+        builder.json().try_init()
     } else {
-        builder.init();
-    }
+        builder.try_init()
+    };
 }
 
 /// 固定使用 aws-lc-rs 作为 rustls 的加密实现。依赖树里出现两种实现时 rustls 无法自动选择会在首次 TLS 连接时报错，

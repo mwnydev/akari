@@ -1,34 +1,36 @@
-//! 余额巡检（plan 第 9 节）：Paymaster 押金低于 0.05 ETH、热钱包低于 0.01 ETH 时写告警到发件箱，
-//! 由 worker 通知站长补充（不做自动兑换）。热钱包余额不足时代发器同时视为不健康。
+//! 余额巡检（plan 第 9 节）：Paymaster 押金低于 0.05 ETH、热钱包低于 0.01 ETH 时发管理员群告警
+//! （[`outbox::staff_alert_deduped`]，同一种 `dedupe` 内只发一次），由站长补充（不做自动兑换）。
+//! 热钱包余额不足时代发器同时视为不健康。
 
+use alloy::primitives::utils::format_ether;
 use alloy::primitives::{Address, U256};
 use forum_db::PgPool;
-use forum_db::sponsor as db;
-use serde_json::json;
+use forum_db::outbox;
 use tokio_util::sync::CancellationToken;
 
 use crate::chain::Chain;
 use crate::config::AlertConfig;
 use crate::relayer::Relayer;
 
-pub const PAYMASTER_DEPOSIT_LOW: &str = "alert.paymaster_deposit_low";
-pub const HOT_WALLET_LOW: &str = "alert.hot_wallet_low";
+pub const PAYMASTER_DEPOSIT_LOW: &str = "sponsor.paymaster_deposit_low";
+pub const HOT_WALLET_LOW: &str = "sponsor.hot_wallet_low";
 
 async fn alert(
     db: &PgPool,
     cfg: &AlertConfig,
-    kind: &str,
+    event: &str,
+    what: &str,
     address: Address,
     balance: U256,
     threshold: U256,
 ) -> anyhow::Result<()> {
-    let payload = json!({
-        "address": address,
-        "balance_wei": balance.to_string(),
-        "threshold_wei": threshold.to_string(),
-    });
-    if db::enqueue_alert(db, kind, &payload, cfg.dedupe.as_secs_f64()).await? {
-        tracing::warn!(kind, %address, %balance, "balance alert raised");
+    let text = format!(
+        "{what} {address} 余额 {} ETH，低于告警线 {} ETH，请补充",
+        format_ether(balance),
+        format_ether(threshold)
+    );
+    if outbox::staff_alert_deduped(db, event, &text, cfg.dedupe.as_secs_f64()).await? {
+        tracing::warn!(event, %address, %balance, "balance alert raised");
     }
     Ok(())
 }
@@ -46,6 +48,7 @@ pub async fn check_once(
             db,
             cfg,
             PAYMASTER_DEPOSIT_LOW,
+            "Paymaster 在 EntryPoint 的押金",
             paymaster,
             deposit,
             cfg.deposit_min,
@@ -56,7 +59,16 @@ pub async fn check_once(
     let balance = chain.balance(hot).await?;
     relayer.set_balance_ok(balance >= cfg.hot_wallet_min);
     if balance < cfg.hot_wallet_min {
-        alert(db, cfg, HOT_WALLET_LOW, hot, balance, cfg.hot_wallet_min).await?;
+        alert(
+            db,
+            cfg,
+            HOT_WALLET_LOW,
+            "代发热钱包",
+            hot,
+            balance,
+            cfg.hot_wallet_min,
+        )
+        .await?;
     }
     Ok(())
 }

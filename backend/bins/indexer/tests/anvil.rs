@@ -734,6 +734,15 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
             .await
             .unwrap();
     assert_eq!(orphan_left, 0, "fork event removed");
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) FROM outbox WHERE dedupe_key LIKE 'indexer.deep_reorg%'"
+        )
+        .await,
+        0,
+        "a reorg within the safe depth is not an incident"
+    );
     let corrections: Vec<Value> = updates(&pool, 2)
         .await
         .into_iter()
@@ -942,8 +951,65 @@ async fn rpc_fails_over_to_backup() {
     let latest = src.block(BlockTag::Latest).await.unwrap().unwrap();
     assert!(latest.number > 0);
     assert_eq!(src.active(), 1, "switched to the backup endpoint");
+    assert_eq!(src.failovers(), 1);
     let logs = src.logs(w.start_block, latest.number).await.unwrap();
     assert!(logs.iter().any(|l| l.contract == w.config));
+}
+
+/// 管理员群告警：回滚越过已标为 safe 的区块时发一条（与回滚同一事务）；主节点不通、切到备用节点时发一条
+/// （1 小时内不重复）。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn deep_reorg_and_failover_alert_admins(pool: PgPool) {
+    let Some(bin) = anvil_bin() else {
+        eprintln!("skipped: anvil not found (install Foundry or set ANVIL_BIN)");
+        return;
+    };
+    let anvil = Anvil::spawn(&bin).unwrap();
+    let w = World::deploy(&anvil).await;
+    let indexer = Running::start(&pool, w.config(&anvil, 200));
+    let alerts = |prefix: &'static str| {
+        let pool = pool.clone();
+        async move {
+            let n: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM outbox WHERE kind = 'staff_alert' AND dedupe_key LIKE $1 || '%'",
+            )
+            .bind(prefix)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            n
+        }
+    };
+
+    let snap: U256 = w.rpc("evm_snapshot", Value::Array(vec![])).await;
+    w.create_and_fund(20 * U, 1).await;
+    let _: Value = w.rpc("anvil_mine", serde_json::json!(["0x40"])).await;
+    eventually("order 1 safe", || async {
+        order(&pool, 1)
+            .await
+            .filter(|o| o.level == "safe" || o.level == "finalized")
+    })
+    .await;
+    // 只在 safe 之内的回滚不告警（上面的订单是在新块上确认的，这里还没有回滚）。
+    assert_eq!(alerts("indexer.deep_reorg").await, 0);
+
+    assert!(w.rpc::<bool>("evm_revert", serde_json::json!([snap])).await);
+    let _: Value = w.rpc("anvil_mine", serde_json::json!(["0x2"])).await;
+    eventually("deep reorg alert", || async {
+        (alerts("indexer.deep_reorg:31337").await == 1).then_some(())
+    })
+    .await;
+    let text: String = sqlx::query_scalar(
+        "SELECT payload->>'text' FROM outbox WHERE dedupe_key = 'indexer.deep_reorg:31337'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(text.contains("越过了已确认为 safe 的区块"), "{text}");
+
+    // 测试链配置的主节点是不通的地址：一启动就切到备用节点，告警只发一次。
+    assert_eq!(alerts("indexer.rpc_failover:31337").await, 1);
+    indexer.stop().await;
 }
 
 /// 仲裁案件跟随链上争议：争议被区块回滚 → 关闭（reverted）；重新打包 → 同一案件重新打开；

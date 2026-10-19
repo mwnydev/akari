@@ -2,7 +2,7 @@
 //!
 //! - `POST /rpc`：JSON-RPC 2.0（单个请求，不支持批量）。必须带 `Authorization: Bearer <SPONSOR_API_TOKEN>` 与
 //!   forum-api 校验过会话后填入的 `x-forum-user-id`。监听 127.0.0.1，令牌防的是本机其他进程冒充 forum-api。
-//! - `GET /healthz`：代发器是否健康。
+//! - `GET /healthz`：代发器是否健康，以及两种签前模拟方法各用了多少次（[`crate::sim::Router`]）。
 
 use std::sync::Arc;
 
@@ -65,6 +65,7 @@ async fn healthz(State(s): State<AppState>) -> Json<Value> {
     Json(json!({
         "relayer": s.bundler.relayer.healthy(),
         "fallback": s.bundler.fallback.is_some(),
+        "simulations": s.bundler.sponsor.sim.counts(),
     }))
 }
 

@@ -1,24 +1,31 @@
 #!/usr/bin/env bash
 # 本地 AA 开发链：anvil fork Arbitrum Sepolia + 部署本仓库合约 + Pimlico Alto bundler。说明见 README-aa.md。
-#   deploy/dev/aa.sh up      启动 anvil → 核对 AA 基础合约 → 部署 → 充押金 → 写前后端链配置与 .env.aa → 启动 Alto
+#   deploy/dev/aa.sh up      启动 anvil → 核对 AA 基础合约 → 部署 → 充押金 → 核对前端链配置 → 写后端链配置与 .env.aa → 启动 Alto
 #   deploy/dev/aa.sh down    停止并删除 anvil、Alto 容器与生成的后端链配置（链状态不保留，下次 up 重新 fork）
 #   deploy/dev/aa.sh status  显示两个服务是否在线
+# 端口：ANVIL_PORT（默认 8545）、BUNDLER_PORT（默认 4337）；同一台机器上多份检出同时运行时再设 AA_PROJECT（compose 项目名）。
 # 仅限开发：下面的私钥由固定字符串派生（cast keccak "akari-dev-only:<name>"），公开、无价值，绝不能用在任何真实网络。
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 CONTRACTS="$ROOT/contracts"
-OUT="$ROOT/frontend/packages/contracts/src/chain.local.json"
+# 前端链配置入库，内容固定（地址由部署账户 nonce 决定，URL 用默认端口）：up 只核对、不改写，见 README-aa.md。
+CHAIN_JSON="$ROOT/frontend/packages/contracts/src/chain.local.json"
 # 后端链配置（forum-api / forum-indexer / forum-sponsor 的 CHAIN_CONFIG）与开发环境变量；含部署区块，每次 up 都不同，不入库。
 CHAIN_TOML="$HERE/chain.local.toml"
 DEV_ENV="$HERE/.env.aa"
-COMPOSE=(docker compose -f "$HERE/compose.yaml" --profile aa)
+DEFAULT_ANVIL_PORT=8545
+DEFAULT_BUNDLER_PORT=4337
+ANVIL_PORT=${ANVIL_PORT:-$DEFAULT_ANVIL_PORT}
+BUNDLER_PORT=${BUNDLER_PORT:-$DEFAULT_BUNDLER_PORT}
+export ANVIL_PORT BUNDLER_PORT # compose.yaml 用
+COMPOSE=(docker compose -p "${AA_PROJECT:-akari-dev}" -f "$HERE/compose.yaml" --profile aa)
 
 export PATH="$HOME/.foundry/bin:$PATH"
 export NO_PROXY="127.0.0.1,localhost" no_proxy="127.0.0.1,localhost"
-RPC="http://127.0.0.1:${AA_ANVIL_PORT:-8545}"
-BUNDLER="http://127.0.0.1:${AA_BUNDLER_PORT:-4337}"
+RPC="http://127.0.0.1:$ANVIL_PORT"
+BUNDLER="http://127.0.0.1:$BUNDLER_PORT"
 CHAIN_ID=31337
 
 DEPLOYER_KEY=0x2bd477e315997bfc5018a2d4ef4780999f011bceb8cf602c009337739f641d81 # akari-dev-only:deployer（本地 Anvil 专用，公开派生）gitleaks:allow
@@ -120,13 +127,30 @@ up() {
   cast send "$paymaster" 'addStake(uint32)' "$PAYMASTER_UNSTAKE_DELAY" --value "$PAYMASTER_STAKE" \
     --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" >/dev/null
 
-  jq -n --argjson chainId "$CHAIN_ID" --arg rpc "$RPC" --arg bundler "$BUNDLER" \
+  check_chain_json "$usdt" "$config" "$escrow" "$stream" "$paymaster" "$deployer"
+  write_backend_config "$start_block" "$usdt" "$config" "$escrow" "$stream" "$paymaster"
+
+  log "启动 Alto bundler"
+  "${COMPOSE[@]}" up -d alto
+  wait_for "Alto bundler（$BUNDLER）" bundler_up
+  check_loopback "$BUNDLER_PORT" "Alto bundler"
+  check_loopback "$ANVIL_PORT" anvil
+  log "就绪：RPC $RPC · bundler $BUNDLER · fork 区块 $(cast rpc anvil_nodeInfo --rpc-url "$RPC" | jq -r .forkConfig.forkBlockNumber)"
+}
+
+# 前端链配置（入库）：只含固定内容——部署地址（部署账户从 nonce 0 开始，每次相同）与默认端口的 URL。
+# 与本次部署不符时停下（不悄悄改写受版本控制的文件）；确认是有意的改动（如部署脚本多了一笔交易）后用
+# AA_WRITE_CHAIN_JSON=1 重新 up 改写它并提交。
+check_chain_json() {
+  local usdt=$1 config=$2 escrow=$3 stream=$4 paymaster=$5 deployer=$6 expected
+  expected=$(jq -n --argjson chainId "$CHAIN_ID" \
+    --arg rpc "http://127.0.0.1:$DEFAULT_ANVIL_PORT" --arg bundler "http://127.0.0.1:$DEFAULT_BUNDLER_PORT" \
     --arg ep "$ENTRY_POINT" --arg impl "$KERNEL_IMPL" --arg factory "$KERNEL_FACTORY" \
     --arg meta "$KERNEL_META_FACTORY" --arg webauthn "$WEBAUTHN_VALIDATOR" --arg v6492 "$ERC6492_VERIFIER" \
     --arg usdt "$usdt" --arg config "$config" --arg escrow "$escrow" --arg stream "$stream" \
     --arg paymaster "$paymaster" \
     --arg signer "$SPONSOR_ADDR" --arg deployer "$deployer" '{
-      "//": "由 deploy/dev/aa.sh 生成，勿手改。本地 anvil（fork Arbitrum Sepolia，链 ID 改为 31337）。",
+      "//": "本地 anvil（fork Arbitrum Sepolia，链 ID 改为 31337）的固定配置，deploy/dev/aa.sh up 核对；改动方法见 deploy/dev/README-aa.md。",
       chainId: $chainId,
       name: "Akari 本地链（Arbitrum Sepolia fork）",
       rpcUrl: $rpc,
@@ -141,14 +165,29 @@ up() {
       },
       paymasterSigner: $signer,
       deployer: $deployer
-    }' >"$OUT"
-  log "已写入 ${OUT#"$ROOT/"}"
-  write_backend_config "$start_block" "$usdt" "$config" "$escrow" "$stream" "$paymaster"
+    }')
+  if [[ "${AA_WRITE_CHAIN_JSON:-}" == 1 ]]; then
+    printf '%s\n' "$expected" >"$CHAIN_JSON"
+    log "已改写 ${CHAIN_JSON#"$ROOT/"}（记得提交）"
+  elif ! diff -u <(jq -S . "$CHAIN_JSON") <(jq -S . <<<"$expected") >&2; then
+    die "${CHAIN_JSON#"$ROOT/"} 与本次部署不符（上面是差异）。确认是有意的改动后运行 AA_WRITE_CHAIN_JSON=1 $0 up 并提交"
+  else
+    log "  ✓ ${CHAIN_JSON#"$ROOT/"} 与部署一致"
+  fi
+  if [[ "$ANVIL_PORT" != "$DEFAULT_ANVIL_PORT" || "$BUNDLER_PORT" != "$DEFAULT_BUNDLER_PORT" ]]; then
+    log "注意：非默认端口只写进后端配置；钱包前端与 e2e 读 chain.local.json，仍连 $DEFAULT_ANVIL_PORT / $DEFAULT_BUNDLER_PORT"
+  fi
+}
 
-  log "启动 Alto bundler"
-  "${COMPOSE[@]}" up -d alto
-  wait_for "Alto bundler（$BUNDLER）" bundler_up
-  log "就绪：RPC $RPC · bundler $BUNDLER · fork 区块 $(cast rpc anvil_nodeInfo --rpc-url "$RPC" | jq -r .forkConfig.forkBlockNumber)"
+# 宿主机网络下端口必须只监听本机回环地址。
+check_loopback() {
+  local port=$1 name=$2 addrs
+  addrs=$(ss -ltnH "sport = :$port" | awk '{print $4}')
+  [[ -n "$addrs" ]] || die "$name 没有在端口 $port 上监听"
+  if grep -qv '^127\.0\.0\.1:' <<<"$addrs"; then
+    die "$name 监听了本机回环以外的地址：$(tr '\n' ' ' <<<"$addrs")"
+  fi
+  log "  ✓ $name 只监听 127.0.0.1:$port"
 }
 
 # 后端链配置：地址与 chain.local.json 相同；钱包初始化参数第 1 版与前端 localChain 的版本 1 逐项一致

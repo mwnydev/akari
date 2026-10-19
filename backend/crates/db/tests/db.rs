@@ -68,6 +68,52 @@ async fn outbox_priority_skip_locked_and_sent(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn staff_alerts_dedupe_by_event_even_after_sending(pool: PgPool) {
+    let first = outbox::staff_alert_deduped(&pool, "sponsor.hot_wallet_low", "低", 3600.0)
+        .await
+        .unwrap();
+    assert!(first);
+    // 发送后 payload 被清空，去重仍然生效。
+    let id: i64 =
+        sqlx::query_scalar("SELECT id FROM outbox WHERE dedupe_key = 'sponsor.hot_wallet_low'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    outbox::mark_sent(&pool, id).await.unwrap();
+    assert!(
+        !outbox::staff_alert_deduped(&pool, "sponsor.hot_wallet_low", "还是低", 3600.0)
+            .await
+            .unwrap()
+    );
+    assert!(
+        outbox::staff_alert_deduped(&pool, "sponsor.paymaster_deposit_low", "押金低", 3600.0)
+            .await
+            .unwrap(),
+        "other events are independent"
+    );
+    // 窗口过了再发；不去重的告警总是写入。
+    assert!(
+        outbox::staff_alert_deduped(&pool, "sponsor.hot_wallet_low", "又低了", 0.0)
+            .await
+            .unwrap()
+    );
+    outbox::staff_alert(&pool, "sponsor.hot_wallet_low", "手动")
+        .await
+        .unwrap();
+    let rows: Vec<(String, serde_json::Value)> =
+        sqlx::query_as("SELECT kind, payload FROM outbox WHERE sent_at IS NULL ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rows.len(), 3);
+    assert!(rows.iter().all(|(k, _)| k == outbox::KIND_STAFF_ALERT));
+    assert_eq!(
+        rows[0].1,
+        json!({"event": "sponsor.paymaster_deposit_low", "text": "押金低"})
+    );
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn outbox_backoff_then_give_up(pool: PgPool) {
     let id = outbox::enqueue(&pool, "k", &json!({"secret": 1}), 0)
         .await
