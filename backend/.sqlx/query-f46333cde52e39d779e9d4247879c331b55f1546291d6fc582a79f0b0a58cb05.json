@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- $1 id, $2 status\nUPDATE posts SET status = $2 WHERE id = $1 AND status = 0\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f46333cde52e39d779e9d4247879c331b55f1546291d6fc582a79f0b0a58cb05"
+}

@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 重建板块有序集合：最新的非置顶、非隐藏主题。$1 forum_id, $2 limit\nSELECT id, last_post_at\nFROM topics\nWHERE forum_id = $1 AND (flags & 9) = 0\nORDER BY last_post_at DESC, id DESC\nLIMIT $2\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "last_post_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "last_post_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1209fcc2e2da5216920a3093b43dd5f955148ecc8cd8d2637d27f1a8368f31d7"
+}

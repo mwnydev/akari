@@ -30,6 +30,20 @@ pub enum ErrorCode {
     Unauthorized,
     #[error("origin rejected")]
     OriginRejected,
+    #[error("not found")]
+    NotFound,
+    #[error("forbidden")]
+    Forbidden,
+    #[error("topic locked")]
+    TopicLocked,
+    #[error("content empty")]
+    ContentEmpty,
+    #[error("content too long")]
+    ContentTooLong,
+    #[error("invalid title")]
+    InvalidTitle,
+    #[error("external link not allowed")]
+    ExternalLinkForbidden,
     #[error("internal error")]
     Internal,
 }
@@ -49,6 +63,13 @@ impl ErrorCode {
             Self::TooManyAttempts => "错误次数过多，请重新获取验证码",
             Self::Unauthorized => "请先登录",
             Self::OriginRejected => "请求来源不被允许",
+            Self::NotFound => "内容不存在或已被删除",
+            Self::Forbidden => "没有权限进行此操作",
+            Self::TopicLocked => "主题已锁定，不能回复或编辑",
+            Self::ContentEmpty => "内容不能为空",
+            Self::ContentTooLong => "内容太长",
+            Self::InvalidTitle => "标题需为 1–120 个字",
+            Self::ExternalLinkForbidden => "注册 24 小时内不能发站外链接",
             Self::Internal => "服务暂时不可用，请稍后再试",
         }
     }

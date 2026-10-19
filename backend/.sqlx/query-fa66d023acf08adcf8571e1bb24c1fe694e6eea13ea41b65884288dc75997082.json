@@ -1,0 +1,160 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 按主键批量取主题（板块列表从 Valkey 取到 ID 后用）。$1 ids\nSELECT id, forum_id, author_id, title, kind, flags, last_floor, last_post_id, last_poster_id,\n       last_post_at, created_at, view_count\nFROM topics\nWHERE id = ANY($1::bigint[])\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "forum_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "forum_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "author_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "author_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "kind",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "flags",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "flags"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "last_floor",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "last_floor"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "last_post_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "last_post_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "last_poster_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "last_poster_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "last_post_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "last_post_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "view_count",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "view_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fa66d023acf08adcf8571e1bb24c1fe694e6eea13ea41b65884288dc75997082"
+}

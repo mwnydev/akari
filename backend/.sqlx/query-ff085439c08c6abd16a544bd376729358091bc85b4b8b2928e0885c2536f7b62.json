@@ -1,0 +1,122 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, parent_id, slug, name, description, position,\n                view_min_level, post_min_level, reply_min_level\n         FROM forums\n         ORDER BY parent_id NULLS FIRST, position, id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "parent_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "parent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "position",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "view_min_level",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "view_min_level"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "post_min_level",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "post_min_level"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "reply_min_level",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "reply_min_level"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "ff085439c08c6abd16a544bd376729358091bc85b4b8b2928e0885c2536f7b62"
+}

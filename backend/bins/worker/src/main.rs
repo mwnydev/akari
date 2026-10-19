@@ -1,4 +1,4 @@
-//! forum-worker：后台任务：发件箱投递；之后接入 apalis 队列（通知、超时处理、发薪）与图片转换。
+//! forum-worker：后台任务：发件箱投递、浏览数回写；之后接入 apalis 队列（通知、超时处理、发薪）与图片转换。
 
 use std::time::Duration;
 
@@ -26,6 +26,7 @@ async fn main() -> anyhow::Result<()> {
     let shutdown = forum_runtime::shutdown_token();
 
     let db = forum_db::connect(&env("DATABASE_URL")?, 10).await?;
+    let cache = forum_kv::ForumCache::new(forum_kv::pool(&env("VALKEY_URL")?)?, "");
     let from = env("MAIL_FROM")?;
     // 主备通道可在配置里一键互换（plan 第 9 节）：MAIL_PRIMARY=resend MAIL_BACKUP=smtp。
     let primary = build_mailer(
@@ -39,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
     let mailer = Failover::new(primary, backup);
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "forum-worker started");
 
+    let views = tokio::spawn(view_flusher(db.clone(), cache, shutdown.clone()));
     loop {
         match forum_worker::drain_once(&db, &mailer).await {
             // 本批满了说明还有积压，立刻继续。
@@ -51,6 +53,30 @@ async fn main() -> anyhow::Result<()> {
             () = tokio::time::sleep(POLL) => {}
         }
     }
+    if let Err(e) = views.await {
+        tracing::error!(error = %e, "view flusher panicked");
+    }
     tracing::info!("forum-worker stopped");
     Ok(())
+}
+
+/// 每 10 秒回写浏览数；退出前再写一次。
+async fn view_flusher(
+    db: forum_db::PgPool,
+    cache: forum_kv::ForumCache,
+    shutdown: tokio_util::sync::CancellationToken,
+) {
+    let mut tick = tokio::time::interval(forum_worker::VIEW_FLUSH_INTERVAL);
+    loop {
+        let stopping = tokio::select! {
+            () = shutdown.cancelled() => true,
+            _ = tick.tick() => false,
+        };
+        if let Err(e) = forum_worker::flush_views(&db, &cache).await {
+            tracing::error!(error = %e, "view flush failed");
+        }
+        if stopping {
+            break;
+        }
+    }
 }

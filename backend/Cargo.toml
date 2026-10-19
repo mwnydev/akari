@@ -17,6 +17,7 @@ forum-runtime = { path = "crates/runtime" }
 forum-auth = { path = "crates/auth" }
 forum-kv = { path = "crates/kv" }
 forum-mail = { path = "crates/mail" }
+forum-content = { path = "crates/content" }
 
 tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "signal", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -42,10 +43,11 @@ hmac = "=0.13.0"
 sha2 = "=0.11.1"
 rand = "=0.10.3"
 hex = "0.4"
-time = { version = "=0.3.55", features = ["serde"] }
+time = { version = "=0.3.55", features = ["serde", "formatting", "parsing"] }
 tower = { version = "0.5", features = ["util"] }
 async-trait = "0.1"
 reqwest = { version = "=0.13.5", default-features = false, features = ["json", "rustls"] }
+ammonia = "=4.2.4" # 4.2.3 有 RUSTSEC-2026-0373，计划锁定版本因安全补丁上调
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 
 [workspace.lints.rust]

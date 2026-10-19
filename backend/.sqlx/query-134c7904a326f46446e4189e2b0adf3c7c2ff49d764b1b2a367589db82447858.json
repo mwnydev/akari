@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 批量累加浏览数。$1 ids, $2 counts\nUPDATE topics t SET view_count = t.view_count + v.n\nFROM unnest($1::bigint[], $2::bigint[]) AS v(id, n)\nWHERE t.id = v.id\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "134c7904a326f46446e4189e2b0adf3c7c2ff49d764b1b2a367589db82447858"
+}

@@ -63,3 +63,34 @@ pub async fn touch_device(
     .await?;
     Ok(row.new)
 }
+
+/// 发帖者自身的信息：注册时间（新用户限制）与等级（板块权限）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Actor {
+    pub id: i64,
+    pub created_at: OffsetDateTime,
+    pub level: i16,
+}
+
+pub async fn actor(db: impl PgExecutor<'_>, id: i64) -> Result<Option<Actor>, sqlx::Error> {
+    sqlx::query_file_as!(Actor, "queries/users_actor.sql", id)
+        .fetch_optional(db)
+        .await
+}
+
+/// 用户名片（列表页批量取）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Card {
+    pub id: i64,
+    pub username: Option<String>,
+    pub level: i16,
+}
+
+pub async fn cards(db: impl PgExecutor<'_>, ids: &[i64]) -> Result<Vec<Card>, sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    sqlx::query_file_as!(Card, "queries/users_cards.sql", ids)
+        .fetch_all(db)
+        .await
+}

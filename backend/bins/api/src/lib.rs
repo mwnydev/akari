@@ -1,10 +1,13 @@
 //! forum-api：论坛 HTTP API 与 WebSocket。
 
+pub mod access;
 pub mod config;
 pub mod error;
 pub mod middleware;
+pub mod posting;
 pub mod routes;
 pub mod state;
+pub mod views;
 
 use std::time::Duration;
 
@@ -35,6 +38,14 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::auth::verify))
         .routes(routes!(routes::auth::logout))
         .routes(routes!(routes::me::me))
+        .routes(routes!(routes::forums::list))
+        .routes(routes!(routes::forums::board, routes::forums::create_topic))
+        .routes(routes!(routes::topics::get))
+        .routes(routes!(routes::topics::reply))
+        .routes(routes!(routes::topics::moderate))
+        .routes(routes!(routes::posts::edit, routes::posts::delete))
+        .routes(routes!(routes::posts::history))
+        .routes(routes!(routes::posts::source))
         .split_for_parts()
 }
 

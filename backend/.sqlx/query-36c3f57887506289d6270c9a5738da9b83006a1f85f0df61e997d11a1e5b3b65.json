@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 板块置顶帖，走部分索引 topics_forum_pinned。$1 forum_id\nSELECT id\nFROM topics\nWHERE forum_id = $1 AND (flags & 1) <> 0 AND (flags & 8) = 0\nORDER BY id DESC\nLIMIT 50\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "36c3f57887506289d6270c9a5738da9b83006a1f85f0df61e997d11a1e5b3b65"
+}

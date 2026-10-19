@@ -3,142 +3,15 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // 测试代码
 
-use std::net::SocketAddr;
-use std::sync::Arc;
+mod common;
 
-use axum::Router;
-use axum::body::{Body, to_bytes};
-use axum::extract::connect_info::MockConnectInfo;
+use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use axum_extra::extract::cookie::Key;
-use forum_api::{AppState, app};
-use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha};
+use common::{SECRET, build, call, jar, latest_code, login, unique_email};
+use forum_auth::CodeStore;
 use forum_db::PgPool;
-use serde_json::{Value, json};
+use serde_json::json;
 use tower::ServiceExt;
-
-const ORIGIN: &str = "https://forum.test";
-const SECRET: [u8; 64] = [9; 64];
-
-fn build(db: PgPool) -> Option<Router> {
-    let Ok(url) = std::env::var("VALKEY_URL") else {
-        eprintln!("VALKEY_URL not set, skipping valkey-backed test");
-        return None;
-    };
-    let kv = forum_kv::pool(&url).unwrap();
-    let state = AppState {
-        db,
-        kv: kv.clone(),
-        codes: CodeStore::new(kv, &SECRET).unwrap(),
-        captcha: AnyCaptcha::Noop(NoopCaptcha),
-        device_key: Key::from(&SECRET),
-        allowed_origins: Arc::from(vec![ORIGIN.to_owned()]),
-        cookie_secure: true,
-    };
-    // 每个用例用不同的假 IP，避免 IP 限流互相影响
-    let ip: [u8; 4] = rand_ip();
-    Some(app(state, &SECRET).layer(MockConnectInfo(SocketAddr::from((ip, 40000)))))
-}
-
-fn rand_ip() -> [u8; 4] {
-    let n = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .subsec_nanos();
-    [10, (n >> 16) as u8, (n >> 8) as u8, n as u8]
-}
-
-fn unique_email() -> String {
-    let n = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    format!("User{n}@Example.com")
-}
-
-struct Res {
-    status: StatusCode,
-    cookies: Vec<String>,
-    body: Value,
-}
-
-async fn call(
-    app: &Router,
-    method: &str,
-    uri: &str,
-    body: Option<Value>,
-    cookies: &[String],
-) -> Res {
-    let mut req = Request::builder()
-        .method(method)
-        .uri(uri)
-        .header(header::ORIGIN, ORIGIN);
-    if !cookies.is_empty() {
-        req = req.header(header::COOKIE, cookies.join("; "));
-    }
-    let req = match body {
-        Some(b) => req
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(b.to_string())),
-        None => req.body(Body::empty()),
-    }
-    .unwrap();
-    let res = app.clone().oneshot(req).await.unwrap();
-    let status = res.status();
-    let cookies = res
-        .headers()
-        .get_all(header::SET_COOKIE)
-        .iter()
-        .map(|v| v.to_str().unwrap().to_owned())
-        .collect();
-    let bytes = to_bytes(res.into_body(), 1 << 20).await.unwrap();
-    let body = if bytes.is_empty() {
-        Value::Null
-    } else {
-        serde_json::from_slice(&bytes).unwrap()
-    };
-    Res {
-        status,
-        cookies,
-        body,
-    }
-}
-
-/// 把 Set-Cookie 转成请求用的 `name=value`。
-fn jar(set_cookies: &[String]) -> Vec<String> {
-    set_cookies
-        .iter()
-        .map(|c| c.split(';').next().unwrap().to_owned())
-        .collect()
-}
-
-async fn latest_code(db: &PgPool) -> String {
-    sqlx::query_scalar("SELECT payload->>'code' FROM outbox WHERE kind = 'email.login_code' ORDER BY id DESC LIMIT 1")
-        .fetch_one(db)
-        .await
-        .unwrap()
-}
-
-async fn login(app: &Router, db: &PgPool, email: &str, cookies: &[String]) -> Res {
-    let r = call(
-        app,
-        "POST",
-        "/api/v1/auth/email/start",
-        Some(json!({"email": email})),
-        cookies,
-    )
-    .await;
-    assert_eq!(r.status, StatusCode::ACCEPTED, "{:?}", r.body);
-    let code = latest_code(db).await;
-    call(
-        app,
-        "POST",
-        "/api/v1/auth/email/verify",
-        Some(json!({"email": email, "code": code})),
-        cookies,
-    )
-    .await
-}
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn email_code_login_flow(db: PgPool) {

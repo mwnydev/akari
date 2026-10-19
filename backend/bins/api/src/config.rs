@@ -17,6 +17,16 @@ pub struct Config {
     pub cookie_secure: bool,
     /// 为空时使用不校验的 NoopCaptcha（仅开发环境）。
     pub turnstile_secret: Option<String>,
+    /// 本站主机名，逗号分隔（如 `forum.example,www.forum.example`）；判断帖子里的站外链接用。
+    pub internal_hosts: Vec<String>,
+}
+
+fn list(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|s| s.trim().to_owned())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 fn var(name: &str) -> anyhow::Result<String> {
@@ -39,15 +49,12 @@ impl Config {
             valkey_url: var("VALKEY_URL")?,
             cookie_secret: hex_var("COOKIE_SECRET", 64)?,
             auth_secret: hex_var("AUTH_SECRET", 32)?,
-            allowed_origins: var("ALLOWED_ORIGINS")?
-                .split(',')
-                .map(|s| s.trim().to_owned())
-                .filter(|s| !s.is_empty())
-                .collect(),
+            allowed_origins: list(&var("ALLOWED_ORIGINS")?),
             cookie_secure: std::env::var("COOKIE_SECURE").map_or(true, |v| v != "false"),
             turnstile_secret: std::env::var("TURNSTILE_SECRET")
                 .ok()
                 .filter(|s| !s.is_empty()),
+            internal_hosts: list(&std::env::var("INTERNAL_HOSTS").unwrap_or_default()),
         })
     }
 }

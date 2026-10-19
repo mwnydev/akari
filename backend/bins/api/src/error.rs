@@ -36,6 +36,16 @@ impl From<sqlx::Error> for ApiError {
     }
 }
 
+impl From<forum_content::ContentError> for ApiError {
+    fn from(e: forum_content::ContentError) -> Self {
+        Self(match e {
+            forum_content::ContentError::Empty => ErrorCode::ContentEmpty,
+            forum_content::ContentError::TooLong => ErrorCode::ContentTooLong,
+            forum_content::ContentError::InvalidTitle => ErrorCode::InvalidTitle,
+        })
+    }
+}
+
 impl From<forum_kv::KvError> for ApiError {
     fn from(e: forum_kv::KvError) -> Self {
         Self::internal(e)
@@ -51,7 +61,12 @@ impl From<tower_sessions::session::Error> for ApiError {
 fn status(code: ErrorCode) -> StatusCode {
     match code {
         ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
-        ErrorCode::OriginRejected | ErrorCode::CaptchaFailed => StatusCode::FORBIDDEN,
+        ErrorCode::OriginRejected
+        | ErrorCode::CaptchaFailed
+        | ErrorCode::Forbidden
+        | ErrorCode::TopicLocked
+        | ErrorCode::ExternalLinkForbidden => StatusCode::FORBIDDEN,
+        ErrorCode::NotFound => StatusCode::NOT_FOUND,
         ErrorCode::ResendTooSoon | ErrorCode::RateLimited | ErrorCode::TooManyAttempts => {
             StatusCode::TOO_MANY_REQUESTS
         }
@@ -61,7 +76,10 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::InvalidParameter
         | ErrorCode::ClaimBelowGas
         | ErrorCode::InvalidEmail
-        | ErrorCode::InvalidCode => StatusCode::BAD_REQUEST,
+        | ErrorCode::InvalidCode
+        | ErrorCode::ContentEmpty
+        | ErrorCode::ContentTooLong
+        | ErrorCode::InvalidTitle => StatusCode::BAD_REQUEST,
     }
 }
 

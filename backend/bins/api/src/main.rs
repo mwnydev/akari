@@ -29,12 +29,14 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         db,
         kv: kv.clone(),
-        codes: CodeStore::new(kv, &cfg.auth_secret)?,
+        codes: CodeStore::new(kv.clone(), &cfg.auth_secret)?,
         captcha,
         // 设备 Cookie 与会话 Cookie 用同一把 64 字节密钥派生的不同 Key 类型。
         device_key: Key::try_from(cfg.cookie_secret.as_slice())?,
         allowed_origins: Arc::from(cfg.allowed_origins.clone()),
         cookie_secure: cfg.cookie_secure,
+        cache: forum_kv::ForumCache::new(kv.clone(), ""),
+        internal_hosts: Arc::from(cfg.internal_hosts.clone()),
     };
 
     let addr: SocketAddr = cfg.listen.parse()?;

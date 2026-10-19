@@ -91,3 +91,54 @@ async fn failures_are_retried_later(pool: PgPool) {
     // 退避期内不再取出
     assert_eq!(forum_worker::drain_once(&pool, &mailer).await.unwrap(), 0);
 }
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn in_site_notifications_are_not_emailed_or_retried(pool: PgPool) {
+    let id = outbox::enqueue(
+        &pool,
+        "notify.reply",
+        &json!({"to": 1, "from": 2, "topic_id": 3, "post_id": 4, "floor": 2}),
+        0,
+    )
+    .await
+    .unwrap();
+    let mailer = Recorder::default();
+    assert_eq!(forum_worker::drain_once(&pool, &mailer).await.unwrap(), 1);
+    assert!(mailer.sent.lock().unwrap().is_empty());
+    let sent: Option<time::OffsetDateTime> =
+        sqlx::query_scalar("SELECT sent_at FROM outbox WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(sent.is_some());
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn view_counts_flush_to_topics(pool: PgPool) {
+    let Ok(url) = std::env::var("VALKEY_URL") else {
+        eprintln!("VALKEY_URL not set, skipping valkey-backed test");
+        return;
+    };
+    let cache = forum_kv::ForumCache::new(
+        forum_kv::pool(&url).unwrap(),
+        format!("wtest{}:", std::process::id()),
+    );
+    let topic: i64 = sqlx::query_scalar(
+        "INSERT INTO topics (forum_id, author_id, title, last_post_at) VALUES (1, 1, 't', now()) RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for _ in 0..3 {
+        cache.add_view(topic).await.unwrap();
+    }
+    assert_eq!(forum_worker::flush_views(&pool, &cache).await.unwrap(), 1);
+    assert_eq!(forum_worker::flush_views(&pool, &cache).await.unwrap(), 0);
+    let views: i64 = sqlx::query_scalar("SELECT view_count FROM topics WHERE id = $1")
+        .bind(topic)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(views, 3);
+}

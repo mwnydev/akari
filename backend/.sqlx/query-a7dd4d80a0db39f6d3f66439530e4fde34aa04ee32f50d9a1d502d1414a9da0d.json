@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- $1 post_id\nSELECT source FROM post_sources WHERE post_id = $1\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "source",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "post_sources",
+            "name": "source"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a7dd4d80a0db39f6d3f66439530e4fde34aa04ee32f50d9a1d502d1414a9da0d"
+}

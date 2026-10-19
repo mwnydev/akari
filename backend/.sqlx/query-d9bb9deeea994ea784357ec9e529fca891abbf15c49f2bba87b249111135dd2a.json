@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- $1 id, $2 title\nUPDATE topics SET title = $2 WHERE id = $1\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d9bb9deeea994ea784357ec9e529fca891abbf15c49f2bba87b249111135dd2a"
+}

@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 发主题：主题 + 1 楼 + 原稿 + @提及通知，一条语句完成（post id 先取自序列，主题行直接写 last_post_id）。\n-- $1 forum_id, $2 author_id, $3 title, $4 html, $5 plain_text, $6 source, $7 mentions\nWITH pid AS (\n  SELECT nextval(pg_get_serial_sequence('posts', 'id')) AS id\n), t AS (\n  INSERT INTO topics (forum_id, author_id, title, last_post_id, last_poster_id, last_post_at)\n  SELECT $1, $2, $3, pid.id, $2, now() FROM pid\n  RETURNING id, last_post_at\n), p AS (\n  INSERT INTO posts (id, topic_id, floor, author_id, html, plain_text)\n  OVERRIDING SYSTEM VALUE\n  SELECT pid.id, t.id, 1, $2, $4, $5 FROM pid, t\n  RETURNING id\n), s AS (\n  INSERT INTO post_sources (post_id, source) SELECT p.id, $6 FROM p\n), m AS (\n  INSERT INTO outbox (kind, payload)\n  SELECT 'notify.mention', jsonb_build_object('to', u, 'from', $2, 'topic_id', t.id, 'post_id', p.id, 'floor', 1)\n  FROM t, p, unnest($7::bigint[]) AS u\n  WHERE u <> $2\n)\nSELECT t.id AS \"topic_id!\", p.id AS \"post_id!\", t.last_post_at AS \"last_post_at!\"\nFROM t, p\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "topic_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "post_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "last_post_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "last_post_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d71dc7300513973fb9b884c72d51015a78bf5008bafac8a92c27d5ec70baf479"
+}

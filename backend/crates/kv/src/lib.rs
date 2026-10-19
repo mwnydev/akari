@@ -1,11 +1,13 @@
-//! Valkey：连接池、跨进程滑动窗口限流、会话存储。
+//! Valkey：连接池、跨进程滑动窗口限流、会话存储、论坛缓存。
 //!
 //! Valkey 只放可丢的数据（会话、验证码、限流计数、缓存），关键任务放 PostgreSQL（plan 第 2 节）。
 
+pub mod forum_cache;
 pub mod ratelimit;
 pub mod session_store;
 
 pub use deadpool_redis::{Connection, Pool};
+pub use forum_cache::{BoardPage, ForumCache};
 pub use ratelimit::SlidingWindow;
 pub use session_store::ValkeySessionStore;
 
