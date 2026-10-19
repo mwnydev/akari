@@ -2,7 +2,15 @@ import { escrowAbi, localChain as chain } from "@akari/contracts";
 import { expect, test, type Page } from "@playwright/test";
 import { backendPaths, chainIsDown, publicClient } from "./env";
 import { ensureBoard } from "./forum-user";
-import { U, balances, confirmSignature, createWallet, harness, mintUsdt } from "./harness";
+import {
+  U,
+  balances,
+  confirmSignature,
+  createWallet,
+  harness,
+  mintUsdt,
+  withdrawCredits,
+} from "./harness";
 
 // 完整担保流程：两个浏览器上下文各带一个 CDP 虚拟 Passkey（卖家、买家），链上余额按前后差额断言。
 // 前置：deploy/dev/aa.sh up。链或 bundler 不在线时跳过。
@@ -149,12 +157,20 @@ test("开通交易 → 卖家发报价 → 买家一次 Face ID 付款 → 卖�
   await expect(seller.page.getByTestId("order-state")).toHaveText("已确认收货，货款已放给卖家");
   await expect(buyer.page.getByRole("button", { name: "确认收货" })).toBeHidden();
   await expect(buyer.page.getByTestId("order-level")).toHaveText("已上链（处理中）");
+  // 免费代付提币次数：开通送 1 次；订单已结束但还没最终确认，不发
+  if (h.realSponsor) {
+    for (const u of [buyer, seller]) expect(await withdrawCredits(u.page)).toBe(1);
+  }
   // 真实 indexer：anvil 每秒出一块，finalized = 最新块往前 64 块，约一分钟后订单页显示最终确认
   // （fork 链上 anvil_mine 每块要一两秒，比等出块还慢，所以不手动挖块）
   if (h.fakeOrders) h.fake.finalize(orderId);
   await expect(buyer.page.getByTestId("order-level")).toHaveText("已最终确认", {
     timeout: 150_000,
   });
+  // 最终确认的同一事务里买卖双方各得 1 次
+  if (h.realSponsor) {
+    for (const u of [buyer, seller]) expect(await withdrawCredits(u.page)).toBe(2);
+  }
 
   // 默认参数：手续费 max(20 × 1%, 1) = 1 USDT + 基础 gas 费 0.1 USDT，均由卖家承担
   expect(await changes()).toEqual({

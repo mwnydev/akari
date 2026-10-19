@@ -10,6 +10,7 @@ use webauthn_rs::prelude::{
     COSEAlgorithm, COSEKeyType, CreationChallengeResponse, CredentialID, ECDSACurve, Passkey,
     PasskeyRegistration, Url, Uuid, Webauthn, WebauthnBuilder, WebauthnError,
 };
+use webauthn_rs_proto::ResidentKeyRequirement;
 
 pub use webauthn_rs::prelude as webauthn;
 
@@ -63,7 +64,8 @@ fn uuid_v8(mut b: [u8; 16]) -> Uuid {
 /// COSE 算法 ES256 的编号。
 pub const ES256: i64 = -7;
 
-/// 开始注册：只向浏览器请求 ES256 凭证（Kernel WebAuthn 验证器只认 P-256）。
+/// 开始注册：只向浏览器请求 ES256 凭证（Kernel WebAuthn 验证器只认 P-256），且必须是可发现凭证：
+/// 紧急取回页（ADR 0007）不连服务器，只能不带 allowCredentials 让用户选出 Passkey、再从签名恢复公钥。
 pub fn start_registration(
     webauthn: &Webauthn,
     handle: Uuid,
@@ -77,6 +79,10 @@ pub fn start_registration(
     ccr.public_key
         .pub_key_cred_params
         .retain(|p| p.alg == ES256);
+    if let Some(sel) = ccr.public_key.authenticator_selection.as_mut() {
+        sel.resident_key = Some(ResidentKeyRequirement::Required);
+        sel.require_resident_key = true;
+    }
     Ok((ccr, state))
 }
 

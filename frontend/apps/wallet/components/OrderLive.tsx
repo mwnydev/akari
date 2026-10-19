@@ -17,6 +17,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { getAddress } from "viem";
 import { useNow } from "../lib/useNow";
 import { userMessage, walletApi, type OrderView } from "../lib/wallet/api";
 import { NETWORK_LABEL, chain } from "../lib/wallet/config";
@@ -252,7 +253,7 @@ export function OrderLive({ orderId, wallet }: { orderId: number; wallet: Wallet
           onOpenChange={setOpen}
           action={action.label}
           amount={copy.amount}
-          to={order.contract}
+          to={getAddress(order.contract)}
           toLabel={once ? "担保合约" : "分期担保合约"}
           network={NETWORK_LABEL}
           rows={copy.rows}

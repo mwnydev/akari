@@ -1,8 +1,18 @@
 import { localChain as chain, mockUsdtAbi } from "@akari/contracts";
 import { expect, type Browser, type CDPSession, type Page } from "@playwright/test";
-import { createWalletClient, http, parseUnits, type Address } from "viem";
+import {
+  createWalletClient,
+  encodeFunctionData,
+  encodePacked,
+  http,
+  parseAbi,
+  parseUnits,
+  toHex,
+  zeroHash,
+  type Address,
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { backendPaths, publicClient } from "./env";
+import { AA_RPC_PATH, backendPaths, publicClient } from "./env";
 import { FAKE_EMAIL_CODE, FakeBackend } from "./fake-backend";
 import { signIn, waitForCode } from "./forum-user";
 
@@ -49,6 +59,8 @@ export interface Harness {
   fakeOrders: boolean;
   /** 真实 forum-api 能发交易帖：卖家为交易帖签公开报价，否则在私信会话里签给指定买家 */
   realListings: boolean;
+  /** 真实 forum-sponsor（经 forum-api 的 /aa/rpc）：代付规则与提币次数由后端判定 */
+  realSponsor: boolean;
   newUser(browser: Browser, tag: string, baseURL: string): Promise<User>;
 }
 
@@ -60,6 +72,7 @@ export async function harness(): Promise<Harness> {
     fake,
     fakeOrders: !isReal("/api/v1/orders/1"),
     realListings: isReal("/api/v1/forums/e2e/listings"),
+    realSponsor: isReal(AA_RPC_PATH),
     async newUser(browser, tag, baseURL) {
       const context = await browser.newContext();
       // 已登录用户：有真实后端就真的登录，否则模拟后端里每个上下文本身就是一个用户
@@ -138,4 +151,58 @@ export async function confirmSignature(
   await expect(dialog).toContainText(`${to.slice(0, 8)}…${to.slice(-6)}`);
   await dialog.getByRole("button", { name: "使用 Face ID / 指纹确认" }).click();
   await expect(dialog).toBeHidden({ timeout: 120_000 });
+}
+
+/** 剩余免费代付提币次数（钱包余额接口，按页面上的登录用户）。 */
+export async function withdrawCredits(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const res = await fetch("/api/v1/wallet/balances");
+    return ((await res.json()) as { withdraw_credits: number }).withdraw_credits;
+  });
+}
+
+const kernelExecute = parseAbi(["function execute(bytes32 mode, bytes executionCalldata)"]);
+
+/**
+ * 直接向代付服务要一笔「提回交易所」的占位代付（`pm_getPaymasterStubData`，不签名、不上链），
+ * 返回 JSON-RPC 错误里的错误码，通过时返回 null。用来确认是后端在拒绝，而不只是页面按钮禁用。
+ */
+export async function stubWithdraw(
+  page: Page,
+  wallet: Address,
+  to: Address,
+): Promise<string | null> {
+  const transfer = encodeFunctionData({
+    abi: mockUsdtAbi,
+    functionName: "transfer",
+    args: [to, 1n],
+  });
+  const callData = encodeFunctionData({
+    abi: kernelExecute,
+    functionName: "execute",
+    args: [zeroHash, encodePacked(["address", "uint256", "bytes"], [usdt, 0n, transfer])],
+  });
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "pm_getPaymasterStubData",
+    params: [
+      { sender: wallet, nonce: toHex(1n), callData },
+      chain.entryPoint,
+      toHex(chain.chainId),
+      {},
+    ],
+  });
+  return page.evaluate(
+    async ([path, body]) => {
+      const res = await fetch(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+      const json = (await res.json()) as { error?: { data?: { code?: string } } };
+      return json.error ? (json.error.data?.code ?? "UNKNOWN") : null;
+    },
+    [AA_RPC_PATH, body] as const,
+  );
 }

@@ -2455,6 +2455,7 @@ dependencies = [
  "tokio",
  "tracing",
  "webauthn-rs",
+ "webauthn-rs-proto",
 ]
 
 [[package]]

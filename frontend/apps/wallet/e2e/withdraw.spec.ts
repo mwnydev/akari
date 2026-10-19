@@ -2,7 +2,15 @@ import { localChain as chain } from "@akari/contracts";
 import { expect, test } from "@playwright/test";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { chainIsDown } from "./env";
-import { U, balances, confirmSignature, createWallet, harness, mintUsdt } from "./harness";
+import {
+  U,
+  balances,
+  confirmSignature,
+  createWallet,
+  harness,
+  mintUsdt,
+  stubWithdraw,
+} from "./harness";
 
 // 钱包首页：真实余额、充值地址、提币地址管理（Passkey 确认、冷却、撤销）、「全部提回」= 余额 − 代付费，
 // 经 ERC-7677 代付一次 Face ID 转到已生效的提币地址。提币地址与余额接口没上线时由模拟后端提供（./fake-backend.ts）。
@@ -71,6 +79,10 @@ test("保存提币地址 → 全部提回交易所 → 余额刷新", async ({ b
     "/emergency",
   );
   await expect(page.getByRole("button", { name: "提回交易所", exact: true })).toBeDisabled();
+  // 真实代付服务也拒绝第二次；完成一笔担保交易并最终确认后才再得 1 次（见 escrow-flow.spec.ts）
+  if (h.realSponsor) {
+    expect(await stubWithdraw(page, wallet, exchange)).toBe("WITHDRAW_CREDIT_REQUIRED");
+  }
 
   expect(await balances({ wallet, exchange })).toEqual({ wallet: 0n, exchange: U("29.95") });
 });

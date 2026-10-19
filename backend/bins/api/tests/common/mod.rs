@@ -309,6 +309,17 @@ pub async fn reverify(app: &Router, db: &PgPool, cookies: &[String]) {
     assert_eq!(r.status, StatusCode::NO_CONTENT, "{:?}", r.body);
 }
 
+/// 注册开始响应里的选项，改成软件 Passkey 能用的：它不支持可发现凭证，服务端注册完成时也不校验这一项。
+pub fn soft_options(start: &Value) -> CreationChallengeResponse {
+    let mut ccr: CreationChallengeResponse =
+        serde_json::from_value(start["options"].clone()).unwrap();
+    if let Some(sel) = ccr.public_key.authenticator_selection.as_mut() {
+        sel.resident_key = None;
+        sel.require_resident_key = false;
+    }
+    ccr
+}
+
 /// 用软件 Passkey 完成注册，返回 finish 的响应。
 pub async fn register_passkey(app: &Router, auth: &mut SoftAuth, cookies: &[String]) -> Res {
     let r = wallet_call(
@@ -320,9 +331,8 @@ pub async fn register_passkey(app: &Router, auth: &mut SoftAuth, cookies: &[Stri
     )
     .await;
     assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
-    let ccr: CreationChallengeResponse = serde_json::from_value(r.body["options"].clone()).unwrap();
     let cred = auth
-        .do_registration(Url::parse(WALLET_ORIGIN).unwrap(), ccr)
+        .do_registration(Url::parse(WALLET_ORIGIN).unwrap(), soft_options(&r.body))
         .unwrap();
     wallet_call(
         app,

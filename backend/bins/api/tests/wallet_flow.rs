@@ -10,7 +10,7 @@ use common::{
     CHAIN_ID, WALLET_ORIGIN, assert_passkey, build, call, enable_trading, jar, login,
     register_passkey, reverify, set_username, soft_passkey, unique_email, user, wallet_call,
 };
-use forum_auth::passkey::webauthn::{CreationChallengeResponse, Url};
+use forum_auth::passkey::webauthn::Url;
 use forum_db::PgPool;
 use serde_json::json;
 
@@ -108,6 +108,9 @@ async fn first_passkey_needs_username_and_email_reverification(db: PgPool) {
         json!([{"type": "public-key", "alg": -7}])
     );
     assert_eq!(pk["authenticatorSelection"]["userVerification"], "required");
+    // 可发现凭证：紧急取回页不连服务器，靠用户选出 Passkey
+    assert_eq!(pk["authenticatorSelection"]["residentKey"], "required");
+    assert_eq!(pk["authenticatorSelection"]["requireResidentKey"], true);
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
@@ -272,7 +275,7 @@ async fn challenges_are_single_use_and_origin_bound(db: PgPool) {
         &cookies,
     )
     .await;
-    let ccr: CreationChallengeResponse = serde_json::from_value(r.body["options"].clone()).unwrap();
+    let ccr = common::soft_options(&r.body);
     let mut auth = soft_passkey();
     let evil = auth
         .do_registration(Url::parse("https://evil.wallet.test").unwrap(), ccr)
@@ -296,7 +299,7 @@ async fn challenges_are_single_use_and_origin_bound(db: PgPool) {
         &cookies,
     )
     .await;
-    let ccr: CreationChallengeResponse = serde_json::from_value(r.body["options"].clone()).unwrap();
+    let ccr = common::soft_options(&r.body);
     let cred = auth
         .do_registration(Url::parse(WALLET_ORIGIN).unwrap(), ccr)
         .unwrap();
