@@ -18,6 +18,15 @@ remappings = [
   "account-abstraction/=lib/account-abstraction/contracts/",
 ]
 
+# Networks: `forge script ... --rpc-url arbitrum_sepolia` (RPC URLs and keys come from the environment).
+[rpc_endpoints]
+arbitrum_sepolia = "${ARBITRUM_SEPOLIA_RPC_URL}"
+arbitrum = "${ARBITRUM_RPC_URL}"
+
+[etherscan]
+arbitrum_sepolia = { key = "${ARBISCAN_API_KEY}", chain = 421614 }
+arbitrum = { key = "${ARBISCAN_API_KEY}", chain = 42161 }
+
 [fuzz]
 runs = 1000
 

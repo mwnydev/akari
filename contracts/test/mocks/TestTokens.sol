@@ -31,6 +31,10 @@ contract FreezableUSDT is ERC20 {
 contract FeeOnTransferToken is ERC20 {
     constructor() ERC20("Fee token", "FOT") {}
 
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
     }
@@ -41,5 +45,28 @@ contract FeeOnTransferToken is ERC20 {
             value -= 1;
         }
         super._update(from, to, value);
+    }
+}
+
+/// @dev 18-decimal token: must be rejected by the token whitelist (all amounts are in 6-decimal units).
+contract Token18 is ERC20 {
+    constructor() ERC20("Eighteen", "E18") {}
+}
+
+/// @dev Stand-in for StreamEscrow: a second market that locks and releases seller bonds in Escrow.
+interface IBondPool {
+    function lockBond(address seller, address token, uint256 amount) external;
+    function releaseBond(address seller, address token, uint256 amount, address buyer, uint256 toBuyer) external;
+}
+
+contract MockMarket {
+    function lock(IBondPool pool, address seller, address token, uint256 amount) external {
+        pool.lockBond(seller, token, amount);
+    }
+
+    function release(IBondPool pool, address seller, address token, uint256 amount, address buyer, uint256 toBuyer)
+        external
+    {
+        pool.releaseBond(seller, token, amount, buyer, toBuyer);
     }
 }

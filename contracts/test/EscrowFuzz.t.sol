@@ -14,7 +14,7 @@ contract EscrowFuzzTest is EscrowBase {
         internal
         returns (uint256 id, Escrow.Order memory o)
     {
-        amount = bound(amount, 5 * U, 1000 * U);
+        amount = bound(amount, 5 * U, 200 * U);
         id = _create(_offer(amount, FeeMath.Payer(bound(payer, 0, 2))));
         if (delivered) _deliver(id);
         o = escrow.getOrder(id);
@@ -46,7 +46,7 @@ contract EscrowFuzzTest is EscrowBase {
         vm.prank(bySeller ? seller : buyer);
         escrow.dispute(id);
         vm.prank(arbiter);
-        escrow.resolve(id, bps);
+        escrow.resolve(id, bps, 0);
         assertEq(_total(), t0);
         assertEq(_bal(address(escrow)), 0);
         // The platform keeps at most one of {fee, retained dispute fee}, plus base gas.

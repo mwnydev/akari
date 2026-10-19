@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.37;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Escrow} from "../src/Escrow.sol";
+import {EscrowConfig} from "../src/EscrowConfig.sol";
 import {FeeMath} from "../src/libraries/FeeMath.sol";
 import {FeeOnTransferToken} from "./mocks/TestTokens.sol";
 import {EscrowBase} from "./EscrowBase.sol";
@@ -35,21 +35,16 @@ contract EscrowCreateTest is EscrowBase {
         Escrow.Offer memory o = _offer(123 * U, FeeMath.Payer.Half);
         o.buyer = buyer;
         o.instant = true;
+        o.bond = 7 * U;
+        o.lateSlashBps = 2500;
         bytes memory fields = abi.encode(
-            o.seller,
-            o.buyer,
-            o.amount,
-            uint8(o.feePayer),
-            o.maxFeeBps,
-            o.maxBaseGas,
-            o.maxMinFee,
-            o.instant,
-            o.shipWindow
+            o.seller, o.buyer, o.token, o.amount, uint8(o.feePayer), o.maxFeeBps, o.maxBaseGas, o.maxMinFee, o.bond
         );
         bytes32 structHash = keccak256(
             abi.encodePacked(
                 escrow.OFFER_TYPEHASH(),
                 fields,
+                abi.encode(o.lateSlashBps, o.instant, o.shipWindow),
                 abi.encode(o.confirmWindow, o.listingHash, o.expiry, o.maxFills, o.nonce)
             )
         );
@@ -112,21 +107,30 @@ contract EscrowCreateTest is EscrowBase {
 
     function test_createAndFund_snapshotSurvivesParamChange() public {
         uint256 id = _createDefault();
-        Escrow.Params memory p = defaultParams();
+        EscrowConfig.Params memory p = defaultParams();
         p.feeBps = 0;
         p.minFee = 0;
         vm.prank(owner);
-        escrow.setParams(p); // loosening: immediate
-        assertEq(escrow.params().feeBps, 0);
+        config.setParams(p); // loosening: immediate
+        assertEq(config.params().feeBps, 0);
         assertEq(escrow.getOrder(id).sellerFee, 1 * U);
     }
 
-    function test_createAndFund_campaign() public {
-        Escrow.Params memory p = defaultParams();
-        p.campaign = true;
-        p.campaignBps = 0;
+    function _startCampaign(uint16 rateBps, uint32 subsidy) internal {
         vm.prank(owner);
-        escrow.setParams(p);
+        config.setCampaign(
+            EscrowConfig.Campaign({
+                start: uint64(block.timestamp),
+                end: uint64(block.timestamp + 30 days),
+                rateBps: rateBps,
+                scope: 3,
+                gasSubsidyCap: subsidy
+            })
+        );
+    }
+
+    function test_createAndFund_campaign() public {
+        _startCampaign(0, 0);
         uint256 id = _createDefault();
         Escrow.Order memory o = escrow.getOrder(id);
         assertEq(o.sellerFee, 0);
@@ -144,12 +148,14 @@ contract EscrowCreateTest is EscrowBase {
         Escrow.Offer memory o;
 
         o = _offer(100 * U, FeeMath.Payer.Seller);
-        o.seller = address(0);
-        _expectCreateRevert(o, Escrow.BadOffer.selector);
+        o.seller = address(0); // no key can sign for the zero address
+        _expectCreateRevert(o, Escrow.BadSignature.selector);
 
-        o = _offer(100 * U, FeeMath.Payer.Seller);
-        o.seller = buyer;
-        _expectCreateRevert(o, Escrow.BadOffer.selector);
+        o = _offer(100 * U, FeeMath.Payer.Seller); // seller buying their own offer
+        bytes memory own = _sign(o, sellerKey);
+        vm.prank(seller);
+        vm.expectRevert(Escrow.BadOffer.selector);
+        escrow.createAndFund(o, own);
 
         o = _offer(100 * U, FeeMath.Payer.Seller);
         o.expiry = uint64(block.timestamp - 1);
@@ -158,7 +164,7 @@ contract EscrowCreateTest is EscrowBase {
         o = _offer(4 * U, FeeMath.Payer.Seller);
         _expectCreateRevert(o, Escrow.BadOffer.selector);
 
-        o = _offer(1001 * U, FeeMath.Payer.Seller);
+        o = _offer(201 * U, FeeMath.Payer.Seller);
         _expectCreateRevert(o, Escrow.BadOffer.selector);
 
         o = _offer(100 * U, FeeMath.Payer.Seller);
@@ -200,12 +206,12 @@ contract EscrowCreateTest is EscrowBase {
         old.expiry = uint64(block.timestamp + 30 days); // public offers live up to 30 days
         bytes memory oldSig = _sign(old, sellerKey);
 
-        Escrow.Params memory p = defaultParams();
+        EscrowConfig.Params memory p = defaultParams();
         p.minFee = uint64(2 * U);
         vm.prank(owner);
-        escrow.setParams(p);
+        config.setParams(p);
         vm.warp(block.timestamp + 72 hours);
-        escrow.applyParams();
+        config.applyParams();
 
         vm.prank(buyer);
         vm.expectRevert(Escrow.FeeLimit.selector);
@@ -220,10 +226,7 @@ contract EscrowCreateTest is EscrowBase {
     }
 
     function test_maxMinFee_ignoredDuringCampaign() public {
-        Escrow.Params memory p = defaultParams();
-        p.campaign = true;
-        vm.prank(owner);
-        escrow.setParams(p);
+        _startCampaign(100, 0);
         Escrow.Offer memory o = _offer(100 * U, FeeMath.Payer.Seller);
         o.maxMinFee = 0;
         _create(o);
@@ -256,26 +259,27 @@ contract EscrowCreateTest is EscrowBase {
 
     function test_revert_create_paused() public {
         vm.prank(owner);
-        escrow.setPaused(true);
-        _expectCreateRevert(_offer(100 * U, FeeMath.Payer.Seller), Escrow.IsPaused.selector);
+        config.setPaused(true);
+        _expectCreateRevert(_offer(100 * U, FeeMath.Payer.Seller), EscrowConfig.IsPaused.selector);
     }
 
     function test_revert_create_feesExceedAmount() public {
-        Escrow.Params memory p = defaultParams();
+        EscrowConfig.Params memory p = defaultParams();
         p.minOrder = uint64(1 * U);
         vm.prank(owner);
-        escrow.setParams(p);
+        config.setParams(p);
         // 1.05 USDT order: seller-borne min fee 1 + gas 0.1 >= amount
         _expectCreateRevert(_offer(1_050_000, FeeMath.Payer.Seller), Escrow.FeesExceedAmount.selector);
     }
 
     function test_revert_create_amountMismatch() public {
         FeeOnTransferToken fot = new FeeOnTransferToken();
-        Escrow e = new Escrow(IERC20(address(fot)), owner, arbiter, feeRecipient, defaultParams());
+        (, Escrow e) = _deploy(address(fot), defaultParams());
         fot.mint(buyer, 1000 * U);
         vm.prank(buyer);
         fot.approve(address(e), type(uint256).max);
         Escrow.Offer memory o = _offer(100 * U, FeeMath.Payer.Seller);
+        o.token = address(fot);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(sellerKey, e.hashOffer(o));
         vm.prank(buyer);
         vm.expectRevert(Escrow.AmountMismatch.selector);
@@ -566,7 +570,7 @@ contract EscrowFlowTest is EscrowBase {
         vm.prank(buyer);
         escrow.dispute(id);
         vm.prank(arbiter);
-        escrow.resolve(id, 10_000);
+        escrow.resolve(id, 10_000, 0);
         assertEq(_bal(buyer), b0 + 100 * U - 100_000);
         assertEq(_bal(feeRecipient), 100_000);
     }
@@ -577,7 +581,7 @@ contract EscrowFlowTest is EscrowBase {
         vm.prank(buyer);
         escrow.dispute(id);
         vm.prank(arbiter);
-        escrow.resolve(id, 0);
+        escrow.resolve(id, 0, 0);
         assertEq(_bal(seller) - s0, 99_900_000); // fee waived: dispute fee retained instead
         assertEq(_bal(feeRecipient), 1_100_000);
     }
@@ -589,7 +593,7 @@ contract EscrowFlowTest is EscrowBase {
         vm.prank(seller);
         escrow.dispute(id);
         vm.prank(arbiter);
-        escrow.resolve(id, 5000);
+        escrow.resolve(id, 5000, 0);
         assertEq(_bal(buyer) - b0, 50 * U);
         assertEq(int256(_bal(seller)) - int256(s0), 50_400_000 - 1_000_000);
         assertEq(_bal(feeRecipient), 600_000);
@@ -598,15 +602,15 @@ contract EscrowFlowTest is EscrowBase {
     function test_revert_resolve() public {
         vm.prank(arbiter);
         vm.expectRevert(Escrow.BadState.selector);
-        escrow.resolve(id, 0);
+        escrow.resolve(id, 0, 0);
         vm.prank(buyer);
         escrow.dispute(id);
         vm.prank(owner);
         vm.expectRevert(Escrow.NotParty.selector);
-        escrow.resolve(id, 0);
+        escrow.resolve(id, 0, 0);
         vm.prank(arbiter);
         vm.expectRevert(Escrow.BadParams.selector);
-        escrow.resolve(id, 10_001);
+        escrow.resolve(id, 10_001, 0);
     }
 
     function test_resolveTimeout_undelivered_fullRefund() public {
@@ -644,28 +648,28 @@ contract EscrowFlowTest is EscrowBase {
         usdt.setFrozen(seller, true);
         vm.prank(buyer);
         escrow.release(id);
-        assertEq(escrow.credit(seller), 98_900_000);
+        assertEq(escrow.credit(seller, address(usdt)), 98_900_000);
         assertEq(_bal(feeRecipient), 1_100_000); // other recipients unaffected
         address fresh = makeAddr("fresh");
         vm.prank(seller);
-        escrow.withdraw(fresh);
+        escrow.withdraw(address(usdt), fresh);
         assertEq(_bal(fresh), 98_900_000);
-        assertEq(escrow.credit(seller), 0);
+        assertEq(escrow.credit(seller, address(usdt)), 0);
         vm.prank(seller);
         vm.expectRevert(Escrow.NothingToWithdraw.selector);
-        escrow.withdraw(fresh);
+        escrow.withdraw(address(usdt), fresh);
     }
 
     function test_pause_keepsExistingOrdersWorking() public {
         vm.prank(owner);
-        escrow.setPaused(true);
-        assertTrue(escrow.paused());
+        config.setPaused(true);
+        assertTrue(config.paused());
         _deliver(id);
         vm.prank(buyer);
         escrow.release(id);
         vm.prank(owner);
-        escrow.setPaused(false);
-        assertFalse(escrow.paused());
+        config.setPaused(false);
+        assertFalse(config.paused());
     }
 
     function test_revert_unknownOrder() public {
@@ -677,25 +681,28 @@ contract EscrowFlowTest is EscrowBase {
 
 contract EscrowParamsTest is EscrowBase {
     function test_constructor_rejects() public {
-        Escrow.Params memory p = defaultParams();
         vm.expectRevert(Escrow.BadParams.selector);
-        new Escrow(IERC20(address(0)), owner, arbiter, feeRecipient, p);
+        new Escrow(EscrowConfig(address(0)), arbiter, feeRecipient);
         vm.expectRevert(Escrow.BadParams.selector);
-        new Escrow(IERC20(address(usdt)), owner, address(0), feeRecipient, p);
+        new Escrow(config, address(0), feeRecipient);
         vm.expectRevert(Escrow.BadParams.selector);
-        new Escrow(IERC20(address(usdt)), owner, arbiter, address(0), p);
+        new Escrow(config, arbiter, address(0));
+        address[] memory none;
+        EscrowConfig.Params memory p = defaultParams();
         p.feeBps = 1001;
-        vm.expectRevert(Escrow.BadParams.selector);
-        new Escrow(IERC20(address(usdt)), owner, arbiter, feeRecipient, p);
+        vm.expectRevert(EscrowConfig.BadParams.selector);
+        new EscrowConfig(owner, p, address(usdt), platform, none);
+        vm.expectRevert(EscrowConfig.BadParams.selector);
+        new EscrowConfig(owner, defaultParams(), address(0), platform, none);
     }
 
     function test_hardCaps() public {
-        Escrow.Params[14] memory bad;
-        for (uint256 i; i < 14; i++) {
+        EscrowConfig.Params[15] memory bad;
+        for (uint256 i; i < 15; i++) {
             bad[i] = defaultParams();
         }
         bad[0].feeBps = 1001;
-        bad[1].campaignBps = 1001;
+        bad[1].totalLockedCap = uint64(200 * U - 1); // below the single-order cap
         bad[2].minFee = uint64(5 * U + 1);
         bad[3].minOrder = uint64(1 * U - 1);
         bad[4].minOrder = uint64(100 * U + 1);
@@ -708,110 +715,96 @@ contract EscrowParamsTest is EscrowBase {
         bad[11].resolveTimeout = 60 days + 1;
         bad[12].proposalWindow = 1 days - 1;
         bad[13].proposalWindow = 7 days + 1;
-        for (uint256 i; i < 14; i++) {
+        bad[14].totalLockedCap = uint64(1_000_000 * U + 1);
+        for (uint256 i; i < 15; i++) {
             vm.prank(owner);
-            vm.expectRevert(Escrow.BadParams.selector);
-            escrow.setParams(bad[i]);
+            vm.expectRevert(EscrowConfig.BadParams.selector);
+            config.setParams(bad[i]);
         }
     }
 
     function test_tightening_isQueued72h() public {
-        Escrow.Params memory p = defaultParams();
+        EscrowConfig.Params memory p = defaultParams();
         p.feeBps = 200;
         vm.prank(owner);
-        escrow.setParams(p);
-        assertEq(escrow.params().feeBps, 100);
-        assertEq(escrow.pendingParams().feeBps, 200);
-        assertEq(escrow.pendingEta(), block.timestamp + 72 hours);
+        config.setParams(p);
+        assertEq(config.params().feeBps, 100);
+        assertEq(config.pendingParams().feeBps, 200);
+        assertEq(config.pendingEta(), block.timestamp + 72 hours);
         vm.warp(block.timestamp + 72 hours - 1);
-        vm.expectRevert(Escrow.TooEarly.selector);
-        escrow.applyParams();
+        vm.expectRevert(EscrowConfig.TooEarly.selector);
+        config.applyParams();
         vm.warp(block.timestamp + 1);
         vm.prank(stranger);
-        escrow.applyParams();
-        assertEq(escrow.params().feeBps, 200);
-        assertEq(escrow.pendingEta(), 0);
-        vm.expectRevert(Escrow.BadState.selector);
-        escrow.applyParams();
+        config.applyParams();
+        assertEq(config.params().feeBps, 200);
+        assertEq(config.pendingEta(), 0);
+        vm.expectRevert(EscrowConfig.BadState.selector);
+        config.applyParams();
     }
 
     function test_cancelParams() public {
-        Escrow.Params memory p = defaultParams();
+        EscrowConfig.Params memory p = defaultParams();
         p.baseGas = 200_000;
         vm.prank(owner);
-        escrow.setParams(p);
+        config.setParams(p);
         vm.prank(owner);
-        escrow.cancelParams();
-        assertEq(escrow.pendingEta(), 0);
+        config.cancelParams();
+        assertEq(config.pendingEta(), 0);
         vm.prank(owner);
-        vm.expectRevert(Escrow.BadState.selector);
-        escrow.cancelParams();
+        vm.expectRevert(EscrowConfig.BadState.selector);
+        config.cancelParams();
     }
 
     function test_eachTighteningField_isQueued() public {
-        Escrow.Params[8] memory t;
-        for (uint256 i; i < 8; i++) {
+        EscrowConfig.Params[7] memory t;
+        for (uint256 i; i < 7; i++) {
             t[i] = defaultParams();
         }
         t[0].minFee = uint64(2 * U);
         t[1].minOrder = uint64(6 * U);
-        t[2].orderCap = uint64(999 * U);
-        t[3].baseGas = 100_001;
-        t[4].disputeMulBps = 10_001;
-        t[5].resolveTimeout = 29 days;
-        t[6].proposalWindow = 71 hours;
-        t[7].feeBps = 101;
-        for (uint256 i; i < 8; i++) {
+        t[2].baseGas = 100_001;
+        t[3].disputeMulBps = 10_001;
+        t[4].resolveTimeout = 29 days;
+        t[5].proposalWindow = 71 hours;
+        t[6].feeBps = 101;
+        for (uint256 i; i < 7; i++) {
             vm.prank(owner);
-            escrow.setParams(t[i]);
-            assertGt(escrow.pendingEta(), 0);
-            assertEq(escrow.params().minFee, 1 * U);
+            config.setParams(t[i]);
+            assertGt(config.pendingEta(), 0);
+            assertEq(config.params().minFee, 1 * U);
             vm.prank(owner);
-            escrow.cancelParams();
+            config.cancelParams();
         }
     }
 
-    function test_campaign_startImmediate_endQueued_raiseQueued() public {
-        Escrow.Params memory p = defaultParams();
-        p.campaign = true;
-        p.campaignBps = 50;
+    /// Lead decision: both caps are risk brakes; raising and lowering apply at once (only new orders are affected).
+    function test_caps_changeImmediately() public {
+        EscrowConfig.Params memory p = defaultParams();
+        p.orderCap = uint64(100 * U);
+        p.totalLockedCap = uint64(1000 * U);
         vm.prank(owner);
-        escrow.setParams(p);
-        assertTrue(escrow.params().campaign);
-
-        p.campaignBps = 20; // lower campaign rate: immediate
+        config.setParams(p);
+        assertEq(config.params().orderCap, 100 * U);
+        assertEq(config.params().totalLockedCap, 1000 * U);
+        assertEq(config.pendingEta(), 0);
+        p.orderCap = uint64(500 * U);
+        p.totalLockedCap = uint64(50_000 * U);
         vm.prank(owner);
-        escrow.setParams(p);
-        assertEq(escrow.params().campaignBps, 20);
-
-        p.campaignBps = 30; // raise campaign rate: queued
-        vm.prank(owner);
-        escrow.setParams(p);
-        assertEq(escrow.params().campaignBps, 20);
-
-        p.campaign = false; // ending campaign re-enables min fee: queued
-        vm.prank(owner);
-        escrow.setParams(p);
-        assertTrue(escrow.params().campaign);
-
-        Escrow.Params memory q = defaultParams();
-        q.campaign = true;
-        q.campaignBps = 150; // campaign above base rate is not a loosening
-        Escrow e = new Escrow(IERC20(address(usdt)), owner, arbiter, feeRecipient, defaultParams());
-        vm.prank(owner);
-        e.setParams(q);
-        assertFalse(e.params().campaign);
+        config.setParams(p);
+        assertEq(config.params().totalLockedCap, 50_000 * U);
+        assertEq(config.pendingEta(), 0);
     }
 
     function test_onlyOwner() public {
-        Escrow.Params memory p = defaultParams();
+        EscrowConfig.Params memory p = defaultParams();
         vm.startPrank(stranger);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
-        escrow.setParams(p);
+        config.setParams(p);
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
-        escrow.cancelParams();
+        config.cancelParams();
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
-        escrow.setPaused(true);
+        config.setPaused(true);
         vm.stopPrank();
     }
 }

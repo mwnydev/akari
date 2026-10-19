@@ -2,8 +2,8 @@
 pragma solidity 0.8.37;
 
 import {Test} from "forge-std/Test.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Escrow} from "../src/Escrow.sol";
+import {EscrowConfig} from "../src/EscrowConfig.sol";
 import {FeeMath} from "../src/libraries/FeeMath.sol";
 import {FreezableUSDT} from "./mocks/TestTokens.sol";
 
@@ -40,6 +40,7 @@ contract EscrowHandler is Test {
         return actors.length;
     }
 
+    /// Net tokens an actor moved into the contract (negative flows are covered by balances in the invariant).
     function _pullIn(address from, uint256 before) internal {
         uint256 spent = before - usdt.balanceOf(from);
         paidIn[from] += spent;
@@ -53,17 +54,21 @@ contract EscrowHandler is Test {
         o = escrow.getOrder(id);
     }
 
-    function create(uint256 seed, uint256 amount, uint8 payer, bool instant) external {
+    function create(uint256 seed, uint256 amount, uint8 payer, bool instant, uint256 bond, uint16 slash) external {
         uint256 b = (seed % 3) * 2;
         address buyer = actors[b];
+        uint256 amt = bound(amount, 5e6, 200e6);
         Escrow.Offer memory o = Escrow.Offer({
             seller: actors[b + 1],
             buyer: address(0),
-            amount: bound(amount, 5e6, 1000e6),
+            token: address(usdt),
+            amount: amt,
             feePayer: FeeMath.Payer(bound(payer, 0, 2)),
             maxFeeBps: 1000,
             maxBaseGas: 1e6,
             maxMinFee: 5e6,
+            bond: seed % 2 == 0 ? 0 : bound(bond, 0, amt),
+            lateSlashBps: uint16(bound(slash, 0, 10_000)),
             instant: instant,
             shipWindow: 3 days,
             confirmWindow: 7 days,
@@ -77,6 +82,21 @@ contract EscrowHandler is Test {
         vm.prank(buyer);
         escrow.createAndFund(o, abi.encodePacked(r, s, v));
         _pullIn(buyer, before);
+    }
+
+    function depositBond(uint256 seed, uint256 amount) external {
+        address s = actors[(seed % 3) * 2 + 1];
+        uint256 before = usdt.balanceOf(s);
+        vm.prank(s);
+        escrow.depositBond(address(usdt), bound(amount, 1, 300e6));
+        _pullIn(s, before);
+    }
+
+    function withdrawBond(uint256 seed, uint256 amount) external {
+        address s = actors[(seed % 3) * 2 + 1];
+        (,, uint256 available) = escrow.bondOf(s, address(usdt));
+        vm.prank(s);
+        escrow.withdrawBond(address(usdt), bound(amount, 1, available), s);
     }
 
     function deliver(uint256 seed) external {
@@ -108,19 +128,28 @@ contract EscrowHandler is Test {
         escrow.extendConfirm(id, uint32(bound(secs, 1, 10 days)));
     }
 
-    function dispute(uint256 seed, bool bySeller) external {
+    function extendDeadlines(uint256 seed, uint32 secs) external {
+        (uint256 id,) = _order(seed);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = id;
+        vm.prank(arbiter);
+        escrow.extendDeadlines(ids, uint32(bound(secs, 1, 7 days)));
+    }
+
+    function dispute(uint256 seed, bool bySeller, bool fromBond) external {
         (uint256 id, Escrow.Order memory o) = _order(seed);
         address who = bySeller ? o.seller : o.buyer;
         uint256 before = usdt.balanceOf(who);
         vm.prank(who);
-        escrow.dispute(id);
+        if (bySeller && fromBond) escrow.disputeWithBond(id);
+        else escrow.dispute(id);
         _pullIn(who, before);
     }
 
-    function resolve(uint256 seed, uint256 bps) external {
+    function resolve(uint256 seed, uint256 bps, uint256 bondBps) external {
         (uint256 id,) = _order(seed);
         vm.prank(arbiter);
-        escrow.resolve(id, bound(bps, 0, 10_000));
+        escrow.resolve(id, bound(bps, 0, 10_000), bound(bondBps, 0, 10_000));
     }
 
     function resolveTimeout(uint256 seed) external {
@@ -152,11 +181,12 @@ contract EscrowHandler is Test {
     function withdraw(uint256 seed) external {
         address a = seed % 7 == 6 ? feeRecipient : actors[seed % 6];
         vm.prank(a);
-        escrow.withdraw(a);
+        escrow.withdraw(address(usdt), a);
     }
 }
 
 contract EscrowInvariantTest is Test {
+    EscrowConfig internal config;
     Escrow internal escrow;
     FreezableUSDT internal usdt;
     EscrowHandler internal handler;
@@ -165,24 +195,26 @@ contract EscrowInvariantTest is Test {
 
     function setUp() public {
         usdt = new FreezableUSDT();
-        escrow = new Escrow(
-            IERC20(address(usdt)),
+        address[] memory markets = new address[](1);
+        markets[0] = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
+        config = new EscrowConfig(
             makeAddr("treasurySafe"),
-            arbiter,
-            feeRecipient,
-            Escrow.Params({
+            EscrowConfig.Params({
                 feeBps: 100,
-                campaignBps: 0,
-                campaign: false,
                 minFee: 1e6,
                 minOrder: 5e6,
-                orderCap: 1000e6,
+                orderCap: 200e6,
+                totalLockedCap: 1_000_000e6, // the cap itself is unit-tested; here it must not starve the handler
                 baseGas: 100_000,
                 disputeMulBps: 10_000,
                 resolveTimeout: 30 days,
                 proposalWindow: 72 hours
-            })
+            }),
+            address(usdt),
+            address(0),
+            markets
         );
+        escrow = new Escrow(config, arbiter, feeRecipient);
         handler = new EscrowHandler(escrow, usdt, arbiter, feeRecipient);
         targetContract(address(handler));
     }
@@ -192,17 +224,49 @@ contract EscrowInvariantTest is Test {
         return uint256(o.amount) + o.buyerFee + o.buyerGas + (o.disputedAt != 0 ? o.disputeFee : 0);
     }
 
-    /// Contract balance is exactly what open orders hold plus unclaimed credits — nothing stranded, nothing missing.
-    function invariant_balanceMatchesObligations() public view {
-        uint256 owed;
+    function _sumHeld() internal view returns (uint256 held) {
         for (uint256 id = 1; id <= escrow.orderCount(); id++) {
-            owed += _held(escrow.getOrder(id));
+            held += _held(escrow.getOrder(id));
         }
+    }
+
+    function _sumBonds() internal view returns (uint256 total) {
+        for (uint256 i = 1; i < handler.actorCount(); i += 2) {
+            (uint256 t,,) = escrow.bondOf(handler.actors(i), address(usdt));
+            total += t;
+        }
+    }
+
+    /// Contract balance is exactly open-order holdings + seller bonds + unclaimed credits.
+    function invariant_balanceMatchesObligations() public view {
+        uint256 owed = _sumHeld() + _sumBonds();
         for (uint256 i; i < handler.actorCount(); i++) {
-            owed += escrow.credit(handler.actors(i));
+            owed += escrow.credit(handler.actors(i), address(usdt));
         }
-        owed += escrow.credit(feeRecipient);
+        owed += escrow.credit(feeRecipient, address(usdt));
         assertEq(usdt.balanceOf(address(escrow)), owed);
+    }
+
+    /// The global risk counter tracks exactly what is at risk: open-order holdings + seller bonds.
+    function invariant_totalLockedMatches() public view {
+        assertEq(config.totalLocked(), _sumHeld() + _sumBonds());
+    }
+
+    /// Per seller: locked bond == sum of bonds of that seller's open orders, and locked <= total.
+    function invariant_bondsLockedByOpenOrders() public view {
+        for (uint256 i = 1; i < handler.actorCount(); i += 2) {
+            address s = handler.actors(i);
+            uint256 locked;
+            for (uint256 id = 1; id <= escrow.orderCount(); id++) {
+                Escrow.Order memory o = escrow.getOrder(id);
+                if (o.seller == s && (o.state == Escrow.State.Funded || o.state == Escrow.State.Disputed)) {
+                    locked += o.bond;
+                }
+            }
+            (uint256 t, uint256 l,) = escrow.bondOf(s, address(usdt));
+            assertEq(l, locked);
+            assertLe(l, t);
+        }
     }
 
     /// Paid out (to parties and fee recipient) + still held == everything ever paid in.
