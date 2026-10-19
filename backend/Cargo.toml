@@ -14,6 +14,9 @@ forum-core = { path = "crates/core" }
 forum-db = { path = "crates/db" }
 forum-chain = { path = "crates/chain" }
 forum-runtime = { path = "crates/runtime" }
+forum-auth = { path = "crates/auth" }
+forum-kv = { path = "crates/kv" }
+forum-mail = { path = "crates/mail" }
 
 tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "signal", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -25,6 +28,25 @@ thiserror = "=2.0.21"
 anyhow = "=1.0.104"
 tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "json"] }
+sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "macros", "migrate", "json", "time"] }
+redis = { version = "=1.7.1", default-features = false, features = ["tokio-comp", "script"] }
+deadpool-redis = { version = "=0.23.1", features = ["rt_tokio_1"] }
+tower-sessions = { version = "=0.15.0", default-features = false, features = ["axum-core", "signed"] }
+tower-sessions-core = { version = "=0.15.0" }
+axum-extra = { version = "=0.12.6", features = ["cookie-signed"] }
+utoipa = { version = "=6.0.0", features = ["axum_extras", "time"] }
+utoipa-axum = "=0.3.0"
+lettre = { version = "=0.11.23", default-features = false, features = ["builder", "hostname", "smtp-transport", "pool", "tokio1", "tokio1-rustls", "aws-lc-rs", "webpki-roots"] }
+resend-rs = { version = "=0.34.0", default-features = false, features = ["rustls-tls"] }
+hmac = "=0.13.0"
+sha2 = "=0.11.1"
+rand = "=0.10.3"
+hex = "0.4"
+time = { version = "=0.3.55", features = ["serde"] }
+tower = { version = "0.5", features = ["util"] }
+async-trait = "0.1"
+reqwest = { version = "=0.13.5", default-features = false, features = ["json", "rustls"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

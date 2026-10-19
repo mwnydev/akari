@@ -1,4 +1,4 @@
-//! 四个程序共用的启动组件：结构化日志、退出信号。
+//! 四个程序共用的启动组件：结构化日志、TLS 加密库、退出信号。
 
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
@@ -12,6 +12,12 @@ pub fn init_tracing() {
     } else {
         builder.init();
     }
+}
+
+/// 固定使用 aws-lc-rs 作为 rustls 的加密实现。依赖树里出现两种实现时 rustls 无法自动选择会在首次 TLS 连接时报错，
+/// 所以程序启动时显式安装。重复调用无害。
+pub fn install_crypto_provider() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 }
 
 /// 返回一个在收到 Ctrl-C 或 SIGTERM 时取消的令牌；所有后台任务监听它优雅退出。

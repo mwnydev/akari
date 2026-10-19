@@ -1,0 +1,25 @@
+[package]
+name = "forum-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+forum-kv.workspace = true
+hex.workspace = true
+hmac.workspace = true
+rand.workspace = true
+redis.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

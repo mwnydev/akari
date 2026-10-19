@@ -1,63 +1,51 @@
-//! forum-api：论坛 HTTP API 与 WebSocket。
+//! forum-api 程序入口：读配置、建连接、启动 HTTP 服务。
 
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::sync::Arc;
 
-use axum::http::StatusCode;
-use axum::{Json, Router, routing::get};
-use serde::Serialize;
-use tower_http::{timeout::TimeoutLayer, trace::TraceLayer};
-
-#[derive(Serialize)]
-struct Health {
-    status: &'static str,
-}
-
-async fn healthz() -> Json<Health> {
-    Json(Health { status: "ok" })
-}
-
-fn app() -> Router {
-    Router::new()
-        .route("/api/v1/healthz", get(healthz))
-        .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(10),
-        ))
-}
+use axum_extra::extract::cookie::Key;
+use forum_api::config::Config;
+use forum_api::{AppState, app};
+use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha, Turnstile};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     forum_runtime::init_tracing();
+    forum_runtime::install_crypto_provider();
     let shutdown = forum_runtime::shutdown_token();
-    let addr: SocketAddr = std::env::var("API_LISTEN")
-        .unwrap_or_else(|_| "127.0.0.1:8080".to_owned())
-        .parse()?;
+    let cfg = Config::from_env()?;
+
+    let db = forum_db::connect(&cfg.database_url, 20).await?;
+    let kv = forum_kv::pool(&cfg.valkey_url)?;
+    let captcha = match &cfg.turnstile_secret {
+        Some(secret) => {
+            AnyCaptcha::Turnstile(Turnstile::new(reqwest::Client::new(), secret.clone()))
+        }
+        None => {
+            tracing::warn!("TURNSTILE_SECRET not set: captcha disabled (development only)");
+            AnyCaptcha::Noop(NoopCaptcha)
+        }
+    };
+    let state = AppState {
+        db,
+        kv: kv.clone(),
+        codes: CodeStore::new(kv, &cfg.auth_secret)?,
+        captcha,
+        // 设备 Cookie 与会话 Cookie 用同一把 64 字节密钥派生的不同 Key 类型。
+        device_key: Key::try_from(cfg.cookie_secret.as_slice())?,
+        allowed_origins: Arc::from(cfg.allowed_origins.clone()),
+        cookie_secure: cfg.cookie_secure,
+    };
+
+    let addr: SocketAddr = cfg.listen.parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "forum-api listening");
-    axum::serve(listener, app())
-        .with_graceful_shutdown(async move { shutdown.cancelled().await })
-        .await?;
+    axum::serve(
+        listener,
+        app(state, &cfg.cookie_secret).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move { shutdown.cancelled().await })
+    .await?;
     tracing::info!("forum-api stopped");
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use axum::body::{Body, to_bytes};
-    use axum::http::{Request, StatusCode};
-    use tower::ServiceExt;
-
-    #[tokio::test]
-    async fn healthz_ok() {
-        let res = super::app()
-            .oneshot(Request::get("/api/v1/healthz").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(res.status(), StatusCode::OK);
-        let body = to_bytes(res.into_body(), 1024).await.unwrap();
-        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v["status"], "ok");
-    }
 }

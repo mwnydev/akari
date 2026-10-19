@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_devices (user_id, device_hash) VALUES ($1, $2)\n           ON CONFLICT (user_id, device_hash) DO UPDATE SET last_seen_at = now()\n           RETURNING (xmax = 0) AS \"new!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "new!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "14d6fbabdc64419c5b513759176988fdcbd043606e72bbc94c5431b067bd52a3"
+}
