@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT block_number, block_hash, safe_block, finalized_block FROM indexer_cursors WHERE chain_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "indexer_cursors",
+            "name": "block_number"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "block_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "indexer_cursors",
+            "name": "block_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "safe_block",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "indexer_cursors",
+            "name": "safe_block"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "finalized_block",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "indexer_cursors",
+            "name": "finalized_block"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7f6629c005c7f5793622aafcc84473181882c71333a9dd44b29912d13c3768b2"
+}

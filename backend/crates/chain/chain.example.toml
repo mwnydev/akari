@@ -1,0 +1,27 @@
+# 链配置示例（单链 Arbitrum One）。RPC 地址带密钥，留空并用环境变量提供：
+#   CHAIN_RPC_PRIMARY_HTTP / CHAIN_RPC_PRIMARY_WS / CHAIN_RPC_BACKUP_HTTP / CHAIN_RPC_BACKUP_WS
+# indexer 用 CHAIN_CONFIG=<本文件路径> 指定。
+chain_id = 42161
+name = "Arbitrum One"
+
+[contracts]
+# 部署后填写（contracts/script/Deploy.s.sol 输出）；这里是占位地址。
+escrow = "0x0000000000000000000000000000000000000001"
+config = "0x0000000000000000000000000000000000000002"
+start_block = 0
+
+[token]
+symbol = "USDT0"
+address = "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+decimals = 6
+
+[confirmation]
+use_block_tags = true
+fallback_safe_depth = 240
+fallback_finalized_depth = 4800
+
+[indexer]
+reconcile_interval_ms = 5000
+max_block_range = 2000
+promote_every = 6
+failback_secs = 300

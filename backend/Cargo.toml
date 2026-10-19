@@ -55,6 +55,8 @@ webauthn-authenticator-rs = { version = "=0.5.5", default-features = false, feat
 openssl = { version = "0.10", features = ["vendored"] }
 # EIP-712 报价哈希（keccak256），与合约 `Escrow.hashOffer` 逐字节一致。
 sha3 = "=0.12.0"
+alloy = { version = "=2.5.0", default-features = false, features = ["std", "sol-types", "json", "json-abi", "dyn-abi", "contract", "providers", "provider-http", "provider-ws", "pubsub", "rpc-types", "reqwest", "reqwest-rustls-tls", "serde"] }
+toml = "=1.1.5"
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 
 [workspace.lints.rust]

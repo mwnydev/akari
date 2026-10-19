@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE escrow_orders SET state = 0, level = 'latest', updated_at = now()\n         WHERE chain_id = $1 AND contract = $2 AND chain_order_id = $3 AND state <> 0\n         RETURNING id, buyer_id, seller_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "buyer_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "buyer_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "seller_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "seller_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "44ff8f748608defce891dc561e6c8c64a4a40f154ee6b45c2277765335aea542"
+}

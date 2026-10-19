@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH pruned AS (\n           DELETE FROM indexer_checkpoints\n           WHERE chain_id = $1 AND block_number < (\n             SELECT max(block_number) FROM indexer_checkpoints WHERE chain_id = $1 AND block_number <= $3)\n         )\n         UPDATE indexer_cursors SET safe_block = $2, finalized_block = $3, updated_at = now() WHERE chain_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e6bb132ab5433a0a6d4f174ef1239aab9284d2ce49b3f1e5f4cbf8a3ce9f1cdf"
+}

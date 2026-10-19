@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT block_number, log_index, level::text AS \"level!\", topics, data, payload->'snapshot' AS snapshot\n           FROM escrow_events\n           WHERE chain_id = $1 AND contract = $2 AND order_id = $3\n           ORDER BY block_number, log_index",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_events",
+            "name": "block_number"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "log_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "escrow_events",
+            "name": "log_index"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "level!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "topics",
+        "type_info": "ByteaArray",
+        "origin": {
+          "Table": {
+            "table": "escrow_events",
+            "name": "topics"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "data",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_events",
+            "name": "data"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "snapshot",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "d4181de93c565d7d0010347cc7dfc39bcea8cba2cba1bf64646b8137dd913eb6"
+}

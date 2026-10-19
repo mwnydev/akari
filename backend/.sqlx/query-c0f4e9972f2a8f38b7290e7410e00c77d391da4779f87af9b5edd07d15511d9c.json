@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH cp AS (\n           INSERT INTO indexer_checkpoints (chain_id, block_number, block_hash) VALUES ($1, $2, $3)\n           ON CONFLICT (chain_id, block_number) DO UPDATE SET block_hash = EXCLUDED.block_hash\n         )\n         INSERT INTO indexer_cursors (chain_id, block_number, block_hash) VALUES ($1, $2, $3)\n         ON CONFLICT (chain_id) DO UPDATE SET\n           block_number = EXCLUDED.block_number, block_hash = EXCLUDED.block_hash, updated_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c0f4e9972f2a8f38b7290e7410e00c77d391da4779f87af9b5edd07d15511d9c"
+}

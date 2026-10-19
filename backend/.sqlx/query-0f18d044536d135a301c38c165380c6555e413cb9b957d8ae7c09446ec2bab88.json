@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH up AS (\n             UPDATE escrow_events SET level = $3::text::chain_level\n             WHERE chain_id = $1 AND block_number <= $2 AND level < $3::text::chain_level\n             RETURNING contract, order_id\n           )\n           SELECT DISTINCT contract AS \"contract!\", order_id AS \"order_id!\" FROM up WHERE order_id IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "contract!",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_events",
+            "name": "contract"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "order_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_events",
+            "name": "order_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "0f18d044536d135a301c38c165380c6555e413cb9b957d8ae7c09446ec2bab88"
+}

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT block_number, block_hash FROM indexer_checkpoints WHERE chain_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "indexer_checkpoints",
+            "name": "block_number"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "block_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "indexer_checkpoints",
+            "name": "block_hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "48bc17b9560456a23154016d6d74483e87c89118060a8265cd0dea2a86c2a1cc"
+}
