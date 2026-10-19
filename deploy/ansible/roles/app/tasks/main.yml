@@ -78,6 +78,15 @@
   loop: "{{ app_services }}"
   notify: Reload systemd
 
+# web.env 是手写的密钥文件：只放 COOKIE_SIGNING_KEY（COOKIE_SECRET 的前 32 字节）与 API_ORIGIN。
+# 整个 COOKIE_SECRET（含加密那一半）不能进 Next.js，误放时这里拒绝继续（文件还不存在时跳过）。
+- name: Next.js must not hold the full COOKIE_SECRET
+  ansible.builtin.command: grep -q '^COOKIE_SECRET=' /etc/akari/web.env
+  register: app_web_env_full_secret
+  changed_when: false
+  check_mode: false
+  failed_when: app_web_env_full_secret.rc == 0
+
 - name: Next.js unit
   ansible.builtin.template:
     src: forum-web.service.j2

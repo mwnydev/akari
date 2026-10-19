@@ -20,6 +20,7 @@ use forum_core::ErrorCode;
 use forum_db::outbox;
 use forum_db::staff::{self, AdminPasskey};
 use forum_kv::SlidingWindow;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::OffsetDateTime;
@@ -36,9 +37,9 @@ use crate::state::AppState;
 pub const KIND_ADMIN_CODE: &str = "email.admin_code";
 /// 每个站长最多登记的后台 Passkey 数。
 pub const MAX_ADMIN_PASSKEYS: usize = 5;
-/// 绑定第一个 Passkey 的邮箱验证有效 10 分钟、只能用一次（论坛会话里的标记）。
-const ENROLL_SECS: i64 = 600;
-const SESSION_ENROLL_AT: &str = "admin_enroll_at";
+/// 绑定第一个 Passkey 的邮箱验证有效 10 分钟、只能用一次。
+const ENROLL_TTL: Duration = Duration::from_secs(600);
+const SESSION_ENROLL_TOKEN: &str = "admin_enroll_token";
 
 const CODE_RATE: SlidingWindow = SlidingWindow::new("admin-code", 5, Duration::from_secs(3600));
 const CEREMONY_RATE: SlidingWindow =
@@ -49,8 +50,44 @@ fn enroll_subject(email: &str) -> String {
     format!("admin-enroll\0{email}")
 }
 
-fn now() -> i64 {
-    OffsetDateTime::now_utc().unix_timestamp()
+/// 邮箱验证通过的标记：同一个随机令牌存在 Valkey（按用户）与论坛会话里，两边一致才算数。
+/// 完成绑定时用 GETDEL 原子地取出，并发的两个请求只有一个能用掉它；只存在会话里做不到这一点——
+/// 并发请求各自读到同一份会话数据，都会看到标记。
+pub fn enroll_marker_key(ns: &str, user_id: i64) -> String {
+    format!("{ns}admin-enroll:{user_id}")
+}
+
+async fn mark_enroll(state: &AppState, session: &Session, user_id: i64) -> ApiResult<()> {
+    let token = hex::encode(rand::rng().random::<[u8; 16]>());
+    forum_kv::ephemeral::put(
+        &state.kv,
+        &enroll_marker_key(state.cache.ns(), user_id),
+        &token,
+        ENROLL_TTL,
+    )
+    .await?;
+    session.insert(SESSION_ENROLL_TOKEN, token).await?;
+    Ok(())
+}
+
+/// 本会话的标记有效；`consume` 为真时同时用掉它（Valkey 与会话两边都删）。
+async fn enroll_marked(
+    state: &AppState,
+    session: &Session,
+    user_id: i64,
+    consume: bool,
+) -> ApiResult<bool> {
+    let Some(mine) = session.get::<String>(SESSION_ENROLL_TOKEN).await? else {
+        return Ok(false);
+    };
+    let key = enroll_marker_key(state.cache.ns(), user_id);
+    let stored = if consume {
+        session.remove::<String>(SESSION_ENROLL_TOKEN).await?;
+        forum_kv::ephemeral::take(&state.kv, &key).await?
+    } else {
+        forum_kv::ephemeral::get(&state.kv, &key).await?
+    };
+    Ok(stored.as_deref() == Some(mine.as_str()))
 }
 
 /// 论坛会话里的站长账号（绑定第一个 Passkey 与登录用）。
@@ -137,7 +174,7 @@ pub async fn admin_enroll_verify(
         .verify(&enroll_subject(&user.email), &req.code)
         .await
         .map_err(code_error)?;
-    session.insert(SESSION_ENROLL_AT, now()).await?;
+    mark_enroll(&state, &session, user.id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -169,10 +206,6 @@ impl Enrollment {
     }
 }
 
-fn enroll_marked(at: Option<i64>) -> bool {
-    at.is_some_and(|t| now() - t <= ENROLL_SECS)
-}
-
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AdminRegistrationOptions {
     /// 原样传给 `navigator.credentials.create()`。
@@ -197,7 +230,7 @@ pub async fn admin_register_start(
     let enrollment = Enrollment::resolve(&state, &session, &jar).await?;
     let user_id = enrollment.user_id();
     if matches!(enrollment, Enrollment::First(_))
-        && !enroll_marked(session.get::<i64>(SESSION_ENROLL_AT).await?)
+        && !enroll_marked(&state, &session, user_id, false).await?
     {
         return Err(ApiError(ErrorCode::ReverifyRequired));
     }
@@ -282,9 +315,9 @@ pub async fn admin_register_finish(
             tracing::info!(error = %e, "admin passkey registration rejected");
             ApiError(ErrorCode::PasskeyFailed)
         })?;
-    // 开始绑定后才检查的条件在这里复核
+    // 开始绑定后才检查的条件在这里复核；邮箱验证标记在这里原子地用掉
     if matches!(enrollment, Enrollment::First(_))
-        && !enroll_marked(session.remove::<i64>(SESSION_ENROLL_AT).await?)
+        && !enroll_marked(&state, &session, user_id, true).await?
     {
         return Err(ApiError(ErrorCode::ReverifyRequired));
     }

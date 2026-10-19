@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { importSigningKey, verifySignedValue } from "./signed-cookie";
 
-// 向量取自本地运行的 forum-api（COOKIE_SECRET = "ab" × 64）真实登录返回的 Set-Cookie。
-const SECRET = "ab".repeat(64);
+// 向量取自本地运行的 forum-api（COOKIE_SECRET = "ab" × 64）真实登录返回的 Set-Cookie；
+// Next.js 拿到的 COOKIE_SIGNING_KEY 是它的前 32 字节。
+const SECRET = "ab".repeat(32);
 const SID = "GEi62EMUlu28DVX+jSiSHeI4AZRsNAZ94oeYYxk/KWc=3oMsdeagrgd5OQIw1233bA";
 // did 由 axum-extra SignedCookieJar 写出，Set-Cookie 里是 URL 编码形式
 const DID_ENCODED =
@@ -27,7 +28,7 @@ describe("verifySignedValue", () => {
     expect(
       await verifySignedValue(key, "A".repeat(43) + "=" + "3oMsdeagrgd5OQIw1233bA"),
     ).toBeNull();
-    const other = await importSigningKey("cd".repeat(64));
+    const other = await importSigningKey("cd".repeat(32));
     expect(await verifySignedValue(other, SID)).toBeNull();
   });
 
@@ -38,8 +39,18 @@ describe("verifySignedValue", () => {
     }
   });
 
-  it("refuses a short or non-hex secret", async () => {
-    await expect(importSigningKey("ab".repeat(63))).rejects.toThrow();
-    await expect(importSigningKey("zz".repeat(64))).rejects.toThrow();
+  it("accepts only the 32-byte signing half, never the whole COOKIE_SECRET", async () => {
+    for (const bad of [
+      "ab".repeat(31),
+      "ab".repeat(33),
+      "ab".repeat(64), // 整个 COOKIE_SECRET（含加密那一半）
+      "a".repeat(63),
+      "zz".repeat(32),
+      ` ${"ab".repeat(32)}`,
+      "",
+    ]) {
+      await expect(importSigningKey(bad), bad).rejects.toThrow(/COOKIE_SIGNING_KEY/);
+    }
+    await expect(importSigningKey("AB".repeat(32))).resolves.toBeDefined();
   });
 });

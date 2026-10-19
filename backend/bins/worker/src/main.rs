@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use anyhow::{Context, bail};
-use forum_mail::{AnyMailer, Failover, ResendMailer, SmtpMailer};
+use forum_mail::{AnyMailer, Failover, PostmarkMailer, ResendMailer, SmtpMailer};
 
 const POLL: Duration = Duration::from_millis(500);
 
@@ -12,9 +12,18 @@ fn env(name: &str) -> anyhow::Result<String> {
     std::env::var(name).with_context(|| format!("missing env {name}"))
 }
 
-fn build_mailer(kind: &str, from: &str) -> anyhow::Result<AnyMailer> {
+/// 邮件通道：生产只用 HTTP API（`resend` / `postmark`）；`smtp` 只能连本机（开发 Mailpit），
+/// SMTP 会在邮件头里留下源站 IP。`env` 读通道的密钥。
+fn build_mailer(
+    kind: &str,
+    from: &str,
+    env: impl Fn(&str) -> anyhow::Result<String>,
+) -> anyhow::Result<AnyMailer> {
     Ok(match kind {
         "resend" => AnyMailer::Resend(ResendMailer::new(&env("RESEND_API_KEY")?, from)),
+        "postmark" => {
+            AnyMailer::Postmark(PostmarkMailer::new(&env("POSTMARK_SERVER_TOKEN")?, from)?)
+        }
         "smtp" => AnyMailer::Smtp(SmtpMailer::from_url(&env("SMTP_URL")?, from)?),
         other => bail!("unknown mail channel {other}"),
     })
@@ -32,13 +41,14 @@ async fn main() -> anyhow::Result<()> {
     let cache = forum_kv::ForumCache::new(kv.clone(), ns.as_str());
     let realtime = forum_kv::Realtime::new(kv, ns);
     let from = env("MAIL_FROM")?;
-    // 主备通道可在配置里一键互换（plan 第 9 节）：MAIL_PRIMARY=resend MAIL_BACKUP=smtp。
+    // 主备通道可在配置里一键互换（plan 第 9 节）：生产 MAIL_PRIMARY=resend MAIL_BACKUP=postmark。
     let primary = build_mailer(
         &std::env::var("MAIL_PRIMARY").unwrap_or_else(|_| "smtp".into()),
         &from,
+        env,
     )?;
     let backup = match std::env::var("MAIL_BACKUP") {
-        Ok(kind) if !kind.is_empty() => Some(build_mailer(&kind, &from)?),
+        Ok(kind) if !kind.is_empty() => Some(build_mailer(&kind, &from, env)?),
         _ => None,
     };
     let mailer = Failover::new(primary, backup);
@@ -206,5 +216,43 @@ async fn periodic<F, Fut>(
             Ok(n) => tracing::info!(task = name, count = n, "periodic task done"),
             Err(e) => tracing::error!(task = name, error = %e, "periodic task failed"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+    use forum_mail::Mailer;
+
+    fn env_of<'a>(
+        vars: &'a [(&'static str, &'static str)],
+    ) -> impl Fn(&str) -> anyhow::Result<String> + 'a {
+        move |k| {
+            vars.iter()
+                .find(|(n, _)| *n == k)
+                .map(|(_, v)| (*v).to_owned())
+                .with_context(|| format!("missing env {k}"))
+        }
+    }
+
+    #[tokio::test]
+    async fn mail_channels_by_name() {
+        let vars = [
+            ("RESEND_API_KEY", "re_test"),
+            ("POSTMARK_SERVER_TOKEN", "pm-test-token"),
+            ("SMTP_URL", "smtp://127.0.0.1:1025"),
+        ];
+        for kind in ["resend", "postmark", "smtp"] {
+            let m = build_mailer(kind, "noreply@akari.test", env_of(&vars)).unwrap();
+            assert_eq!(m.name(), kind);
+        }
+        assert!(build_mailer("sendgrid", "noreply@akari.test", env_of(&vars)).is_err());
+        // 选了通道却没给密钥：拒绝启动
+        let err = build_mailer("postmark", "noreply@akari.test", env_of(&[]))
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("POSTMARK_SERVER_TOKEN"), "{err}");
     }
 }

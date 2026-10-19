@@ -22,7 +22,11 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use axum::{Json, Router, middleware::from_fn_with_state, routing::get};
+use axum::{
+    Json, Router,
+    middleware::{from_fn, from_fn_with_state},
+    routing::get,
+};
 use tower::{Layer, ServiceExt};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::{timeout::TimeoutLayer, trace::TraceLayer};
@@ -35,7 +39,7 @@ pub use state::AppState;
 
 /// 会话 Cookie 名。
 pub const SESSION_COOKIE: &str = "sid";
-/// 普通会话闲置 30 天过期（plan 第 5 节）。
+/// 普通会话闲置 30 天过期（plan 第 5 节）；最长有效期见 [`middleware::SESSION_MAX_AGE`]。
 const SESSION_IDLE_DAYS: i64 = 30;
 
 #[derive(OpenApi)]
@@ -241,6 +245,7 @@ pub fn app(state: AppState, session_key: &[u8]) -> Router {
         state.clone(),
         middleware::require_origin,
     ))
+    .layer(from_fn(middleware::session_lifetime))
     .layer(sessions)
     .layer(from_fn_with_state(
         ApiCors::new(&state.wallet.origins, &state.admin.origin),

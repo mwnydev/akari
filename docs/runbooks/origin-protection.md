@@ -64,8 +64,8 @@ Caddy、sshd 只听 127.0.0.1，就算防火墙规则被清空，公网上也没
 - SMTP 只用于开发：`SmtpMailer` 只接受本机地址（Mailpit），出站防火墙也不放行 SMTP 端口。即使在本机，EHLO 与 Message-ID 也用发件域名
   （`<随机 32 位十六进制@akari.cc>`），不用主机名；`forum-mail` 的测试锁定发出的邮件里没有 `Received`、`X-Originating-IP`、`X-Mailer` 和本机主机名，
   Postmark 请求里没有自定义邮件头、不开打开与点击追踪。
-- **待接入**：forum-worker 的 `build_mailer`（`bins/worker/src/main.rs`）还没有 `postmark` 分支，需要加
-  `"postmark" => AnyMailer::Postmark(PostmarkMailer::new(&env("POSTMARK_SERVER_TOKEN")?, from)?)`；生产配置 `MAIL_PRIMARY=resend`、`MAIL_BACKUP=postmark`。
+- forum-worker 的通道（`bins/worker/src/main.rs` 的 `build_mailer`）：`resend`（`RESEND_API_KEY`）、`postmark`（`POSTMARK_SERVER_TOKEN`）、
+  `smtp`（`SMTP_URL`，只限本机）。生产配置 `MAIL_PRIMARY=resend`、`MAIL_BACKUP=postmark`。
 
 ## 首次初始化（新服务器）
 

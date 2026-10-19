@@ -1008,6 +1008,88 @@ async fn admin_backend_enrollment_login_and_session_rules(db: PgPool) {
 }
 
 /// 清掉后台验证码的 60 秒重发间隔。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn first_admin_passkey_email_marker_is_single_use(db: PgPool) {
+    let ns = namespace();
+    let Some(state) = state_with(db.clone(), wallet_state(), &ns) else {
+        return;
+    };
+    let app = router_of(state);
+    let (id, forum) = member(&app, &db).await;
+    grant(&db, id, staff::ROLE_OWNER, None).await;
+    let r = admin_call(&app, "POST", "/api/v1/admin/enroll/code", None, &forum).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{:?}", r.body);
+    let email_code: String = sqlx::query_scalar(
+        "SELECT payload->>'code' FROM outbox WHERE kind = 'email.admin_code' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    let r = admin_call(
+        &app,
+        "POST",
+        "/api/v1/admin/enroll/verify",
+        Some(json!({"code": email_code})),
+        &forum,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{:?}", r.body);
+
+    // 同一站长的另一个论坛会话用不了这个标记
+    let email: String = sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
+        .bind(id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    common::clear_resend(&email).await;
+    let other = jar(&common::login(&app, &db, &email, &[]).await.cookies);
+    let r = admin_call(
+        &app,
+        "POST",
+        "/api/v1/admin/passkeys/register/start",
+        None,
+        &other,
+    )
+    .await;
+    assert_eq!(code(&r).1, Some("REVERIFY_REQUIRED"));
+
+    // 并发的两次绑定：第二个请求读到的会话数据里标记还在（复原第一个请求完成前的会话），
+    // 第一个的 Passkey 也还没提交（删掉它）——标记已在 Valkey 里被原子地用掉，第二个仍被拒绝。
+    let kv = forum_kv::pool(&std::env::var("VALKEY_URL").unwrap()).unwrap();
+    let key = common::session_key(&forum);
+    let before = forum_kv::ephemeral::get(&kv, &key).await.unwrap().unwrap();
+    let mut auth = soft_passkey();
+    let r = register(&app, &mut auth, &forum).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    sqlx::query("DELETE FROM passkeys WHERE user_id = $1 AND purpose = $2")
+        .bind(id)
+        .bind(staff::PURPOSE_ADMIN)
+        .execute(&db)
+        .await
+        .unwrap();
+    forum_kv::ephemeral::put(&kv, &key, &before, std::time::Duration::from_secs(600))
+        .await
+        .unwrap();
+    let r = admin_call(
+        &app,
+        "POST",
+        "/api/v1/admin/passkeys/register/start",
+        None,
+        &forum,
+    )
+    .await;
+    assert_eq!(code(&r).1, Some("REVERIFY_REQUIRED"));
+    assert!(
+        forum_kv::ephemeral::get(
+            &kv,
+            &forum_api::routes::admin_auth::enroll_marker_key(&ns, id)
+        )
+        .await
+        .unwrap()
+        .is_none()
+    );
+}
+
 async fn clear_resend_admin(db: &PgPool, user_id: i64) {
     let email: String = sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
         .bind(user_id)

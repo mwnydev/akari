@@ -77,6 +77,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   STAFF_SUSPENDED: "你的管理权限已被暂停，请联系站长",
   MUTED: "你已被禁言",
   ACCOUNT_BANNED: "账号已被封禁",
+  AUCTION_BANNED: "你已被禁止参与拍卖",
   ACCESS_BANNED: "当前网络或设备已被禁止登录",
   SANCTION_TOO_LONG: "处罚时长超出你的权限范围",
   ADMIN_REVERIFY_REQUIRED: "请先用后台 Passkey 再次验证",

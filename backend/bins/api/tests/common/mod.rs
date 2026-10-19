@@ -461,6 +461,13 @@ pub async fn assign_arbitrator(db: &PgPool, order_id: i64, user_id: i64) {
     .unwrap();
 }
 
+/// 论坛会话在 Valkey 里的键（`sid` 是签名 Cookie：前 44 个字符是 base64 的 HMAC）。
+pub fn session_key(cookies: &[String]) -> String {
+    let sid = cookies.iter().find_map(|c| c.strip_prefix("sid=")).unwrap();
+    let sid = sid.split(';').next().unwrap();
+    format!("sess:{}", &sid[44..])
+}
+
 /// 清掉登录验证码的 60 秒重发间隔，让同一用户在测试里马上再登录一次（模拟另一台设备）。
 pub async fn clear_resend(email: &str) {
     let url = std::env::var("VALKEY_URL").unwrap();

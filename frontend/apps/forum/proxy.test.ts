@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { proxy } from "./proxy";
 
 // 会话 Cookie 只由 forum-api 签发（host-only，ADR 0012）；Next.js 这一层只读不写，任何响应都不能带 Set-Cookie。
-// 向量同 lib/signed-cookie.test.ts（COOKIE_SECRET = "ab" × 64）。
+// 向量同 lib/signed-cookie.test.ts（后端 COOKIE_SECRET = "ab" × 64，签名密钥是前 32 字节）。
 const SID = "GEi62EMUlu28DVX+jSiSHeI4AZRsNAZ94oeYYxk/KWc=3oMsdeagrgd5OQIw1233bA";
 
 function request(cookie?: string): NextRequest {
@@ -12,7 +12,7 @@ function request(cookie?: string): NextRequest {
 
 describe("proxy", () => {
   beforeAll(() => {
-    process.env.COOKIE_SECRET = "ab".repeat(64);
+    process.env.COOKIE_SIGNING_KEY = "ab".repeat(32);
   });
 
   it("never sets a cookie, for guests, forged and valid sessions", async () => {

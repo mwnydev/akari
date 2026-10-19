@@ -124,8 +124,8 @@ pub struct BindError(String);
 
 /// 把一次断言的 challenge 换成调用方给定的字节（裁决内容的哈希）：同时改浏览器拿到的选项与服务端保存的状态，
 /// 认证器签名的 clientDataJSON 因而包含这个 challenge，`finish_passkey_authentication` 也只认它。
-/// 依赖 webauthn-rs 0.5 状态序列化（`danger-allow-state-serialisation`）里 `ast.challenge` 的字段名；
-/// 找不到时报错（不会退回随机 challenge）。
+/// 依赖 webauthn-rs 0.5 状态序列化（`danger-allow-state-serialisation`）里 `ast.challenge` 的字段名，所以
+/// webauthn-rs 在 Cargo.toml 里钉死版本（`=0.5.5`），升级时下面的测试会先失败；找不到字段时报错（不会退回随机 challenge）。
 pub fn bind_challenge(
     options: &mut RequestChallengeResponse,
     state: &PasskeyAuthentication,
@@ -133,14 +133,18 @@ pub fn bind_challenge(
 ) -> Result<PasskeyAuthentication, BindError> {
     let err = |e: &dyn std::fmt::Display| BindError(e.to_string());
     let mut v = serde_json::to_value(state).map_err(|e| err(&e))?;
-    let slot = v
-        .get_mut("ast")
-        .and_then(|a| a.get_mut("challenge"))
-        .filter(|c| c.is_string())
-        .ok_or_else(|| BindError("state has no ast.challenge".into()))?;
+    let slot =
+        challenge_slot(&mut v).ok_or_else(|| BindError("state has no ast.challenge".into()))?;
     options.public_key.challenge = challenge.to_vec().into();
     *slot = serde_json::to_value(&options.public_key.challenge).map_err(|e| err(&e))?;
     serde_json::from_value(v).map_err(|e| err(&e))
+}
+
+fn challenge_slot(state: &mut serde_json::Value) -> Option<&mut serde_json::Value> {
+    state
+        .get_mut("ast")
+        .and_then(|a| a.get_mut("challenge"))
+        .filter(|c| c.is_string())
 }
 
 /// 链上验证器需要的 P-256 公钥。
@@ -211,11 +215,11 @@ mod tests {
         assert_eq!(&c[45..], &[2; 32]);
     }
 
+    use webauthn_authenticator_rs::WebauthnAuthenticator;
+    use webauthn_authenticator_rs::softpasskey::SoftPasskey;
+
     #[test]
     fn bound_challenge_is_what_the_authenticator_signs() {
-        use webauthn_authenticator_rs::WebauthnAuthenticator;
-        use webauthn_authenticator_rs::softpasskey::SoftPasskey;
-
         let origin = Url::parse("https://forum.example").unwrap();
         let w = single_origin_webauthn("forum.example", "x", &origin).unwrap();
         let mut auth = WebauthnAuthenticator::new(SoftPasskey::new(true));
@@ -237,6 +241,38 @@ mod tests {
         let other = bind_challenge(&mut other, &s2, &[8; 32]).unwrap();
         assert!(w.finish_passkey_authentication(&assertion, &other).is_err());
         assert!(w.finish_passkey_authentication(&assertion, &bound).is_ok());
+    }
+
+    /// 绑定靠的是 webauthn-rs 内部状态的布局：`ast.challenge` 就是发给浏览器的 challenge（同一种编码）。
+    /// 依赖升级改了这个字段（改名、换编码、挪位置）时这里失败，而 `bind_challenge` 本身对缺字段一律报错。
+    #[test]
+    fn webauthn_state_layout_is_what_bind_challenge_expects() {
+        let origin = Url::parse("https://forum.example").unwrap();
+        let w = single_origin_webauthn("forum.example", "x", &origin).unwrap();
+        let mut auth = WebauthnAuthenticator::new(SoftPasskey::new(true));
+        let (ccr, reg) = w
+            .start_passkey_registration(Uuid::nil(), "a", "a", None)
+            .unwrap();
+        let cred = auth.do_registration(origin, ccr).unwrap();
+        let passkey = w.finish_passkey_registration(&cred, &reg).unwrap();
+        let (options, state) = w.start_passkey_authentication(&[passkey]).unwrap();
+        let mut v = serde_json::to_value(&state).unwrap();
+        assert_eq!(
+            challenge_slot(&mut v).cloned(),
+            Some(serde_json::to_value(&options.public_key.challenge).unwrap()),
+            "webauthn-rs state layout changed: {v}"
+        );
+
+        // 缺字段或类型不对：不绑定
+        for broken in [
+            serde_json::json!({}),
+            serde_json::json!({"ast": {}}),
+            serde_json::json!({"ast": {"challenge": [1, 2]}}),
+            serde_json::json!({"ast": {"chal": "AAAA"}}),
+        ] {
+            let mut b = broken.clone();
+            assert!(challenge_slot(&mut b).is_none(), "{broken}");
+        }
     }
 
     #[test]

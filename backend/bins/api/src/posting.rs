@@ -52,10 +52,26 @@ pub async fn check_sanctions(
     }
 }
 
-/// 发私信前：被封号时拒绝（禁言只限论坛发帖）。
+/// 发私信、开始新交易（提交 / 修改报价卡片、接受报价；交易帖经 [`check_sanctions`]）前：被封号时拒绝
+/// （禁言只限论坛发帖）。已有订单的操作、订单聊天与提币都不检查封号，资金不会因此卡在合约或钱包里。
 pub async fn check_not_banned(state: &AppState, user_id: i64) -> ApiResult<()> {
     match sanctions::active_kind(&state.db, user_id, &[sanctions::KIND_BAN], None).await? {
         Some(_) => Err(ApiError(ErrorCode::AccountBanned)),
+        None => Ok(()),
+    }
+}
+
+/// 拍卖操作（发起拍卖、出价）前：被封号，或在该板块（及全站）被禁拍时拒绝（ADR 0013）。
+/// 拍卖接口上线时在入口调用；已成交的拍卖订单与其他已有订单一样不受影响。
+pub async fn check_can_auction(
+    state: &AppState,
+    user_id: i64,
+    forum_id: Option<i32>,
+) -> ApiResult<()> {
+    let kinds = [sanctions::KIND_AUCTION_BAN, sanctions::KIND_BAN];
+    match sanctions::active_kind(&state.db, user_id, &kinds, forum_id).await? {
+        Some(sanctions::KIND_BAN) => Err(ApiError(ErrorCode::AccountBanned)),
+        Some(_) => Err(ApiError(ErrorCode::AuctionBanned)),
         None => Ok(()),
     }
 }
@@ -82,8 +98,10 @@ pub fn clean(state: &AppState, actor: &Actor, html: &str, source: &Value) -> Api
     if source_len > MAX_SOURCE_BYTES {
         return Err(ApiError(ErrorCode::ContentTooLong));
     }
-    let mut cleaned = forum_content::clean(html, &state.image_hosts())?;
-    if is_new_user(actor) && forum_content::has_external_link(&cleaned.links, &state.internal_hosts)
+    let image_hosts = state.image_hosts();
+    let mut cleaned = forum_content::clean(html, &image_hosts)?;
+    if is_new_user(actor)
+        && forum_content::has_external_link(&cleaned.links, &state.internal_hosts, &image_hosts)
     {
         return Err(ApiError(ErrorCode::ExternalLinkForbidden));
     }

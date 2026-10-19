@@ -157,10 +157,18 @@ pub fn clean_title(title: &str) -> Result<String, ContentError> {
     Ok(t.to_owned())
 }
 
-/// 是否含站外链接：绝对地址（含 `mailto:`）的主机不在 `internal_hosts` 内即为站外；相对地址算站内。
-pub fn has_external_link(links: &[String], internal_hosts: &[String]) -> bool {
+/// 是否含站外链接：绝对地址（含 `mailto:`）的主机既不在 `internal_hosts`（本站）也不在 `image_hosts`
+/// （本站图片的公开主机，即 `clean` 用的那份）内即为站外；相对地址算站内。用户贴自己上传的图片不算外链。
+pub fn has_external_link(
+    links: &[String],
+    internal_hosts: &[String],
+    image_hosts: &[String],
+) -> bool {
     links.iter().any(|l| match host_of(l) {
-        Some(h) => !internal_hosts.iter().any(|i| i.eq_ignore_ascii_case(h)),
+        Some(h) => !internal_hosts
+            .iter()
+            .chain(image_hosts)
+            .any(|i| i.eq_ignore_ascii_case(h)),
         None => l.contains(':'), // mailto: 等其他协议
     })
 }
@@ -388,8 +396,15 @@ mod tests {
     #[test]
     fn external_link_detection() {
         let internal = vec!["forum.test".to_owned()];
-        let ext = |l: &str| has_external_link(&[l.to_owned()], &internal);
+        let images = vec!["cdn.test".to_owned()];
+        let ext = |l: &str| has_external_link(&[l.to_owned()], &internal, &images);
         assert!(!ext("/t/1"));
+        // 本站图片：clean 把它们也记进 links
+        let own = clean(r#"<p><img src="https://cdn.test/i/a.webp"></p>"#, &images).unwrap();
+        assert_eq!(own.links, ["https://cdn.test/i/a.webp"]);
+        assert!(!has_external_link(&own.links, &internal, &images));
+        assert!(has_external_link(&own.links, &internal, &[]));
+        assert!(ext("https://cdn.test.evil.test/a.webp"));
         assert!(!ext("https://forum.test/t/1"));
         assert!(!ext("https://FORUM.test:443/x"));
         assert!(ext("https://evil.test/"));

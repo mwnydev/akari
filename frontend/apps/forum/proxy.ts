@@ -12,12 +12,12 @@ let keyPromise: Promise<CryptoKey | null> | undefined;
 
 function signingKey(): Promise<CryptoKey | null> {
   keyPromise ??= (async () => {
-    const secret = process.env.COOKIE_SECRET;
-    if (!secret) {
-      console.error("COOKIE_SECRET is not set: every request is rendered as guest");
+    const key = process.env.COOKIE_SIGNING_KEY;
+    if (!key) {
+      console.error("COOKIE_SIGNING_KEY is not set: every request is rendered as guest");
       return null;
     }
-    return importSigningKey(secret);
+    return importSigningKey(key);
   })();
   return keyPromise;
 }

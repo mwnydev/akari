@@ -11,6 +11,7 @@ ExecStart=/opt/node-v{{ node_version }}-linux-x64/bin/node server.js
 Environment=NODE_ENV=production
 Environment=PORT={{ nextjs_port }}
 Environment=HOSTNAME=127.0.0.1
+# COOKIE_SIGNING_KEY（正好 32 字节十六进制 = COOKIE_SECRET 的前一半，别的长度 proxy.ts 一律拒绝）与 API_ORIGIN
 EnvironmentFile=-/etc/akari/web.env
 Restart=on-failure
 MemoryMax={{ nextjs_memory_max }}

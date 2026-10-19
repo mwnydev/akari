@@ -77,6 +77,7 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::StaffSuspended
         | ErrorCode::Muted
         | ErrorCode::AccountBanned
+        | ErrorCode::AuctionBanned
         | ErrorCode::AccessBanned
         | ErrorCode::AdminReverifyRequired
         | ErrorCode::TradeNotAllowed => StatusCode::FORBIDDEN,

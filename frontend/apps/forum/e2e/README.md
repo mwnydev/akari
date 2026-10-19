@@ -5,8 +5,9 @@ docker compose -f ../../../deploy/dev/compose.yaml up -d          # PostgreSQL /
 # 后端（另开终端，环境变量见 backend/.env.example）：
 #   ALLOWED_ORIGINS=http://localhost:3000 COOKIE_SECURE=false cargo run -p forum-api
 #   MAIL_FROM=noreply@akari.test SMTP_URL=smtp://127.0.0.1:1025 cargo run -p forum-worker
-pnpm build                                                         # 论坛需与后端使用同一个 COOKIE_SECRET
-COOKIE_SECRET=<同后端> DATABASE_URL=<同后端> pnpm e2e
+pnpm build
+# COOKIE_SIGNING_KEY = 后端 COOKIE_SECRET 的前 32 字节（前 64 个十六进制字符）
+COOKIE_SIGNING_KEY=<后端 COOKIE_SECRET 前 64 个字符> DATABASE_URL=<同后端> pnpm e2e
 ```
 
 `forum.spec.ts` 会把测试账号的注册时间改早两天（绕开新用户每小时 5 帖的限频，才能造出第 2 页），

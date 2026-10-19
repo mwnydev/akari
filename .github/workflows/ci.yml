@@ -143,3 +143,4 @@ jobs:
       - run: uvx --from ansible-core ansible-galaxy collection install -r requirements.yml -p collections
       - run: uvx --from ansible-lint --with ansible-core ansible-lint site.yml
       - run: shellcheck -S warning ../install-release.sh
+      - run: shellcheck -S warning ../check-origin-exposure.sh

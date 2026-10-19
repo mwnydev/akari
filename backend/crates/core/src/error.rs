@@ -118,6 +118,8 @@ pub enum ErrorCode {
     Muted,
     #[error("account banned")]
     AccountBanned,
+    #[error("auction banned")]
+    AuctionBanned,
     #[error("ip or device banned")]
     AccessBanned,
     #[error("sanction duration exceeds the limit")]
@@ -201,6 +203,7 @@ impl ErrorCode {
             Self::StaffSuspended => "你的管理权限已被暂停，请联系站长",
             Self::Muted => "你已被禁言",
             Self::AccountBanned => "账号已被封禁",
+            Self::AuctionBanned => "你已被禁止参与拍卖",
             Self::AccessBanned => "当前网络或设备已被禁止登录",
             Self::SanctionTooLong => "处罚时长超出你的权限范围",
             Self::AdminReverifyRequired => "请先用后台 Passkey 再次验证",

@@ -51,6 +51,7 @@ async-trait = "0.1"
 reqwest = { version = "=0.13.5", default-features = false, features = ["json", "rustls"] }
 ammonia = "=4.2.4" # 4.2.3 有 RUSTSEC-2026-0373，计划锁定版本因安全补丁上调
 # 钱包 Passkey（plan 第 5 节）。状态需存 Valkey 5 分钟，故开启状态序列化。
+# 钉死版本：裁决 Passkey 的 challenge 绑定依赖它内部状态的字段（forum_auth::passkey::bind_challenge），升级要先过那里的测试。
 webauthn-rs = { version = "=0.5.5", features = ["danger-allow-state-serialisation"] }
 # 注册选项里的 authenticatorSelection 类型（webauthn-rs 的 prelude 没有导出）；与 webauthn-rs 同一版本。
 webauthn-rs-proto = "=0.5.5"

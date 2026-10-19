@@ -10,6 +10,7 @@ use axum::http::StatusCode;
 use common::{
     CHAIN_ID, ESCROW, USDT, age, build, call, clear_resend, enable_trading, jar, login, user,
 };
+use forum_core::ErrorCode;
 use forum_core::eip712::{Domain, Offer};
 use forum_db::PgPool;
 use forum_db::forums::{self, NewForum};
@@ -18,13 +19,17 @@ use serde_json::{Value, json};
 const SELLER: &str = "0x1111111111111111111111111111111111111111";
 const BUYER: &str = "0x2222222222222222222222222222222222222222";
 
-async fn market(db: &PgPool) {
+async fn market(db: &PgPool) -> i32 {
+    board(db, "market").await
+}
+
+async fn board(db: &PgPool, slug: &str) -> i32 {
     forums::create(
         db,
         &NewForum {
             parent_id: None,
-            slug: "market",
-            name: "market",
+            slug,
+            name: slug,
             description: "",
             position: 0,
             view_min_level: 0,
@@ -34,7 +39,7 @@ async fn market(db: &PgPool) {
         },
     )
     .await
-    .unwrap();
+    .unwrap()
 }
 
 struct Party {
@@ -750,4 +755,144 @@ async fn conversation_cards_modify_reject_cancel(db: PgPool) {
     )
     .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
+}
+
+/// 有效的封号 / 禁拍（`by` 是任一用户，只用于记录处罚人）。
+async fn sanction(db: &PgPool, kind: i16, user_id: i64, forum_id: Option<i32>, by: i64) -> i64 {
+    forum_db::sanctions::create(
+        db,
+        forum_db::sanctions::NewSanction {
+            kind,
+            user_id,
+            forum_id,
+            ends_at: None,
+            reason: "test",
+            created_by: by,
+        },
+    )
+    .await
+    .unwrap()
+}
+
+/// buyer 买、seller 卖的已付款订单（按 forum-indexer 的写法直接入库）。
+async fn paid_order(db: &PgPool, buyer: i64, seller: i64) -> i64 {
+    sqlx::query(
+        "INSERT INTO chains (chain_id, name, escrow_address, stream_address, config_address, token_address,
+           token_symbol, token_decimals, start_block, safe_depth, finalized_depth)
+         VALUES ($1, 'test', decode(repeat('44', 20), 'hex'), decode(repeat('5e', 20), 'hex'),
+           decode(repeat('c0', 20), 'hex'), decode(repeat('33', 20), 'hex'), 'USDT', 6, 0, 240, 4800)",
+    )
+    .bind(i64::try_from(CHAIN_ID).unwrap())
+    .execute(db)
+    .await
+    .unwrap();
+    sqlx::query_scalar(
+        "INSERT INTO escrow_orders (chain_id, contract, chain_order_id, buyer, seller, buyer_id, seller_id, token,
+           amount, buyer_fee, instant, offer_hash, listing_hash, state, ship_deadline, level, created_block,
+           updated_block)
+         VALUES ($1, decode(repeat('44', 20), 'hex'), 1, decode(repeat('b1', 20), 'hex'),
+           decode(repeat('c1', 20), 'hex'), $2, $3, decode(repeat('33', 20), 'hex'), 45000000, 500000, false,
+           decode(repeat('01', 32), 'hex'), decode(repeat('ab', 32), 'hex'), 1, to_timestamp(1800000000),
+           'safe', 1, 1)
+         RETURNING id",
+    )
+    .bind(i64::try_from(CHAIN_ID).unwrap())
+    .bind(buyer)
+    .bind(seller)
+    .fetch_one(db)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn banned_users_cannot_start_trades_but_keep_their_orders(db: PgPool) {
+    use forum_db::sanctions::{KIND_AUCTION_BAN, KIND_BAN};
+
+    let Some(state) = common::state_with(db.clone(), common::wallet_state(), &common::namespace())
+    else {
+        return;
+    };
+    let app = common::router_of(state.clone());
+    let market_id = market(&db).await;
+    let other = board(&db, "other").await;
+    let seller = trader(&app, &db, SELLER).await;
+    let buyer = trader(&app, &db, BUYER).await;
+    let (listing_id, hash) = listing(&app, &seller).await;
+    let body = |nonce: &str| {
+        let mut o = offer(&hash, ZERO_ADDR);
+        o["nonce"] = json!(nonce);
+        json!({"listing_id": listing_id, "offer": o, "signature": "0x1234"})
+    };
+    let r = post_offer(&app, &seller.cookies, body("1")).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let open = r.body["id"].as_i64().unwrap();
+    let order = paid_order(&db, buyer.id, seller.id).await;
+
+    // 卖家被封号：不能发交易帖、不能提交或修改报价卡片
+    let ban = sanction(&db, KIND_BAN, seller.id, None, buyer.id).await;
+    let r = call(
+        &app,
+        "POST",
+        "/api/v1/forums/market/listings",
+        Some(listing_body("45000000", 3 * 86_400)),
+        &seller.cookies,
+    )
+    .await;
+    assert_eq!(r.body["code"], "ACCOUNT_BANNED");
+    assert_eq!(
+        post_offer(&app, &seller.cookies, body("2")).await.body["code"],
+        "ACCOUNT_BANNED"
+    );
+    let mut replace = body("3");
+    replace["replaces"] = json!(open);
+    assert_eq!(
+        post_offer(&app, &seller.cookies, replace).await.body["code"],
+        "ACCOUNT_BANNED"
+    );
+    // 已有订单照常：详情、订单聊天、提币地址
+    let path = format!("/api/v1/orders/{order}");
+    assert_eq!(
+        call(&app, "GET", &path, None, &seller.cookies).await.status,
+        StatusCode::OK
+    );
+    let r = call(
+        &app,
+        "POST",
+        &format!("{path}/messages"),
+        Some(json!({"body": "已发货"})),
+        &seller.cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let r = common::wallet_call(
+        &app,
+        "GET",
+        "/api/v1/wallet/withdraw-addresses",
+        None,
+        &seller.cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    sqlx::query("UPDATE sanctions SET revoked_at = now(), revoked_by = $2 WHERE id = $1")
+        .bind(ban)
+        .bind(buyer.id)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    // 买家被封号：不能接受报价（开始新订单）
+    sanction(&db, KIND_BAN, buyer.id, None, seller.id).await;
+    let accept = format!("/api/v1/offers/{open}/accept");
+    let r = call(&app, "POST", &accept, None, &buyer.cookies).await;
+    assert_eq!(r.body["code"], "ACCOUNT_BANNED");
+
+    // 拍卖入口的检查：封号优先；禁拍只管所在板块与全站
+    let ab = |id| forum_api::posting::check_can_auction(&state, id, Some(market_id));
+    let code = |r: Result<(), forum_api::error::ApiError>| r.err().map(|e| e.0);
+    assert_eq!(code(ab(buyer.id).await), Some(ErrorCode::AccountBanned));
+    assert_eq!(code(ab(seller.id).await), None);
+    sanction(&db, KIND_AUCTION_BAN, seller.id, Some(other), buyer.id).await;
+    assert_eq!(code(ab(seller.id).await), None, "other board");
+    sanction(&db, KIND_AUCTION_BAN, seller.id, None, buyer.id).await;
+    assert_eq!(code(ab(seller.id).await), Some(ErrorCode::AuctionBanned));
 }

@@ -298,3 +298,106 @@ async fn session_cookies_are_host_only_http_only_secure_lax(db: PgPool) {
     assert_eq!(cookie_value(&r.cookies, "sid"), Some(""), "{:?}", r.cookies);
     assert_cookie_guard(&r.cookies);
 }
+
+/// 改 Valkey 里的会话记录（模拟时间流逝）；`ttl` 是写回后 Valkey 里的剩余时间。
+async fn age_session(
+    cookies: &[String],
+    ttl: std::time::Duration,
+    f: impl FnOnce(&mut tower_sessions::session::Record),
+) {
+    let kv = forum_kv::pool(&std::env::var("VALKEY_URL").unwrap()).unwrap();
+    let key = common::session_key(cookies);
+    let raw = forum_kv::ephemeral::get(&kv, &key).await.unwrap().unwrap();
+    let mut record: tower_sessions::session::Record = serde_json::from_str(&raw).unwrap();
+    f(&mut record);
+    forum_kv::ephemeral::put(&kv, &key, &serde_json::to_string(&record).unwrap(), ttl)
+        .await
+        .unwrap();
+}
+
+async fn session_record(cookies: &[String]) -> Option<tower_sessions::session::Record> {
+    let kv = forum_kv::pool(&std::env::var("VALKEY_URL").unwrap()).unwrap();
+    forum_kv::ephemeral::get(&kv, &common::session_key(cookies))
+        .await
+        .unwrap()
+        .map(|raw| serde_json::from_str(&raw).unwrap())
+}
+
+const HOUR: std::time::Duration = std::time::Duration::from_secs(3600);
+
+fn ago(d: time::Duration) -> serde_json::Value {
+    json!((time::OffsetDateTime::now_utc() - d).unix_timestamp())
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn active_sessions_extend_hourly_up_to_90_days(db: PgPool) {
+    use forum_api::routes::{SESSION_LOGIN_AT, SESSION_TOUCHED_AT};
+    use time::Duration;
+
+    let Some(app) = build(db.clone()) else { return };
+    let r = login(&app, &db, &unique_email(), &[]).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let cookies = jar(&r.cookies);
+    let soon = time::OffsetDateTime::now_utc() + Duration::days(1);
+
+    // 一小时内碰过：不写会话，过期时间不动，也不重发 Cookie
+    age_session(&cookies, HOUR, |s| {
+        s.expiry_date = soon;
+        s.data
+            .insert(SESSION_TOUCHED_AT.into(), ago(Duration::minutes(59)));
+    })
+    .await;
+    let r = call(&app, "GET", "/api/v1/me", None, &cookies).await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert!(
+        !r.cookies.iter().any(|c| c.starts_with("sid=")),
+        "{:?}",
+        r.cookies
+    );
+    let s = session_record(&cookies).await.unwrap();
+    assert_eq!(s.expiry_date.unix_timestamp(), soon.unix_timestamp());
+
+    // 超过一小时：顺延到 30 天后，Cookie 也一起续期
+    age_session(&cookies, HOUR, |s| {
+        s.data
+            .insert(SESSION_TOUCHED_AT.into(), ago(Duration::minutes(61)));
+    })
+    .await;
+    let r = call(&app, "GET", "/api/v1/me", None, &cookies).await;
+    assert_eq!(r.status, StatusCode::OK);
+    let set = r.cookies.iter().find(|c| c.starts_with("sid=")).unwrap();
+    assert!(set.contains("Max-Age=2592000"), "{set}");
+    let s = session_record(&cookies).await.unwrap();
+    let left = s.expiry_date - time::OffsetDateTime::now_utc();
+    assert!(
+        left > Duration::days(29) && left <= Duration::days(30),
+        "{left}"
+    );
+
+    // 登录满 90 天：不管多活跃，都要重新登录
+    age_session(&cookies, HOUR, |s| {
+        s.data
+            .insert(SESSION_LOGIN_AT.into(), ago(Duration::days(90)));
+    })
+    .await;
+    let r = call(&app, "GET", "/api/v1/me", None, &cookies).await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    assert!(session_record(&cookies).await.is_none());
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn idle_sessions_expire_after_30_days(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    let r = login(&app, &db, &unique_email(), &[]).await;
+    let cookies = jar(&r.cookies);
+    let set = r.cookies.iter().find(|c| c.starts_with("sid=")).unwrap();
+    assert!(set.contains("Max-Age=2592000"), "{set}");
+    // 会话记录在 Valkey 里按 expiry_date（登录或上次顺延后 30 天）过期，过期后不再算登录
+    let s = session_record(&cookies).await.unwrap();
+    let left = s.expiry_date - time::OffsetDateTime::now_utc();
+    assert!(left > time::Duration::days(29), "{left}");
+    age_session(&cookies, std::time::Duration::from_millis(50), |_| ()).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let r = call(&app, "GET", "/api/v1/me", None, &cookies).await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+}

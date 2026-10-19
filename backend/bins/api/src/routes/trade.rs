@@ -540,6 +540,7 @@ pub async fn create_offer(
 ) -> ApiResult<(StatusCode, Json<OfferView>)> {
     let user_id = current_user_id(&session).await?;
     recent_passkey(&session).await?;
+    crate::posting::check_not_banned(&state, user_id).await?;
     let w = &state.wallet;
     let domain = w.domain()?;
     let token = w.usdt()?;
@@ -877,6 +878,7 @@ pub async fn accept_offer(
     if row.seller_id == user_id || row.buyer_id.is_some_and(|b| b != user_id) {
         return Err(ApiError(ErrorCode::Forbidden));
     }
+    crate::posting::check_not_banned(&state, user_id).await?;
     if card_status(&row) != CardStatus::Pending {
         return Err(ApiError(ErrorCode::OfferUnavailable));
     }

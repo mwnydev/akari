@@ -2260,6 +2260,7 @@ export interface components {
       | "STAFF_SUSPENDED"
       | "MUTED"
       | "ACCOUNT_BANNED"
+      | "AUCTION_BANNED"
       | "ACCESS_BANNED"
       | "SANCTION_TOO_LONG"
       | "ADMIN_REVERIFY_REQUIRED"

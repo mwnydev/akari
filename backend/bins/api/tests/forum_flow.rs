@@ -518,6 +518,55 @@ async fn new_user_limits(db: PgPool) {
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn new_user_may_post_own_uploaded_images(db: PgPool) {
+    let Some(mut state) =
+        common::state_with(db.clone(), common::wallet_state(), &common::namespace())
+    else {
+        return;
+    };
+    // 只用到公开地址（判断本站图片），不连存储桶
+    let storage = forum_media::Storage::new(&forum_media::StorageConfig {
+        endpoint: "http://127.0.0.1:9".to_owned(),
+        bucket: "b".to_owned(),
+        region: "auto".to_owned(),
+        access_key: "k".to_owned(),
+        secret_key: "s".to_owned(),
+        public_base: "https://img.forum.test/".to_owned(),
+    })
+    .unwrap();
+    state.media = Some(std::sync::Arc::new(storage));
+    let app = common::router_of(state);
+    forum(&db, "general", 0, 1).await;
+    let (_, fresh) = user(&app, &db).await; // 注册不满 24 小时
+
+    let r = post_topic(
+        &app,
+        &fresh,
+        "general",
+        "晒图",
+        r#"<p>新键盘<img src="https://img.forum.test/i/a.webp"></p>"#,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let html: String = sqlx::query_scalar("SELECT html FROM posts WHERE topic_id = $1")
+        .bind(r.body["topic_id"].as_i64().unwrap())
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert!(html.contains("https://img.forum.test/i/a.webp"), "{html}");
+    // 别处的图片照旧被过滤，外链照旧拒绝
+    let r = post_topic(
+        &app,
+        &fresh,
+        "general",
+        "外链",
+        r#"<p>x <a href="https://img.forum.test.evil.test/">y</a></p>"#,
+    )
+    .await;
+    assert_eq!(r.body["code"], "EXTERNAL_LINK_FORBIDDEN");
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn edit_history_and_delete(db: PgPool) {
     let Some(app) = build(db.clone()) else { return };
     let f = forum(&db, "general", 0, 1).await;

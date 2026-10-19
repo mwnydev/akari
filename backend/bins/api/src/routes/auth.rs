@@ -17,12 +17,13 @@ use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use tower_sessions::Session;
 use utoipa::ToSchema;
 
-use super::SESSION_USER_ID;
 use super::me::Me;
+use super::{SESSION_LOGIN_AT, SESSION_TOUCHED_AT, SESSION_USER_ID};
 use crate::error::{ApiError, ApiResult, ErrorBody};
 use crate::middleware::ClientIp;
 use crate::state::AppState;
@@ -225,6 +226,9 @@ pub async fn verify(
     // 登录后轮换会话 ID，防会话固定攻击。
     session.cycle_id().await?;
     session.insert(SESSION_USER_ID, user.id).await?;
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    session.insert(SESSION_LOGIN_AT, now).await?;
+    session.insert(SESSION_TOUCHED_AT, now).await?;
 
     let cookie = Cookie::build((DEVICE_COOKIE, device_id))
         .path("/")

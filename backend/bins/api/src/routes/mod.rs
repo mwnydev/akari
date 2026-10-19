@@ -25,3 +25,7 @@ pub mod ws;
 
 /// 会话里保存用户 ID 的键。
 pub const SESSION_USER_ID: &str = "uid";
+/// 登录时间（Unix 秒）：会话最长有效期从这里算（[`crate::middleware::session_lifetime`]）。
+pub const SESSION_LOGIN_AT: &str = "login_at";
+/// 最近一次顺延闲置期限的时间（Unix 秒）。
+pub const SESSION_TOUCHED_AT: &str = "touched_at";
