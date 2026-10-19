@@ -7,7 +7,15 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "fetch-spec": "curl -fsS --noproxy '*' ${API_ORIGIN:-http://127.0.0.1:8080}/api/v1/openapi.json -o openapi.json && prettier --write openapi.json",
+    "gen": "openapi-typescript openapi.json -o src/schema.d.ts && prettier --write src/schema.d.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "openapi-fetch": "0.17.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0"
   }
 }

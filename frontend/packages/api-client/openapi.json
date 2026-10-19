@@ -1,0 +1,285 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "akari forum API",
+    "description": "",
+    "license": {
+      "name": "UNLICENSED",
+      "identifier": "UNLICENSED"
+    },
+    "version": "v1"
+  },
+  "paths": {
+    "/api/v1/auth/email/start": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "发送登录验证码。不论邮箱是否已注册，返回都一样。",
+        "operationId": "start",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/email/verify": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "校验验证码并登录；新邮箱自动注册。",
+        "operationId": "verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "退出登录：删除服务端会话。",
+        "operationId": "logout",
+        "responses": {
+          "204": {}
+        }
+      }
+    },
+    "/api/v1/healthz": {
+      "get": {
+        "tags": ["system"],
+        "summary": "存活检查。",
+        "operationId": "healthz",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "当前登录用户。",
+        "operationId": "me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorBody": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "AMOUNT_OVERFLOW",
+          "AMOUNT_UNDERFLOW",
+          "INVALID_PARAMETER",
+          "CLAIM_BELOW_GAS",
+          "INVALID_EMAIL",
+          "CAPTCHA_FAILED",
+          "RESEND_TOO_SOON",
+          "RATE_LIMITED",
+          "INVALID_CODE",
+          "TOO_MANY_ATTEMPTS",
+          "UNAUTHORIZED",
+          "ORIGIN_REJECTED",
+          "INTERNAL"
+        ]
+      },
+      "Health": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "Me": {
+        "type": "object",
+        "required": ["id", "email"],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "username": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "StartRequest": {
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "captcha": {
+            "type": ["string", "null"],
+            "description": "Cloudflare Turnstile 令牌。"
+          },
+          "email": {
+            "type": "string"
+          }
+        }
+      },
+      "StartResponse": {
+        "type": "object",
+        "required": ["expires_in", "resend_in"],
+        "properties": {
+          "expires_in": {
+            "type": "integer",
+            "format": "int64",
+            "description": "验证码有效秒数。",
+            "minimum": 0
+          },
+          "resend_in": {
+            "type": "integer",
+            "format": "int64",
+            "description": "多少秒后可重发。",
+            "minimum": 0
+          }
+        }
+      },
+      "VerifyRequest": {
+        "type": "object",
+        "required": ["email", "code"],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          }
+        }
+      },
+      "VerifyResponse": {
+        "type": "object",
+        "required": ["user", "created"],
+        "properties": {
+          "created": {
+            "type": "boolean",
+            "description": "本次登录是否新注册。"
+          },
+          "user": {
+            "$ref": "#/components/schemas/Me"
+          }
+        }
+      }
+    }
+  }
+}
