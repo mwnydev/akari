@@ -53,13 +53,16 @@
 - [x] 第 4 轮合约：`StreamEscrow` 分期担保（共用 `EscrowConfig` 与保证金池，抽出 `MarketBase` 共用签名与领取式转账）；合约合计 223 个测试，覆盖率 100%，Slither 无高危，三份合约都在 24 KB 内
 - [x] 第 4 轮后端：钱包 Passkey 注册与再验证（首个 Passkey 需专用「开通交易」邮箱码）、钱包地址绑定、交易帖、报价卡片（EIP-712 哈希与 Solidity 向量一致）；89 个测试；musl 静态构建含 vendored OpenSSL 验证通过
 - [x] 第 4 轮前端：钱包 Passkey 智能账户（Kernel v3.3）、卖家签报价（ERC-6492）、买家一次 Face ID 付款、发货、放款；本地 Anvil（分叉 Arbitrum Sepolia）+ Alto Bundler，端到端全程通过；钱包 SDK 懒加载，钱包页首屏 148–166 KB
-- [ ] 第 4 轮后端：indexer（进行中）
+- [x] 第 4 轮后端：链模块（alloy 绑定由合约 ABI 生成、ABI 过期即测试失败）+ indexer：WebSocket 即时 + 每 5 秒批量校对、区块回滚撤销重放、latest/safe/finalized 分级、RPC 主备切换、单写入者锁；约 2400 次 RPC/小时（逐块轮询 ≥ 14400）；后端合计 123 个测试，含 Anvil 真实部署集成测试
 - [ ] 下一轮：forum-sponsor（代付签名 + 私有代发器）、钱包初始化参数版本化（ADR 0008）、钱包前端接真实后端接口、订单页读 indexer 数据 → 打通第 5 周端到端链路
 - [ ] 下一轮后端：站内通知 + WebSocket 推送、用户名片 Valkey 缓存、管理人员 Passkey 登录、板块管理接口、apalis 接入
 - [ ] 下一轮前端：板块 / 帖子页接真实 API、Tiptap 编辑器、游客页 Valkey 缓存、Turnstile
 - [ ] 待补 CI：knip、jscpd、cargo-llvm-cov、lefthook
 
 ### 评审记录
+
+- 第 4 轮合并：CI 的 sqlx 离线元数据检查失败——元数据须在全新数据库上生成（与 CI 一致），已统一重新生成。indexer 的 ABI 副本在 StreamEscrow 改动 Escrow 后过期，ABI 一致性测试抓到；新事件 `BondTaken` 由穷尽匹配在编译期发现并补上。
+- 待清理：后端同时用 `sha3`（报价哈希）和 alloy 自带的 keccak，下一轮统一到 alloy-primitives，少一个依赖。
 
 - 第 4 轮：钱包地址依赖 Paymaster 与 USDT 地址（初始化授权）→ ADR 0008 初始化参数版本化，换 Paymaster 不影响老用户地址。
 - 第 4 轮：`takeBond` 只有登记过的市场合约能调（登记需 72 小时排队、不可移除），用于卖家用保证金付分期订单的争议费。
