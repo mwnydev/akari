@@ -6,6 +6,7 @@ pub mod arbitration;
 pub mod cards;
 pub mod config;
 pub mod error;
+pub mod guest;
 pub mod middleware;
 pub mod moderation;
 pub mod posting;
@@ -59,6 +60,7 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::users::user_profile))
         .routes(routes!(routes::users::user_posts))
         .routes(routes!(routes::users::search_users))
+        .routes(routes!(routes::search::search))
         .routes(routes!(routes::users::user_cards))
         .routes(routes!(routes::uploads::create_upload))
         .routes(routes!(routes::uploads::complete_upload))

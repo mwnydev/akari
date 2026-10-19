@@ -3849,6 +3849,64 @@
         }
       }
     },
+    "/api/v1/search": {
+      "get": {
+        "tags": ["forum"],
+        "summary": "搜索楼层、主题或用户。",
+        "operationId": "search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "关键词，空格分隔的多个词须同时出现；最多 64 个字符、5 个词。",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "enum": ["post", "topic", "user"] }
+          },
+          {
+            "name": "board",
+            "in": "query",
+            "description": "只搜这个板块（slug）。",
+            "required": false,
+            "schema": { "type": ["string", "null"] }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "上一页的 `next_cursor`。",
+            "required": false,
+            "schema": { "type": ["string", "null"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/SearchResponse" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/topics/latest": {
       "get": {
         "tags": ["forum"],
@@ -5752,6 +5810,12 @@
           }
         }
       },
+      "Highlight": {
+        "type": "object",
+        "description": "高亮片段：`hit` 为真的是命中的词。前端按纯文本渲染。",
+        "required": ["text", "hit"],
+        "properties": { "hit": { "type": "boolean" }, "text": { "type": "string" } }
+      },
       "ImageVariant": {
         "type": "object",
         "required": ["width", "height", "url"],
@@ -6595,6 +6659,43 @@
           "reinstate"
         ]
       },
+      "PostResult": {
+        "type": "object",
+        "required": [
+          "id",
+          "topic_id",
+          "topic_title",
+          "forum_id",
+          "floor",
+          "page",
+          "author_id",
+          "created_at",
+          "snippet",
+          "truncated_start",
+          "truncated_end"
+        ],
+        "properties": {
+          "author_id": { "type": "integer", "format": "int64" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "floor": { "type": "integer", "format": "int32" },
+          "forum_id": { "type": "integer", "format": "int32" },
+          "id": { "type": "integer", "format": "int64" },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "description": "楼层所在的页（每页 20 楼）。"
+          },
+          "snippet": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Highlight" },
+            "description": "正文里第一处命中附近的约 160 字，换行变空格；前后被截断时 `truncated_*` 为真。"
+          },
+          "topic_id": { "type": "integer", "format": "int64" },
+          "topic_title": { "type": "string" },
+          "truncated_end": { "type": "boolean" },
+          "truncated_start": { "type": "boolean" }
+        }
+      },
       "PostSource": {
         "type": "object",
         "required": ["source"],
@@ -7327,6 +7428,33 @@
           }
         }
       },
+      "SearchResponse": {
+        "type": "object",
+        "required": ["type", "total", "posts", "topics", "people", "forums", "users"],
+        "properties": {
+          "forums": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ForumView" },
+            "description": "结果里出现的板块。"
+          },
+          "next_cursor": { "type": ["string", "null"] },
+          "people": { "type": "array", "items": { "$ref": "#/components/schemas/MentionView" } },
+          "posts": { "type": "array", "items": { "$ref": "#/components/schemas/PostResult" } },
+          "topics": { "type": "array", "items": { "$ref": "#/components/schemas/TopicResult" } },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "从本页起往前的命中数估计（含访问者看不到的，翻页时变小；用户搜索为结果数）。"
+          },
+          "type": { "$ref": "#/components/schemas/SearchType" },
+          "users": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/UserCardView" },
+            "description": "结果里出现的作者等的名片。"
+          }
+        }
+      },
+      "SearchType": { "type": "string", "enum": ["post", "topic", "user"] },
       "SendMessage": {
         "type": "object",
         "required": ["body"],
@@ -7569,6 +7697,18 @@
         "properties": {
           "forum": { "$ref": "#/components/schemas/ForumView" },
           "posts": { "type": "array", "items": { "$ref": "#/components/schemas/PostView" } },
+          "topic": { "$ref": "#/components/schemas/TopicSummary" }
+        }
+      },
+      "TopicResult": {
+        "type": "object",
+        "required": ["topic", "title"],
+        "properties": {
+          "title": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Highlight" },
+            "description": "标题的高亮。"
+          },
           "topic": { "$ref": "#/components/schemas/TopicSummary" }
         }
       },

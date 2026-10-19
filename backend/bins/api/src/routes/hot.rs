@@ -4,7 +4,6 @@
 
 use std::collections::HashMap;
 
-use axum::Json;
 use forum_core::ErrorCode;
 use forum_db::forums::Forum;
 use forum_db::hot::{self, Ranked};
@@ -72,7 +71,7 @@ pub async fn board(
     state: &AppState,
     forum: &Forum,
     cursor: Option<&str>,
-) -> ApiResult<Json<BoardResponse>> {
+) -> ApiResult<BoardResponse> {
     let cursor = cursor.map(parse_cursor).transpose()?;
     let ranked = hot::board(&state.db, forum.id, cursor, TOPICS_PER_PAGE as i64).await?;
     let (topics, next) = ranked_topics(state, &ranked, |t| t.forum_id == forum.id).await?;
@@ -84,7 +83,7 @@ pub async fn latest(
     state: &AppState,
     forums: &HashMap<i32, Forum>,
     cursor: Option<&str>,
-) -> ApiResult<Json<LatestResponse>> {
+) -> ApiResult<LatestResponse> {
     let cursor = cursor.map(parse_cursor).transpose()?;
     let ids: Vec<i32> = forums.keys().copied().collect();
     let ranked = hot::site(&state.db, &ids, cursor, TOPICS_PER_PAGE as i64).await?;

@@ -1,12 +1,18 @@
 // 会话感知缓存（plan 第 8 节「游客页面」）：
 // - 带有效签名会话 Cookie → 按登录用户渲染，禁止任何缓存；
-// - 没有或伪造的 Cookie → 剥掉后按游客渲染，允许 Cloudflare 缓存 60 秒。
+// - 没有或伪造的 Cookie → 剥掉后按游客渲染，允许 Cloudflare 缓存 60 秒（后端另有一层 Valkey 游客响应缓存，见 forum-api 的 guest 模块）。
+// Cloudflare 侧须配缓存规则：HTML 可缓存（遵循 Cloudflare-CDN-Cache-Control），带 `sid` Cookie 的请求绕过缓存
+// （docs/perf/2026-10-load-test.md「上线配置」）；否则登录用户会拿到边缘缓存的游客页。
 // 伪造的 Cookie 因此打不穿缓存层去触发按用户渲染（plan 第 11 节）。
 import { type NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE } from "./lib/config";
 import { importSigningKey, verifySignedValue } from "./lib/signed-cookie";
 
 const GUEST_EDGE_TTL = 60;
+// 过期后边缘节点先返回旧页面、同时后台回源（只多一次回源的时间，不会多出 30 秒的旧内容）；源站出错时最多再用 5 分钟旧页面。
+const GUEST_EDGE_STALE = 30;
+const GUEST_EDGE_IF_ERROR = 300;
+export const GUEST_EDGE_CACHE = `public, max-age=${GUEST_EDGE_TTL}, stale-while-revalidate=${GUEST_EDGE_STALE}, stale-if-error=${GUEST_EDGE_IF_ERROR}`;
 
 let keyPromise: Promise<CryptoKey | null> | undefined;
 
@@ -44,7 +50,7 @@ export async function proxy(req: NextRequest) {
   }
   const res = NextResponse.next({ request: { headers } });
   // Next.js 会把动态页面的 Cache-Control 设为 no-store，所以边缘缓存用 Cloudflare 专用头单独声明
-  res.headers.set("Cloudflare-CDN-Cache-Control", `public, max-age=${GUEST_EDGE_TTL}`);
+  res.headers.set("Cloudflare-CDN-Cache-Control", GUEST_EDGE_CACHE);
   return res;
 }
 

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 全文搜索主题标题：同 search_groonga_posts.sql，索引 topics_search 带 forum_id，访问者可见的板块直接在 Groonga 里过滤。\n-- $1 Groonga 查询, $2 过滤条件（in_values(forum_id, …) [&& id < N]）, $3 条数\nSELECT pgroonga_command('select', ARRAY[\n  'table', pgroonga_table_name('topics_search'),\n  'match_columns', 'title',\n  'query', $1,\n  'filter', $2,\n  'sort_keys', '-id',\n  'limit', $3::int8::text,\n  'output_columns', 'id'\n])::jsonb AS \"result!\"\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "result!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4299983227c681774e365f159415fc7400bebaaef97350f875b2f8e4d99a477f"
+}

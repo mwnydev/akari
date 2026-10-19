@@ -30,6 +30,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::access::Viewer;
 use crate::cards;
 use crate::error::{ApiError, ApiResult, ErrorBody};
+use crate::guest;
 use crate::middleware::ClientIp;
 use crate::moderation::{self, Class, Moderator, action};
 use crate::posting::{self, COMMENT_RATE, LIKE_RATE, REPORT_RATE};
@@ -99,7 +100,9 @@ pub async fn page_social(
 }
 
 /// 推给打开着这个主题页的连接。隐藏的主题不推（订阅时还看得到的人此后不应再收到任何变化）。
+/// 点赞与评论的每次变化都经过这里，游客缓存里的主题页也在这里失效。
 async fn push(state: &AppState, topic: &Topic, event: &Event) {
+    guest::topic_changed(state, topic.id).await;
     if topic.flags & FLAG_HIDDEN != 0 {
         return;
     }

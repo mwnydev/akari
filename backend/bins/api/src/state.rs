@@ -4,7 +4,7 @@ use axum::extract::FromRef;
 use axum_extra::extract::cookie::Key;
 use forum_auth::{AnyCaptcha, CodeStore};
 use forum_db::PgPool;
-use forum_kv::{ForumCache, Pool};
+use forum_kv::{ForumCache, GuestCache, Pool};
 
 use crate::admin::AdminState;
 use crate::arbitration::ArbitrationState;
@@ -23,6 +23,8 @@ pub struct AppState {
     pub cookie_secure: bool,
     /// 板块列表、主题第 1 页、置顶列表、浏览数（plan 第 8 节）。
     pub cache: ForumCache,
+    /// 游客响应缓存（[`crate::guest`]）。
+    pub guest_cache: GuestCache,
     /// 本站域名：帖子里指向这些主机的绝对链接不算站外链接。
     pub internal_hosts: Arc<[String]>,
     /// 钱包 Passkey、钱包地址与报价（plan 第 5–7 节）。

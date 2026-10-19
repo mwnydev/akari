@@ -409,16 +409,13 @@ async fn comment_permissions_sanctions_and_moderation(db: PgPool) {
         .remove(0);
     assert_eq!(restore.action, "comment.restore");
     let mut tx = db.begin().await.unwrap();
-    let status = moderation::revert(
-        &state,
-        &mut tx,
-        alice,
-        &restore,
-        &mut RevertEffects::default(),
-    )
-    .await
-    .unwrap();
+    let mut effects = RevertEffects::default();
+    let status = moderation::revert(&state, &mut tx, alice, &restore, &mut effects)
+        .await
+        .unwrap();
     tx.commit().await.unwrap();
+    // 撤销接口提交后执行的缓存维护（游客缓存里的主题页带着评论）
+    effects.apply(&state).await;
     assert_eq!(status, RevertStatus::Reverted);
     assert_eq!(page(&app, &[], t).await["social"][0]["comment_count"], 0);
 

@@ -7,6 +7,7 @@ use std::time::Duration;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+use axum::response::Response;
 use forum_content::Cleaned;
 use forum_core::ErrorCode;
 use forum_db::topics::{self, FLAG_HIDDEN, FLAG_PINNED, Topic};
@@ -21,6 +22,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::access::{Viewer, visible_forums};
 use crate::cards;
 use crate::error::{ApiError, ApiResult, ErrorBody};
+use crate::guest::{self, Entry};
 use crate::middleware::ClientIp;
 use crate::posting::{self, TOPIC_RATE, after_commit, micros};
 use crate::routes::hot::{self, TopicSort};
@@ -37,13 +39,13 @@ const PINNED_TTL: Duration = Duration::from_secs(3600);
     get, path = "/api/v1/forums", tag = "forum",
     responses((status = 200, body = Vec<ForumView>))
 )]
-pub async fn list(
-    State(state): State<AppState>,
-    session: Session,
-) -> ApiResult<Json<Vec<ForumView>>> {
+pub async fn list(State(state): State<AppState>, session: Session) -> ApiResult<Response> {
     let viewer = Viewer::load(&state, &session).await?;
-    let forums = visible_forums(&state, &viewer).await?;
-    Ok(Json(forums.iter().map(ForumView::from).collect()))
+    guest::respond(&state, &viewer, Some(Entry::forums()), || async {
+        let forums = visible_forums(&state, &viewer).await?;
+        Ok((forums.iter().map(ForumView::from).collect::<Vec<_>>(), true))
+    })
+    .await
 }
 
 #[derive(Debug, Deserialize, IntoParams)]
@@ -81,7 +83,7 @@ pub async fn board(
     session: Session,
     Path(slug): Path<String>,
     Query(q): Query<BoardQuery>,
-) -> ApiResult<Json<BoardResponse>> {
+) -> ApiResult<Response> {
     let viewer = Viewer::load(&state, &session).await?;
     let forum = forum_db::forums::by_slug(&state.db, &slug)
         .await?
@@ -89,13 +91,33 @@ pub async fn board(
     if !viewer.can_view(&state, &forum).await? {
         return Err(ApiError(ErrorCode::NotFound));
     }
-    if q.sort == Some(TopicSort::Hot) {
-        if q.page.is_some() {
-            return Err(ApiError(ErrorCode::InvalidParameter));
-        }
-        return hot::board(&state, &forum, q.cursor.as_deref()).await;
+    let hot = q.sort == Some(TopicSort::Hot);
+    if hot && q.page.is_some() {
+        return Err(ApiError(ErrorCode::InvalidParameter));
     }
+    // 前 200 页与热门第一页走游客缓存；游标深分页的键空间无界，不缓存（走部分索引，本来就快）
+    let entry = match (hot, q.page.unwrap_or(1), &q.cursor) {
+        (true, _, None) => Some(Entry::board_hot(forum.id)),
+        (false, page, None) if (1..=MAX_PAGE).contains(&page) => Some(Entry::board(forum.id, page)),
+        _ => None,
+    };
+    guest::respond(&state, &viewer, entry, || async {
+        let page = if hot {
+            hot::board(&state, &forum, q.cursor.as_deref()).await?
+        } else {
+            board_page(&state, &forum, &q).await?
+        };
+        Ok((page, true))
+    })
+    .await
+}
 
+/// 组装板块的一页（与访问者无关：可见性已在调用方检查）。
+async fn board_page(
+    state: &AppState,
+    forum: &forum_db::forums::Forum,
+    q: &BoardQuery,
+) -> ApiResult<BoardResponse> {
     let mut pinned_ids = Vec::new();
     let mut next_page = None;
     let mut next_cursor = None;
@@ -151,7 +173,7 @@ pub async fn board(
             next_cursor = Some(cursor_of(at, id));
         }
         if page == 1 {
-            pinned_ids = pinned(&state, forum.id).await?;
+            pinned_ids = pinned(state, forum.id).await?;
         }
         let ids: Vec<i64> = pinned_ids
             .iter()
@@ -177,9 +199,9 @@ pub async fn board(
                 t.forum_id == forum.id && t.flags & FLAG_PINNED != 0 && t.flags & FLAG_HIDDEN == 0
             })
             .collect();
-        return respond(&state, &forum, pinned_rows, normal, next_page, next_cursor).await;
+        return respond(state, forum, pinned_rows, normal, next_page, next_cursor).await;
     }
-    respond(&state, &forum, Vec::new(), normal, next_page, next_cursor).await
+    respond(state, forum, Vec::new(), normal, next_page, next_cursor).await
 }
 
 pub(crate) async fn respond(
@@ -189,19 +211,19 @@ pub(crate) async fn respond(
     normal: Vec<Topic>,
     next_page: Option<u32>,
     next_cursor: Option<String>,
-) -> ApiResult<Json<BoardResponse>> {
+) -> ApiResult<BoardResponse> {
     let user_ids = topic_user_ids(pinned.iter().chain(&normal));
     let n = pinned.len();
     let mut all = summaries(state, &[pinned, normal].concat()).await?;
     let topics = all.split_off(n);
-    Ok(Json(BoardResponse {
+    Ok(BoardResponse {
         forum: forum.into(),
         pinned: all,
         topics,
         users: cards::load(state, &user_ids).await?,
         next_page,
         next_cursor,
-    }))
+    })
 }
 
 /// 列表行：主题摘要，交易帖补上剩余库存（本页的交易帖一次查询）。
@@ -315,7 +337,7 @@ impl PreparedTopic {
         }
     }
 
-    /// 提交后把新主题放进板块有序集合。
+    /// 提交后把新主题放进板块有序集合，并让游客缓存里的板块与首页失效。
     pub async fn after_create(&self, state: &AppState, created: &topics::Created) {
         after_commit(
             "board_touch",
@@ -326,6 +348,7 @@ impl PreparedTopic {
             ),
         )
         .await;
+        guest::listing_changed(state, created.topic_id, &[self.forum_id]).await;
     }
 }
 

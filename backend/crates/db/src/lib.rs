@@ -18,6 +18,7 @@ pub mod posts;
 pub mod reports;
 pub mod reputation;
 pub mod sanctions;
+pub mod search;
 pub mod settings;
 pub mod sponsor;
 pub mod staff;

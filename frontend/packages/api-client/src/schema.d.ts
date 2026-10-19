@@ -1638,6 +1638,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 搜索楼层、主题或用户。 */
+    get: operations["search"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/topics/latest": {
     parameters: {
       query?: never;
@@ -2755,6 +2772,11 @@ export interface components {
       /** @description 必填，写入审计日志，并显示给楼层作者（其他人只看到「已隐藏」）。 */
       reason: string;
     };
+    /** @description 高亮片段：`hit` 为真的是命中的词。前端按纯文本渲染。 */
+    Highlight: {
+      hit: boolean;
+      text: string;
+    };
     ImageVariant: {
       /** Format: int32 */
       height: number;
@@ -3328,6 +3350,30 @@ export interface components {
       | "manage_settings"
       | "revoke_actions"
       | "reinstate";
+    PostResult: {
+      /** Format: int64 */
+      author_id: number;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int32 */
+      floor: number;
+      /** Format: int32 */
+      forum_id: number;
+      /** Format: int64 */
+      id: number;
+      /**
+       * Format: int32
+       * @description 楼层所在的页（每页 20 楼）。
+       */
+      page: number;
+      /** @description 正文里第一处命中附近的约 160 字，换行变空格；前后被截断时 `truncated_*` 为真。 */
+      snippet: components["schemas"]["Highlight"][];
+      /** Format: int64 */
+      topic_id: number;
+      topic_title: string;
+      truncated_end: boolean;
+      truncated_start: boolean;
+    };
     PostSource: {
       source: Record<string, unknown>;
     };
@@ -3824,6 +3870,24 @@ export interface components {
       /** @description 新处罚的 ID（设备封禁按设备各一条）。 */
       ids: number[];
     };
+    SearchResponse: {
+      /** @description 结果里出现的板块。 */
+      forums: components["schemas"]["ForumView"][];
+      next_cursor?: string | null;
+      people: components["schemas"]["MentionView"][];
+      posts: components["schemas"]["PostResult"][];
+      topics: components["schemas"]["TopicResult"][];
+      /**
+       * Format: int64
+       * @description 从本页起往前的命中数估计（含访问者看不到的，翻页时变小；用户搜索为结果数）。
+       */
+      total: number;
+      type: components["schemas"]["SearchType"];
+      /** @description 结果里出现的作者等的名片。 */
+      users: components["schemas"]["UserCardView"][];
+    };
+    /** @enum {string} */
+    SearchType: "post" | "topic" | "user";
     SendMessage: {
       /** @description 文字，≤ 2000 字（图片消息在图片上传上线后支持）。 */
       body: string;
@@ -3984,6 +4048,11 @@ export interface components {
     TopicPageBody: {
       forum: components["schemas"]["ForumView"];
       posts: components["schemas"]["PostView"][];
+      topic: components["schemas"]["TopicSummary"];
+    };
+    TopicResult: {
+      /** @description 标题的高亮。 */
+      title: components["schemas"]["Highlight"][];
       topic: components["schemas"]["TopicSummary"];
     };
     TopicSummary: {
@@ -9081,6 +9150,57 @@ export interface operations {
         };
       };
       403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  search: {
+    parameters: {
+      query: {
+        /** @description 关键词，空格分隔的多个词须同时出现；最多 64 个字符、5 个词。 */
+        q: string;
+        type?: "post" | "topic" | "user";
+        /** @description 只搜这个板块（slug）。 */
+        board?: string | null;
+        /** @description 上一页的 `next_cursor`。 */
+        cursor?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SearchResponse"];
+        };
+      };
+      400: {
         headers: {
           [name: string]: unknown;
         };

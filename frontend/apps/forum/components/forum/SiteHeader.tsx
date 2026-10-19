@@ -1,7 +1,8 @@
 import { Avatar, Button } from "@akari/ui";
-import { Bell, Gavel, Mail, Search } from "lucide-react";
+import { Bell, Gavel, Mail } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { HeaderSearch } from "../search/HeaderSearch";
 import { BoardDrawer } from "./BoardDrawer";
 import { Brand } from "./Brand";
 import { headerIcon } from "./styles";
@@ -42,9 +43,7 @@ export function SiteHeader({
         </div>
         <Brand href={homeHref} />
         <div className="ml-auto flex items-center gap-0.5">
-          <button type="button" aria-label="搜索" className={headerIcon}>
-            <Search size={20} aria-hidden />
-          </button>
+          <HeaderSearch />
           {viewer ? (
             <>
               <a href="/messages" aria-label="私信" className={headerIcon}>

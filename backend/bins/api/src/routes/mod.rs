@@ -19,6 +19,7 @@ pub mod posts;
 pub mod presence;
 pub mod reports;
 pub mod ruling_passkey;
+pub mod search;
 pub mod topics;
 pub mod trade;
 pub mod uploads;

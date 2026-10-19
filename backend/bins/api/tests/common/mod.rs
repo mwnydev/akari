@@ -134,6 +134,7 @@ pub fn state_with(db: PgPool, wallet: WalletState, ns: &str) -> Option<AppState>
         allowed_origins: Arc::from(vec![ORIGIN.to_owned()]),
         cookie_secure: true,
         cache: forum_kv::ForumCache::new(kv.clone(), ns),
+        guest_cache: forum_kv::GuestCache::new(kv.clone(), ns),
         internal_hosts: Arc::from(vec!["forum.test".to_owned()]),
         wallet: Arc::new(wallet),
         admin: Arc::new(admin_state()),
@@ -188,6 +189,7 @@ pub fn unique_email() -> String {
 pub struct Res {
     pub status: StatusCode,
     pub cookies: Vec<String>,
+    pub headers: axum::http::HeaderMap,
     pub body: Value,
 }
 
@@ -232,6 +234,7 @@ pub async fn call_from(
         .iter()
         .map(|v| v.to_str().unwrap().to_owned())
         .collect();
+    let headers = res.headers().clone();
     let bytes = to_bytes(res.into_body(), 1 << 22).await.unwrap();
     let body = if bytes.is_empty() {
         Value::Null
@@ -243,6 +246,7 @@ pub async fn call_from(
     Res {
         status,
         cookies,
+        headers,
         body,
     }
 }

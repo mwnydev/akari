@@ -2501,6 +2501,7 @@ dependencies = [
  "forum-core",
  "serde_json",
  "sqlx",
+ "thiserror 2.0.21",
  "time",
  "tokio",
 ]
@@ -2533,6 +2534,7 @@ dependencies = [
  "async-trait",
  "deadpool-redis",
  "futures-util",
+ "rand 0.10.3",
  "redis",
  "serde",
  "serde_json",

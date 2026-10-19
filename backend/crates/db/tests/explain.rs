@@ -1389,3 +1389,40 @@ async fn report_queue_and_hot_queries_use_indexes(db: PgPool) {
     )
     .await;
 }
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn search_queries_use_indexes(db: PgPool) {
+    seed(&db).await;
+    // 第二步回表：Groonga 给出的一页候选按主键取楼层与主题，不扫大表
+    let ids: Vec<i64> = (1..=60).map(|i| i * 700).collect();
+    let sql = q!("search_posts_rows.sql");
+    check(
+        &db,
+        "search_posts_rows",
+        sqlx::query(sql).bind(&ids).bind([1_i32, 2, 3]),
+        "posts_pkey",
+    )
+    .await;
+    check(
+        &db,
+        "search_posts_rows (topics)",
+        sqlx::query(sql).bind(&ids).bind([1_i32, 2, 3]),
+        "topics_pkey",
+    )
+    .await;
+    // 第一步只调用 pgroonga_command，PostgreSQL 这边不碰任何表
+    for (name, sql) in [
+        ("search_groonga_posts", q!("search_groonga_posts.sql")),
+        ("search_groonga_topics", q!("search_groonga_topics.sql")),
+    ] {
+        let (info, plan) = explain(
+            &db,
+            sqlx::query(sql).bind("\"first\"").bind("").bind(20_i64),
+        )
+        .await;
+        assert!(
+            info.seq_scans.is_empty() && info.indexes.is_empty(),
+            "{name}: {plan:#}"
+        );
+    }
+}

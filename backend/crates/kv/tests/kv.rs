@@ -278,3 +278,65 @@ async fn realtime_channels_are_isolated_by_namespace() {
         .unwrap();
     assert_eq!(first, event(2));
 }
+
+#[tokio::test]
+async fn guest_cache_versions_single_flight_and_stale_while_revalidate() {
+    use forum_kv::GuestCache;
+    use forum_kv::guest_cache::{GuestTtl, Lookup};
+    let Some(pool) = pool() else { return };
+    let cache = GuestCache::new(pool, format!("test{}:", unique()));
+    let versions = [forum_kv::guest_cache::topic(1)];
+    let ttl = GuestTtl {
+        fresh: Duration::from_millis(200),
+        stale: Duration::from_secs(5),
+    };
+    // 冷启动：第一个拿到回源锁，其余等待
+    let Lookup::Build(ticket) = cache.lookup("e", &versions).await.unwrap() else {
+        panic!("first lookup should build")
+    };
+    assert!(matches!(
+        cache.lookup("e", &versions).await.unwrap(),
+        Lookup::Wait
+    ));
+    cache.store("e", ticket, "v1", ttl).await.unwrap();
+    assert!(matches!(cache.lookup("e", &versions).await.unwrap(), Lookup::Hit(b) if b == "v1"));
+
+    // 过了新鲜期、版本没变：一个请求重建，其余先拿旧值
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let Lookup::Build(ticket) = cache.lookup("e", &versions).await.unwrap() else {
+        panic!("expired entry should be rebuilt by one request")
+    };
+    assert!(matches!(cache.lookup("e", &versions).await.unwrap(), Lookup::Stale(b) if b == "v1"));
+    cache.store("e", ticket, "v2", ttl).await.unwrap();
+    assert!(matches!(cache.lookup("e", &versions).await.unwrap(), Lookup::Hit(b) if b == "v2"));
+
+    // 版本号加一：旧值不再返回（不当作过期内容），回源期间其余请求等待
+    cache.bump(&versions).await.unwrap();
+    let Lookup::Build(ticket) = cache.lookup("e", &versions).await.unwrap() else {
+        panic!("bumped entry should be rebuilt")
+    };
+    assert!(matches!(
+        cache.lookup("e", &versions).await.unwrap(),
+        Lookup::Wait
+    ));
+    // 回源期间又有写入：带旧版本标签写回的值不算命中
+    cache.bump(&versions).await.unwrap();
+    cache.store("e", ticket, "v3-outdated", ttl).await.unwrap();
+    let Lookup::Build(ticket) = cache.lookup("e", &versions).await.unwrap() else {
+        panic!("outdated store must not hit")
+    };
+    // 内容已不存在：放锁并删除条目，之后不再有旧值可返回
+    cache.release("e", ticket, true).await.unwrap();
+    let Lookup::Build(ticket) = cache.lookup("e", &versions).await.unwrap() else {
+        panic!("released lock should be available")
+    };
+    cache.release("e", ticket, false).await.unwrap();
+    // 依赖别的版本号的条目不受影响
+    let other = [forum_kv::guest_cache::topic(2)];
+    let Lookup::Build(t) = cache.lookup("o", &other).await.unwrap() else {
+        panic!()
+    };
+    cache.store("o", t, "o1", ttl).await.unwrap();
+    cache.bump(&versions).await.unwrap();
+    assert!(matches!(cache.lookup("o", &other).await.unwrap(), Lookup::Hit(b) if b == "o1"));
+}

@@ -18,6 +18,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::access::{TopicAccess, Viewer, topic_access};
 use crate::error::{ApiError, ApiResult, ErrorBody};
+use crate::guest;
 use crate::moderation::{self, Class, Moderator, action};
 use crate::posting::{self, EDIT_RATE, after_commit};
 use crate::state::AppState;
@@ -103,6 +104,11 @@ async fn invalidate(state: &AppState, ctx: &Ctx, title_changed: bool) {
             state.cache.bump(&forum_cache::topic_page1(ctx.topic.id)),
         )
         .await;
+    }
+    if title_changed {
+        guest::listing_changed(state, ctx.topic.id, &[ctx.topic.forum_id]).await;
+    } else {
+        guest::topic_changed(state, ctx.topic.id).await;
     }
 }
 

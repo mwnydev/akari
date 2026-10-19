@@ -1,15 +1,17 @@
-//! Valkey：连接池、跨进程滑动窗口限流、会话存储、论坛缓存、实时推送（Pub/Sub 与在线状态）。
+//! Valkey：连接池、跨进程滑动窗口限流、会话存储、论坛缓存、游客响应缓存、实时推送（Pub/Sub 与在线状态）。
 //!
 //! Valkey 只放可丢的数据（会话、验证码、限流计数、缓存），关键任务放 PostgreSQL（plan 第 2 节）。
 
 pub mod ephemeral;
 pub mod forum_cache;
+pub mod guest_cache;
 pub mod ratelimit;
 pub mod realtime;
 pub mod session_store;
 
 pub use deadpool_redis::{Connection, Pool};
 pub use forum_cache::{BoardPage, ForumCache};
+pub use guest_cache::GuestCache;
 pub use ratelimit::SlidingWindow;
 pub use realtime::Realtime;
 pub use session_store::ValkeySessionStore;

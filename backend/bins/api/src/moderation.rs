@@ -20,6 +20,7 @@ use utoipa::ToSchema;
 
 use crate::cards;
 use crate::error::{ApiError, ApiResult};
+use crate::guest;
 use crate::posting::{after_commit, micros};
 use crate::state::AppState;
 
@@ -259,15 +260,23 @@ impl TopicEffect {
             .await;
         }
         bump_page1(state, self.topic_id).await;
+        let forums = if moved {
+            vec![self.old_forum, self.new_forum]
+        } else {
+            vec![self.old_forum]
+        };
+        guest::listing_changed(state, self.topic_id, &forums).await;
     }
 }
 
+/// 主题内容变化：第 1 页缓存与游客缓存里该主题的各页。
 pub async fn bump_page1(state: &AppState, topic_id: i64) {
     after_commit(
         "bump page1",
         state.cache.bump(&forum_cache::topic_page1(topic_id)),
     )
     .await;
+    guest::topic_changed(state, topic_id).await;
 }
 
 /// 在事务内改主题；主题已不存在返回 `None`。精华经验（plan 第 7 节）与标志位同一事务。
@@ -469,7 +478,7 @@ pub async fn revert(
             }
             Ok(done(ok))
         }
-        // 评论不在主题页缓存里，不用失效；打开着的页面要刷新才看到
+        // 评论不在第 1 页缓存里，但在游客缓存的主题页里；打开着的页面要刷新才看到
         action::COMMENT_DELETE | action::COMMENT_RESTORE => {
             let Some(id) = target_id(entry, "comment:") else {
                 return Ok(NotRevertible);
@@ -479,6 +488,12 @@ pub async fn revert(
             } else {
                 floor::soft_delete(&mut **tx, id, floor::STATUS_DELETED_BY_STAFF).await?
             };
+            if changed.is_some()
+                && let Some(c) = floor::comment(&mut **tx, id).await?
+                && let Some(p) = posts::by_id(&mut **tx, c.post_id).await?
+            {
+                effects.pages.push(p.topic_id);
+            }
             Ok(done(changed.is_some()))
         }
         action::MUTE | action::AUCTION_BAN | action::BAN | action::DEVICE_BAN | action::IP_BAN => {

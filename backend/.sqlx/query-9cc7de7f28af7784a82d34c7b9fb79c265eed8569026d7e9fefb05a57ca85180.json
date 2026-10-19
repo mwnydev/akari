@@ -1,0 +1,113 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 全文搜索楼层第二步：按 Groonga 给出的 id 回表，只留未删除、主题未隐藏、在访问者可见板块里的楼层。走 posts_pkey、topics_pkey。\n-- $1 楼层 id, $2 可见板块 id\n-- 列都是 NOT NULL：可空性写死，不依赖 sqlx 按执行计划推断\nSELECT p.id AS \"id!\", p.topic_id AS \"topic_id!\", p.floor AS \"floor!\", p.author_id AS \"author_id!\",\n       p.plain_text AS \"plain_text!\", p.created_at AS \"created_at!\", t.title AS \"title!\", t.forum_id AS \"forum_id!\"\nFROM posts p\nJOIN topics t ON t.id = p.topic_id\nWHERE p.id = ANY($1::bigint[]) AND p.status = 0 AND (t.flags & 8) = 0 AND t.forum_id = ANY($2::int[])\nORDER BY p.id DESC\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "topic_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "topic_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "floor!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "floor"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "author_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "author_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "plain_text!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "plain_text"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "forum_id!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "forum_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int4Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9cc7de7f28af7784a82d34c7b9fb79c265eed8569026d7e9fefb05a57ca85180"
+}

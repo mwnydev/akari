@@ -111,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
         allowed_origins: Arc::from(cfg.allowed_origins.clone()),
         cookie_secure: cfg.cookie_secure,
         cache: forum_kv::ForumCache::new(kv.clone(), cfg.kv_namespace.as_str()),
+        guest_cache: forum_kv::GuestCache::new(kv.clone(), cfg.kv_namespace.as_str()),
         internal_hosts: Arc::from(cfg.internal_hosts.clone()),
         wallet: Arc::new(wallet),
         admin: Arc::new(admin),

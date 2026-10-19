@@ -6,6 +6,7 @@ use std::time::Duration;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
+use axum::response::Response;
 use forum_core::ErrorCode;
 use forum_core::staff::{Permission, Scope};
 use forum_db::forums::Forum;
@@ -23,6 +24,7 @@ use utoipa::{IntoParams, ToSchema};
 use crate::access::{Viewer, topic_access, visible_forums};
 use crate::cards;
 use crate::error::{ApiError, ApiResult, ErrorBody};
+use crate::guest::{self, Entry};
 use crate::middleware::ClientIp;
 use crate::moderation::{self, Class, Moderator, TopicChange};
 use crate::posting::{self, REPLY_RATE, after_commit, micros};
@@ -108,21 +110,34 @@ pub async fn get(
     session: Session,
     Path(id): Path<i64>,
     Query(q): Query<TopicQuery>,
-) -> ApiResult<Json<TopicPage>> {
+) -> ApiResult<Response> {
     let page = q.page.unwrap_or(1);
     if page < 1 {
         return Err(ApiError(ErrorCode::InvalidParameter));
     }
     let viewer = Viewer::load(&state, &session).await?;
+    let res = guest::respond(&state, &viewer, Some(Entry::topic(id, page)), || async {
+        let page = topic_page(&state, &viewer, id, page).await?;
+        // 超出末页的空页不缓存（页码任意，键空间无界）
+        let cacheable = page.page == 1 || page.page <= page.total_pages;
+        Ok((page, cacheable))
+    })
+    .await?;
+    after_commit("add_view", state.cache.add_view(id)).await;
+    Ok(res)
+}
+
+/// 主题某一页（按访问者：可见性、能否回复、能否管理、本人是否点过赞、隐藏楼层能否看到内容）。
+async fn topic_page(state: &AppState, viewer: &Viewer, id: i64, page: i32) -> ApiResult<TopicPage> {
     let mut body = if page == 1 {
-        page1(&state, id).await?
+        page1(state, id).await?
     } else {
-        build_body(&state, id, page).await?
+        build_body(state, id, page).await?
     }
     .ok_or(ApiError(ErrorCode::NotFound))?;
 
     let level = viewer.level();
-    let staff = viewer.is_staff(&state, body.forum.id).await?;
+    let staff = viewer.is_staff(state, body.forum.id).await?;
     let flags = body.topic.flags;
     if (level < body.forum.view_min_level || flags.hidden) && !staff {
         return Err(ApiError(ErrorCode::NotFound));
@@ -130,20 +145,19 @@ pub async fn get(
     let can_reply =
         viewer.user.is_some() && (staff || (!flags.locked && level >= body.forum.reply_min_level));
     let total_pages = (body.topic.last_floor + PAGE_SIZE - 1) / PAGE_SIZE;
-    // 缓存的页面里隐藏楼层带着内容，按访问者裁剪
+    // 缓存的页面里隐藏楼层带着内容，按访问者裁剪（游客缓存存的是裁剪后的结果）
     let viewer_id = viewer.user.map(|u| u.id);
     for p in &mut body.posts {
         p.redact(staff, viewer_id);
     }
-    let (social, social_users) = floor::page_social(&state, &body.posts, staff, viewer_id).await?;
+    let (social, social_users) = floor::page_social(state, &body.posts, staff, viewer_id).await?;
     let user_ids: Vec<i64> = [body.topic.author_id]
         .into_iter()
         .chain(body.posts.iter().map(|p| p.author_id))
         .chain(social_users)
         .collect();
-    let users = cards::load(&state, &user_ids).await?;
-    after_commit("add_view", state.cache.add_view(id)).await;
-    Ok(Json(TopicPage {
+    let users = cards::load(state, &user_ids).await?;
+    Ok(TopicPage {
         body,
         social,
         users,
@@ -151,7 +165,7 @@ pub async fn get(
         total_pages,
         can_reply,
         can_moderate: staff,
-    }))
+    })
 }
 
 /// 时间轴最多采样多少个楼层（滑块只有两百来像素高，相邻采样点之间按楼层插值）。
@@ -222,20 +236,41 @@ pub async fn latest_topics(
     State(state): State<AppState>,
     session: Session,
     Query(q): Query<LatestQuery>,
-) -> ApiResult<Json<LatestResponse>> {
+) -> ApiResult<Response> {
     let viewer = Viewer::load(&state, &session).await?;
-    let forums: HashMap<i32, Forum> = visible_forums(&state, &viewer)
-        .await?
-        .into_iter()
-        .map(|f| (f.id, f))
-        .collect();
-    if q.sort == Some(TopicSort::Hot) {
-        return hot::latest(&state, &forums, q.cursor.as_deref()).await;
-    }
+    let hot = q.sort == Some(TopicSort::Hot);
+    // 只缓存第一页：游标任意，键空间无界
+    let entry = q.cursor.is_none().then(|| {
+        if hot {
+            Entry::latest_hot()
+        } else {
+            Entry::latest()
+        }
+    });
+    guest::respond(&state, &viewer, entry, || async {
+        let forums: HashMap<i32, Forum> = visible_forums(&state, &viewer)
+            .await?
+            .into_iter()
+            .map(|f| (f.id, f))
+            .collect();
+        let page = if hot {
+            hot::latest(&state, &forums, q.cursor.as_deref()).await?
+        } else {
+            latest_page(&state, &forums, q.cursor.as_deref()).await?
+        };
+        Ok((page, true))
+    })
+    .await
+}
+
+/// 跨板块最新主题的一页（`forums`：访问者能看到的板块）。
+async fn latest_page(
+    state: &AppState,
+    forums: &HashMap<i32, Forum>,
+    cursor: Option<&str>,
+) -> ApiResult<LatestResponse> {
     // 扫描位置（不含）：上一页最后一个主题，之后是本次最后检查过的有序集合成员
-    let mut pos = q
-        .cursor
-        .as_deref()
+    let mut pos = cursor
         .map(parse_cursor)
         .transpose()?
         .map(|(at, id)| (micros(at), id));
@@ -243,7 +278,7 @@ pub async fn latest_topics(
     // None：有序集合还没读完；Some(true)：读完了且数据库里还有更早的；Some(false)：全部读完
     let mut zset_end: Option<bool> = None;
     for _ in 0..LATEST_ROUNDS {
-        let page = latest_zset(&state, pos.map(|p| p.0)).await?;
+        let page = latest_zset(state, pos.map(|p| p.0)).await?;
         // 分数相同的成员按字符串排序：取回后按 (分数, ID) 重新排序并按游标过滤
         let mut entries: Vec<(i64, i64)> = page
             .entries
@@ -295,7 +330,7 @@ pub async fn latest_topics(
         out.extend(rows);
     }
     let next_cursor = pos.filter(|_| more).map(|(s, id)| cursor_of(s, id));
-    latest_response(&state, &forums, &out, next_cursor).await
+    latest_response(state, forums, &out, next_cursor).await
 }
 
 /// 跨板块列表的响应：主题摘要、它们所在的板块与名片（最新与热门共用）。
@@ -304,12 +339,12 @@ pub(crate) async fn latest_response(
     forums: &HashMap<i32, Forum>,
     topics: &[Topic],
     next_cursor: Option<String>,
-) -> ApiResult<Json<LatestResponse>> {
+) -> ApiResult<LatestResponse> {
     let mut forum_ids: Vec<i32> = topics.iter().map(|t| t.forum_id).collect();
     forum_ids.sort_unstable();
     forum_ids.dedup();
     let user_ids = topic_user_ids(topics.iter());
-    Ok(Json(LatestResponse {
+    Ok(LatestResponse {
         topics: summaries(state, topics).await?,
         forums: forum_ids
             .iter()
@@ -318,7 +353,7 @@ pub(crate) async fn latest_response(
             .collect(),
         users: cards::load(state, &user_ids).await?,
         next_cursor,
-    }))
+    })
 }
 
 /// 读一批跨板块最新有序集合；还没建好时从数据库重建（合并写入，与并发的发帖不会互相覆盖）。
@@ -432,6 +467,7 @@ pub async fn reply(
         state.cache.bump(&forum_cache::topic_page1(id)),
     )
     .await;
+    guest::listing_changed(&state, id, &[r.forum_id]).await;
     Ok((
         StatusCode::CREATED,
         Json(CreatedPost {
