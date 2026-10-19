@@ -3,6 +3,7 @@ pragma solidity 0.8.37;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Escrow} from "../src/Escrow.sol";
+import {MarketBase} from "../src/MarketBase.sol";
 import {EscrowConfig} from "../src/EscrowConfig.sol";
 import {FeeMath} from "../src/libraries/FeeMath.sol";
 import {FeeOnTransferToken} from "./mocks/TestTokens.sol";
@@ -101,7 +102,7 @@ contract EscrowCreateTest is EscrowBase {
         assertEq(escrow.fills(escrow.hashOffer(o)), 2);
         bytes memory sig = _sign(o, sellerKey);
         vm.prank(buyer);
-        vm.expectRevert(Escrow.OfferUnavailable.selector);
+        vm.expectRevert(MarketBase.OfferUnavailable.selector);
         escrow.createAndFund(o, sig);
     }
 
@@ -149,7 +150,7 @@ contract EscrowCreateTest is EscrowBase {
 
         o = _offer(100 * U, FeeMath.Payer.Seller);
         o.seller = address(0); // no key can sign for the zero address
-        _expectCreateRevert(o, Escrow.BadSignature.selector);
+        _expectCreateRevert(o, MarketBase.BadSignature.selector);
 
         o = _offer(100 * U, FeeMath.Payer.Seller); // seller buying their own offer
         bytes memory own = _sign(o, sellerKey);
@@ -159,7 +160,7 @@ contract EscrowCreateTest is EscrowBase {
 
         o = _offer(100 * U, FeeMath.Payer.Seller);
         o.expiry = uint64(block.timestamp - 1);
-        _expectCreateRevert(o, Escrow.OfferUnavailable.selector);
+        _expectCreateRevert(o, MarketBase.OfferUnavailable.selector);
 
         o = _offer(4 * U, FeeMath.Payer.Seller);
         _expectCreateRevert(o, Escrow.BadOffer.selector);
@@ -197,7 +198,7 @@ contract EscrowCreateTest is EscrowBase {
 
         o = _offer(100 * U, FeeMath.Payer.Seller);
         o.maxFills = 0;
-        _expectCreateRevert(o, Escrow.OfferUnavailable.selector);
+        _expectCreateRevert(o, MarketBase.OfferUnavailable.selector);
     }
 
     /// Plan §6: an offer signed before a (queued) minimum-fee raise must not be charged the higher fee.
@@ -236,7 +237,7 @@ contract EscrowCreateTest is EscrowBase {
         vm.prank(seller);
         escrow.cancelOffer(1);
         assertTrue(escrow.cancelledNonce(seller, 1));
-        _expectCreateRevert(_offer(100 * U, FeeMath.Payer.Seller), Escrow.OfferUnavailable.selector);
+        _expectCreateRevert(_offer(100 * U, FeeMath.Payer.Seller), MarketBase.OfferUnavailable.selector);
     }
 
     function test_revert_create_badSignature() public {
@@ -244,7 +245,7 @@ contract EscrowCreateTest is EscrowBase {
         (, uint256 otherKey) = makeAddrAndKey("other");
         bytes memory sig = _sign(o, otherKey);
         vm.prank(buyer);
-        vm.expectRevert(Escrow.BadSignature.selector);
+        vm.expectRevert(MarketBase.BadSignature.selector);
         escrow.createAndFund(o, sig);
     }
 
@@ -253,7 +254,7 @@ contract EscrowCreateTest is EscrowBase {
         bytes memory sig = _sign(o, sellerKey);
         vm.chainId(421_614); // Arbitrum Sepolia: same offer must not replay
         vm.prank(buyer);
-        vm.expectRevert(Escrow.BadSignature.selector);
+        vm.expectRevert(MarketBase.BadSignature.selector);
         escrow.createAndFund(o, sig);
     }
 
@@ -282,7 +283,7 @@ contract EscrowCreateTest is EscrowBase {
         o.token = address(fot);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(sellerKey, e.hashOffer(o));
         vm.prank(buyer);
-        vm.expectRevert(Escrow.AmountMismatch.selector);
+        vm.expectRevert(MarketBase.AmountMismatch.selector);
         e.createAndFund(o, abi.encodePacked(r, s, v));
     }
 }
@@ -656,7 +657,7 @@ contract EscrowFlowTest is EscrowBase {
         assertEq(_bal(fresh), 98_900_000);
         assertEq(escrow.credit(seller, address(usdt)), 0);
         vm.prank(seller);
-        vm.expectRevert(Escrow.NothingToWithdraw.selector);
+        vm.expectRevert(MarketBase.NothingToWithdraw.selector);
         escrow.withdraw(address(usdt), fresh);
     }
 
@@ -697,8 +698,8 @@ contract EscrowParamsTest is EscrowBase {
     }
 
     function test_hardCaps() public {
-        EscrowConfig.Params[15] memory bad;
-        for (uint256 i; i < 15; i++) {
+        EscrowConfig.Params[16] memory bad;
+        for (uint256 i; i < 16; i++) {
             bad[i] = defaultParams();
         }
         bad[0].feeBps = 1001;
@@ -716,7 +717,8 @@ contract EscrowParamsTest is EscrowBase {
         bad[12].proposalWindow = 1 days - 1;
         bad[13].proposalWindow = 7 days + 1;
         bad[14].totalLockedCap = uint64(1_000_000 * U + 1);
-        for (uint256 i; i < 15; i++) {
+        bad[15].claimGas = uint64(1 * U + 1);
+        for (uint256 i; i < 16; i++) {
             vm.prank(owner);
             vm.expectRevert(EscrowConfig.BadParams.selector);
             config.setParams(bad[i]);
@@ -757,8 +759,8 @@ contract EscrowParamsTest is EscrowBase {
     }
 
     function test_eachTighteningField_isQueued() public {
-        EscrowConfig.Params[7] memory t;
-        for (uint256 i; i < 7; i++) {
+        EscrowConfig.Params[8] memory t;
+        for (uint256 i; i < 8; i++) {
             t[i] = defaultParams();
         }
         t[0].minFee = uint64(2 * U);
@@ -768,7 +770,8 @@ contract EscrowParamsTest is EscrowBase {
         t[4].resolveTimeout = 29 days;
         t[5].proposalWindow = 71 hours;
         t[6].feeBps = 101;
-        for (uint256 i; i < 7; i++) {
+        t[7].claimGas = 20_001;
+        for (uint256 i; i < 8; i++) {
             vm.prank(owner);
             config.setParams(t[i]);
             assertGt(config.pendingEta(), 0);

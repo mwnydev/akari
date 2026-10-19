@@ -57,6 +57,7 @@ contract Token18 is ERC20 {
 interface IBondPool {
     function lockBond(address seller, address token, uint256 amount) external;
     function releaseBond(address seller, address token, uint256 amount, address buyer, uint256 toBuyer) external;
+    function takeBond(address seller, address token, uint256 amount) external;
 }
 
 contract MockMarket {
@@ -68,5 +69,9 @@ contract MockMarket {
         external
     {
         pool.releaseBond(seller, token, amount, buyer, toBuyer);
+    }
+
+    function take(IBondPool pool, address seller, address token, uint256 amount) external {
+        pool.takeBond(seller, token, amount);
     }
 }

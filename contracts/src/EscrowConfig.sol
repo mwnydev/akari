@@ -17,6 +17,7 @@ contract EscrowConfig is Ownable2Step {
         uint64 orderCap;
         uint64 totalLockedCap; // cap on everything held by all markets (open orders + seller bonds)
         uint64 baseGas;
+        uint64 claimGas; // StreamEscrow: fixed gas fee deducted from each seller claim
         uint32 disputeMulBps;
         uint32 resolveTimeout;
         uint32 proposalWindow;
@@ -37,6 +38,7 @@ contract EscrowConfig is Ownable2Step {
         uint256 minFee; // effective minimum fee (0 during a campaign)
         bool campaign;
         uint256 baseGas; // 0 when this order uses a gas-subsidy slot
+        uint256 claimGas; // per-claim gas fee (StreamEscrow); 0 when this order uses a gas-subsidy slot
         uint256 disputeMinFee; // dispute-fee floor for zero-fee orders: the regular minimum fee
         uint256 minOrder;
         uint256 orderCap;
@@ -56,7 +58,7 @@ contract EscrowConfig is Ownable2Step {
     uint256 public constant MAX_MIN_ORDER = 100 * USDT;
     uint256 public constant MAX_ORDER_CAP = 100_000 * USDT;
     uint256 public constant MAX_TOTAL_LOCKED_CAP = 1_000_000 * USDT;
-    uint256 public constant MAX_BASE_GAS = 1 * USDT;
+    uint256 public constant MAX_BASE_GAS = 1 * USDT; // also caps the per-claim gas fee
     uint256 public constant MIN_DISPUTE_MUL = 5000;
     uint256 public constant MAX_DISPUTE_MUL = 50_000;
     uint256 public constant MIN_RESOLVE_TIMEOUT = 14 days;
@@ -141,6 +143,7 @@ contract EscrowConfig is Ownable2Step {
         if (q.campaign && subsidyUsed < _campaign.gasSubsidyCap) {
             ++subsidyUsed;
             q.baseGas = 0;
+            q.claimGas = 0;
         }
     }
 
@@ -162,7 +165,10 @@ contract EscrowConfig is Ownable2Step {
     /// @notice What `checkout` would return now, without consuming a subsidy slot (for the UI).
     function preview(uint8 scope) external view returns (Quote memory q) {
         q = _quote(scope);
-        if (q.campaign && subsidyUsed < _campaign.gasSubsidyCap) q.baseGas = 0;
+        if (q.campaign && subsidyUsed < _campaign.gasSubsidyCap) {
+            q.baseGas = 0;
+            q.claimGas = 0;
+        }
     }
 
     // ───────────────────────────── Params ─────────────────────────────
@@ -299,6 +305,7 @@ contract EscrowConfig is Ownable2Step {
         q.feeBps = q.campaign && c.rateBps < p.feeBps ? c.rateBps : p.feeBps;
         q.minFee = q.campaign ? 0 : p.minFee;
         q.baseGas = p.baseGas;
+        q.claimGas = p.claimGas;
         q.disputeMinFee = p.minFee;
         q.minOrder = p.minOrder;
         q.orderCap = p.orderCap;
@@ -363,7 +370,7 @@ contract EscrowConfig is Ownable2Step {
         if (
             p.feeBps > MAX_FEE_BPS || p.minFee > MAX_MIN_FEE || p.minOrder < MIN_MIN_ORDER || p.minOrder > MAX_MIN_ORDER
                 || p.orderCap < p.minOrder || p.orderCap > MAX_ORDER_CAP || p.totalLockedCap < p.orderCap
-                || p.totalLockedCap > MAX_TOTAL_LOCKED_CAP || p.baseGas > MAX_BASE_GAS
+                || p.totalLockedCap > MAX_TOTAL_LOCKED_CAP || p.baseGas > MAX_BASE_GAS || p.claimGas > MAX_BASE_GAS
                 || p.disputeMulBps < MIN_DISPUTE_MUL || p.disputeMulBps > MAX_DISPUTE_MUL
                 || p.resolveTimeout < MIN_RESOLVE_TIMEOUT || p.resolveTimeout > MAX_RESOLVE_TIMEOUT
                 || p.proposalWindow < MIN_PROPOSAL_WINDOW || p.proposalWindow > MAX_PROPOSAL_WINDOW
@@ -375,7 +382,7 @@ contract EscrowConfig is Ownable2Step {
     ///      lowering only blocks new orders (a risk brake that must act at once), never touching open ones.
     function _isLoosening(Params memory n, Params memory c) internal pure returns (bool) {
         return n.feeBps <= c.feeBps && n.minFee <= c.minFee && n.minOrder <= c.minOrder && n.baseGas <= c.baseGas
-            && n.disputeMulBps <= c.disputeMulBps && n.resolveTimeout == c.resolveTimeout
+            && n.claimGas <= c.claimGas && n.disputeMulBps <= c.disputeMulBps && n.resolveTimeout == c.resolveTimeout
             && n.proposalWindow == c.proposalWindow;
     }
 }

@@ -3,11 +3,11 @@ pragma solidity 0.8.37;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 import {FeeMath} from "./libraries/FeeMath.sol";
 import {EscrowConfig} from "./EscrowConfig.sol";
+import {MarketBase} from "./MarketBase.sol";
 
 /// @title Escrow — one-time escrow + the shared seller bond pool (plan-v3 §6)
 /// @notice Funds can only flow to the order's buyer, seller, and the fee recipient (fees, base gas, dispute fees).
@@ -16,7 +16,7 @@ import {EscrowConfig} from "./EscrowConfig.sol";
 /// @dev Settlement model: every ending is expressed as `s` = the seller's share of the order principal (`amount`).
 ///      The fee pool (fees + base gas) is kept apart from principal; fees are earned pro rata to `s`, base gas is
 ///      earned in full once the platform has sponsored any post-payment operation (`platformPaid`).
-contract Escrow is ReentrancyGuardTransient, EIP712 {
+contract Escrow is MarketBase, EIP712 {
     using SafeERC20 for IERC20;
 
     enum State {
@@ -134,9 +134,6 @@ contract Escrow is ReentrancyGuardTransient, EIP712 {
     uint256 public orderCount;
     // slither-disable-next-line uninitialized-state (written through a storage pointer in `_record`)
     mapping(uint256 => Order) internal _orders;
-    mapping(bytes32 => uint256) public fills;
-    mapping(address => mapping(uint256 => bool)) public cancelledNonce;
-    mapping(address => mapping(address => uint256)) public credit; // account => token => amount
     mapping(address => mapping(address => Bond)) internal _bonds; // seller => token => bond
     mapping(address => mapping(address => mapping(address => uint256))) public lockedBy; // market => seller => token
     mapping(bytes32 => bool) public auctionSettled; // keccak(seller, auctionId)
@@ -159,28 +156,22 @@ contract Escrow is ReentrancyGuardTransient, EIP712 {
     event Disputed(uint256 indexed orderId, address indexed by, uint256 disputeFee, bool fromBond);
     event Resolved(uint256 indexed orderId, uint256 toBuyerBps, uint256 bondToBuyerBps);
     event Settled(uint256 indexed orderId, State state, uint256 toBuyer, uint256 toSeller, uint256 toFeeRecipient);
-    event Credited(address indexed account, address indexed token, uint256 amount);
-    event Withdrawn(address indexed account, address indexed token, address to, uint256 amount);
-    event OfferCancelled(address indexed seller, uint256 nonce);
     event BondDeposited(address indexed seller, address indexed token, uint256 amount);
     event BondWithdrawn(address indexed seller, address indexed token, address to, uint256 amount);
     event BondLocked(address indexed market, address indexed seller, address indexed token, uint256 amount);
+    event BondTaken(address indexed market, address indexed seller, address indexed token, uint256 amount);
     event BondReleased(
         address indexed market, address indexed seller, address indexed token, uint256 amount, uint256 toBuyer
     );
 
     error BadOffer();
-    error BadSignature();
-    error OfferUnavailable();
     error FeeLimit();
     error FeesExceedAmount();
-    error AmountMismatch();
     error BadState();
     error NotParty();
     error TooEarly();
     error TooLate();
     error BadParams();
-    error NothingToWithdraw();
     error InsufficientBond();
 
     constructor(EscrowConfig config_, address arbiter_, address feeRecipient_) EIP712("AkariEscrow", "1") {
@@ -201,13 +192,8 @@ contract Escrow is ReentrancyGuardTransient, EIP712 {
         returns (uint256 orderId)
     {
         if (offer.buyer != address(0) && offer.buyer != msg.sender) revert BadOffer();
-        if (block.timestamp > offer.expiry || cancelledNonce[offer.seller][offer.nonce]) revert OfferUnavailable();
         bytes32 offerHash = hashOffer(offer);
-        if (fills[offerHash] >= offer.maxFills) revert OfferUnavailable();
-        fills[offerHash] += 1;
-        if (!SignatureCheckerLib.isValidERC6492SignatureNow(offer.seller, offerHash, sellerSig)) {
-            revert BadSignature();
-        }
+        _useOffer(offer.seller, offer.nonce, offer.expiry, offer.maxFills, offerHash, sellerSig);
         orderId = _createOrder(offer, offerHash, config.SCOPE_ESCROW());
     }
 
@@ -374,24 +360,9 @@ contract Escrow is ReentrancyGuardTransient, EIP712 {
         _settle(orderId, State.Settled, o.confirmDeadline != 0 ? o.amount / 2 : 0, 0, 0);
     }
 
-    /// @notice Withdraw a balance that could not be pushed (e.g. the token froze the recipient) to another address.
-    function withdraw(address token, address to) external nonReentrant {
-        uint256 amt = credit[msg.sender][token];
-        if (amt == 0) revert NothingToWithdraw();
-        credit[msg.sender][token] = 0;
-        emit Withdrawn(msg.sender, token, to, amt);
-        IERC20(token).safeTransfer(to, amt);
-    }
-
-    /// @notice Seller voids a signed offer by nonce.
-    function cancelOffer(uint256 nonce) external {
-        cancelledNonce[msg.sender][nonce] = true;
-        emit OfferCancelled(msg.sender, nonce);
-    }
-
     // ───────────────────────────── Seller bond pool ─────────────────────────────
 
-    /// @notice One pool per seller and token, shared by every market (Escrow and, later, StreamEscrow).
+    /// @notice One pool per seller and token, shared by every market (Escrow and StreamEscrow).
     function depositBond(address token, uint256 amount) external nonReentrant {
         if (amount == 0 || !config.tokenAllowed(token)) revert BadParams();
         _bonds[msg.sender][token].total += uint128(amount);
@@ -435,6 +406,17 @@ contract Escrow is ReentrancyGuardTransient, EIP712 {
             config.unlockFunds(toBuyer);
             _push(token, buyer, toBuyer);
         }
+    }
+
+    /// @notice A market moves part of a seller's free (unlocked) bond to itself: the seller's own dispute fee for
+    ///         one of that market's orders (StreamEscrow `disputeWithBond`). Total custody is unchanged.
+    function takeBond(address seller, address token, uint256 amount) external nonReentrant {
+        if (!config.isMarket(msg.sender)) revert NotParty();
+        Bond storage b = _bonds[seller][token];
+        if (amount > b.total - b.locked) revert InsufficientBond();
+        b.total -= uint128(amount);
+        emit BondTaken(msg.sender, seller, token, amount);
+        IERC20(token).safeTransfer(msg.sender, amount);
     }
 
     // ───────────────────────────── Views ─────────────────────────────
@@ -590,55 +572,19 @@ contract Escrow is ReentrancyGuardTransient, EIP712 {
         view
         returns (uint256 toBuyer, uint256 toSeller, uint256 toFeeRecipient)
     {
-        (uint256 feeS, uint256 fee) = _feesCharged(o, s, disputeRetained);
+        (uint256 feeB, uint256 feeS) = FeeMath.feesCharged(o.buyerFee, o.sellerFee, s, o.amount, disputeRetained);
         bool gasEarned = o.platformPaid;
         uint256 gas = gasEarned ? uint256(o.buyerGas) + o.sellerGas : 0;
         uint256 sellerCost = feeS + (gasEarned ? o.sellerGas : 0);
         toSeller = s > sellerCost ? s - sellerCost : 0;
-        toBuyer = uint256(o.amount) + o.buyerFee + o.buyerGas - gas - fee - toSeller;
-        toFeeRecipient = gas + fee + disputeRetained;
-    }
-
-    /// @dev Fees are earned pro rata to `s`. Scaling the floored integer buyer part (not the exact ratio) keeps both
-    ///      parts at or below their uncapped values, which is what guarantees `toBuyer` in `_shares` cannot underflow.
-    function _feesCharged(Order storage o, uint256 s, uint256 disputeRetained)
-        internal
-        view
-        returns (uint256 feeS, uint256 fee)
-    {
-        uint256 amount = o.amount;
-        uint256 feeB = uint256(o.buyerFee) * s / amount;
-        feeS = uint256(o.sellerFee) * s / amount;
-        fee = feeB + feeS;
-        if (disputeRetained > 0 && fee > 0) {
-            uint256 charged = fee > disputeRetained ? fee - disputeRetained : 0;
-            // slither-disable-next-line divide-before-multiply
-            feeB = feeB * charged / fee;
-            feeS = charged - feeB;
-            fee = charged;
-        }
+        toFeeRecipient = gas + feeB + feeS + disputeRetained;
+        toBuyer = uint256(o.amount) + o.buyerFee + o.buyerGas + disputeRetained - toFeeRecipient - toSeller;
     }
 
     function _lockBond(address seller, address token, uint256 amount) internal {
         Bond storage b = _bonds[seller][token];
         if (amount > b.total - b.locked) revert InsufficientBond();
         b.locked += uint128(amount);
-    }
-
-    /// @dev Push payment; if the token refuses (frozen address), keep it claimable via `withdraw(token, to)`.
-    function _push(address token, address to, uint256 amt) internal {
-        if (amt == 0) return;
-        if (!IERC20(token).trySafeTransfer(to, amt)) {
-            credit[to][token] += amt;
-            emit Credited(to, token, amt);
-        }
-    }
-
-    /// @dev Pull exactly `amt` from the caller, measured by balance change (never trust the transfer's accounting).
-    function _pullExact(address token, uint256 amt) internal {
-        uint256 before = IERC20(token).balanceOf(address(this));
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amt);
-        if (IERC20(token).balanceOf(address(this)) - before != amt) revert AmountMismatch();
     }
 
     function _funded(uint256 orderId) internal view returns (Order storage o) {

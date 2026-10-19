@@ -4,8 +4,9 @@ pragma solidity 0.8.37;
 import {Script, console} from "forge-std/Script.sol";
 import {Escrow} from "../src/Escrow.sol";
 import {EscrowConfig} from "../src/EscrowConfig.sol";
+import {StreamEscrow} from "../src/StreamEscrow.sol";
 
-/// @notice Deploys EscrowConfig + Escrow. Env:
+/// @notice Deploys EscrowConfig + Escrow + StreamEscrow (both markets registered at construction). Env:
 ///   TOKEN           USD₮0 on Arbitrum One (MockUSDT on testnet)
 ///   OWNER           treasury Safe (config owner; it must `acceptOwnership` only if transferred later)
 ///   ARBITER         arbitration Safe (2/3)
@@ -32,13 +33,14 @@ contract Deploy is Script {
             orderCap: uint64(200 * U),
             totalLockedCap: uint64(5000 * U),
             baseGas: uint64(100_000),
+            claimGas: uint64(20_000),
             disputeMulBps: 10_000,
             resolveTimeout: 30 days,
             proposalWindow: 72 hours
         });
     }
 
-    function run() external returns (EscrowConfig config, Escrow escrow) {
+    function run() external returns (EscrowConfig config, Escrow escrow, StreamEscrow stream) {
         address token = vm.envAddress("TOKEN");
         address owner = vm.envAddress("OWNER");
         address arbiter = vm.envAddress("ARBITER");
@@ -48,15 +50,20 @@ contract Deploy is Script {
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
         _ensureVerifier();
-        address[] memory markets = new address[](1);
-        markets[0] = vm.computeCreateAddress(deployer, vm.getNonce(deployer) + 1);
+        uint256 nonce = vm.getNonce(deployer);
+        address[] memory markets = new address[](2);
+        markets[0] = vm.computeCreateAddress(deployer, nonce + 1);
+        markets[1] = vm.computeCreateAddress(deployer, nonce + 2);
         config = new EscrowConfig(owner, defaultParams(), token, auctionSigner, markets);
         escrow = new Escrow(config, arbiter, feeRecipient);
+        stream = new StreamEscrow(escrow);
         vm.stopBroadcast();
 
         require(address(escrow) == markets[0], "escrow address mismatch");
+        require(address(stream) == markets[1], "stream address mismatch");
         console.log("EscrowConfig", address(config));
         console.log("Escrow      ", address(escrow));
+        console.log("StreamEscrow", address(stream));
         console.log("verifier    ", ERC6492_VERIFIER);
     }
 

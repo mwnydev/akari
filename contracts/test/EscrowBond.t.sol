@@ -205,7 +205,7 @@ contract EscrowBondTest is EscrowBase {
         assertEq(l, 0);
     }
 
-    // ───────────── second market (future StreamEscrow) ─────────────
+    // ───────────── second market (StreamEscrow) ─────────────
 
     function _addMarket() internal returns (MockMarket m) {
         m = new MockMarket();
@@ -251,6 +251,26 @@ contract EscrowBondTest is EscrowBase {
         m.release(pool, seller, address(usdt), 1 * U, buyer, 1 * U + 1);
         vm.expectRevert(); // arithmetic underflow: a market can only release what it locked
         m.release(pool, seller, address(usdt), 5 * U + 1, buyer, 0);
+    }
+
+    /// A market can take only the seller's free bond (its dispute fee); custody stays counted, tokens move.
+    function test_market_takeBond() public {
+        _depositBond(10 * U);
+        vm.expectRevert(Escrow.NotParty.selector);
+        escrow.takeBond(seller, address(usdt), 1);
+
+        MockMarket m = _addMarket();
+        IBondPool pool = IBondPool(address(escrow));
+        m.lock(pool, seller, address(usdt), 6 * U);
+        vm.expectRevert(Escrow.InsufficientBond.selector);
+        m.take(pool, seller, address(usdt), 4 * U + 1); // locked part is off limits
+        m.take(pool, seller, address(usdt), 4 * U);
+        assertEq(_bal(address(m)), 4 * U);
+        (uint256 t, uint256 l, uint256 a) = _bond();
+        assertEq(t, 6 * U);
+        assertEq(l, 6 * U);
+        assertEq(a, 0);
+        assertEq(config.totalLocked(), 10 * U);
     }
 
     // ───────────── global locked cap ─────────────

@@ -145,4 +145,37 @@ contract FeeMathTest is Test {
         assertLe(got, uint256(unlocked) - claimed);
         if (got > 0) assertEq(got + claimGas, uint256(unlocked) - claimed);
     }
+
+    /// Fees are earned pro rata to the seller share; a retained dispute fee replaces them (charged = max(0, earned -
+    /// retained)), and neither part ever exceeds its uncapped pro-rata value.
+    /// Inputs are uint64: real amounts are capped at 100000 USDT (1e11 units).
+    function testFuzz_feesCharged(uint64 buyerFee, uint64 sellerFee, uint64 base, uint64 s, uint64 retained)
+        public
+        pure
+    {
+        base = uint64(bound(base, 1, type(uint64).max));
+        s = uint64(bound(s, 0, base));
+        uint256 rawB = uint256(buyerFee) * s / base;
+        uint256 rawS = uint256(sellerFee) * s / base;
+        (uint256 feeB, uint256 feeS) = FeeMath.feesCharged(buyerFee, sellerFee, s, base, retained);
+        assertLe(feeB, rawB);
+        assertLe(feeS, rawS);
+        uint256 raw = rawB + rawS;
+        assertEq(feeB + feeS, raw > retained ? raw - retained : 0);
+        if (retained == 0) {
+            assertEq(feeB, rawB);
+            assertEq(feeS, rawS);
+        }
+    }
+
+    function test_feesCharged_examples() public pure {
+        (uint256 b, uint256 s) = FeeMath.feesCharged(0, 1_000_000, 54_395_000, 98_900_000, 500_000);
+        assertEq(b, 0);
+        assertEq(s, 50_000); // 0.55 USDT earned - 0.5 retained
+        (b, s) = FeeMath.feesCharged(600_000, 400_000, 1, 2, 0);
+        assertEq(b, 300_000);
+        assertEq(s, 200_000);
+        (b, s) = FeeMath.feesCharged(600_000, 400_000, 2, 2, 2_000_000);
+        assertEq(b + s, 0);
+    }
 }

@@ -53,6 +53,27 @@ library FeeMath {
         return net * elapsedPeriods / periods;
     }
 
+    /// @notice Platform fee actually charged when the seller ends up with `s` out of `base` (the principal the
+    ///         fees were computed on). Fees are earned pro rata to `s`; a retained dispute fee replaces the platform
+    ///         fee (at most one of the two is charged: charged = max(0, earned - retained)).
+    /// @dev Scaling the floored integer buyer part (not the exact ratio) keeps both parts at or below their uncapped
+    ///      values, which is what guarantees the buyer's share in a market's settlement cannot underflow.
+    function feesCharged(uint256 buyerFee, uint256 sellerFee, uint256 s, uint256 base, uint256 disputeRetained)
+        internal
+        pure
+        returns (uint256 feeB, uint256 feeS)
+    {
+        feeB = buyerFee * s / base;
+        feeS = sellerFee * s / base;
+        uint256 fee = feeB + feeS;
+        if (disputeRetained > 0 && fee > 0) {
+            uint256 charged = fee > disputeRetained ? fee - disputeRetained : 0;
+            // slither-disable-next-line divide-before-multiply
+            feeB = feeB * charged / fee;
+            feeS = charged - feeB;
+        }
+    }
+
     /// @notice Net the seller receives from a claim; zero means the claim is not allowed (claimable <= claimGas).
     function claimNet(uint256 unlocked, uint256 claimed, uint256 claimGas) internal pure returns (uint256) {
         uint256 claimable = unlocked - claimed;

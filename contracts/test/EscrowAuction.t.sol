@@ -2,6 +2,7 @@
 pragma solidity 0.8.37;
 
 import {Escrow} from "../src/Escrow.sol";
+import {MarketBase} from "../src/MarketBase.sol";
 import {EscrowConfig} from "../src/EscrowConfig.sol";
 import {FeeMath} from "../src/libraries/FeeMath.sol";
 import {EscrowBase} from "./EscrowBase.sol";
@@ -92,7 +93,7 @@ contract EscrowAuctionTest is EscrowBase {
         bytes memory sellerSig = _sig(escrow.hashAuction(a), sellerKey);
         bytes memory platformSig = _sig(escrow.hashProof(p2), platformKey);
         vm.prank(stranger);
-        vm.expectRevert(Escrow.OfferUnavailable.selector);
+        vm.expectRevert(MarketBase.OfferUnavailable.selector);
         escrow.createFromAuction(a, sellerSig, p2, platformSig);
     }
 
@@ -112,15 +113,15 @@ contract EscrowAuctionTest is EscrowBase {
 
         p = _proof(a, winner, 80 * U);
         p.payDeadline = uint64(block.timestamp - 1);
-        _expectSettleRevert(a, p, Escrow.OfferUnavailable.selector);
+        _expectSettleRevert(a, p, MarketBase.OfferUnavailable.selector);
 
         Escrow.AuctionAuth memory expired = _auth();
         expired.expiry = uint64(block.timestamp - 1);
-        _expectSettleRevert(expired, _proof(expired, winner, 80 * U), Escrow.OfferUnavailable.selector);
+        _expectSettleRevert(expired, _proof(expired, winner, 80 * U), MarketBase.OfferUnavailable.selector);
 
         Escrow.AuctionAuth memory sellerBuys = _auth();
         sellerBuys.seller = winner; // signature check fails first: the winner is not `seller`'s key
-        _expectSettleRevert(sellerBuys, _proof(sellerBuys, winner, 80 * U), Escrow.BadSignature.selector);
+        _expectSettleRevert(sellerBuys, _proof(sellerBuys, winner, 80 * U), MarketBase.BadSignature.selector);
 
         Escrow.AuctionAuth memory tooBig = _auth();
         tooBig.auctionId = 43;
@@ -139,11 +140,11 @@ contract EscrowAuctionTest is EscrowBase {
         bytes memory badSeller = _sig(escrow.hashAuction(a), otherKey);
 
         vm.prank(winner);
-        vm.expectRevert(Escrow.BadSignature.selector);
+        vm.expectRevert(MarketBase.BadSignature.selector);
         escrow.createFromAuction(a, goodSeller, p, badPlatform);
 
         vm.prank(winner);
-        vm.expectRevert(Escrow.BadSignature.selector);
+        vm.expectRevert(MarketBase.BadSignature.selector);
         escrow.createFromAuction(a, badSeller, p, goodPlatform);
     }
 
@@ -154,7 +155,7 @@ contract EscrowAuctionTest is EscrowBase {
         vm.warp(block.timestamp + 72 hours);
         config.applyAuctionSigner(address(0));
         Escrow.AuctionAuth memory a = _auth();
-        _expectSettleRevert(a, _proof(a, winner, 80 * U), Escrow.BadSignature.selector);
+        _expectSettleRevert(a, _proof(a, winner, 80 * U), MarketBase.BadSignature.selector);
     }
 
     function test_settle_auctionOnlyCampaign() public {

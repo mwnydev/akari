@@ -206,6 +206,7 @@ contract EscrowInvariantTest is Test {
                 orderCap: 200e6,
                 totalLockedCap: 1_000_000e6, // the cap itself is unit-tested; here it must not starve the handler
                 baseGas: 100_000,
+                claimGas: 20_000,
                 disputeMulBps: 10_000,
                 resolveTimeout: 30 days,
                 proposalWindow: 72 hours

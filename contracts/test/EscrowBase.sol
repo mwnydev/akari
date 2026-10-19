@@ -52,13 +52,14 @@ abstract contract EscrowBase is Test {
             orderCap: uint64(200 * U),
             totalLockedCap: uint64(5000 * U),
             baseGas: uint64(100_000),
+            claimGas: uint64(20_000),
             disputeMulBps: 10_000,
             resolveTimeout: 30 days,
             proposalWindow: 72 hours
         });
     }
 
-    function _fund(address who, uint256 amt) internal {
+    function _fund(address who, uint256 amt) internal virtual {
         usdt.mint(who, amt);
         vm.prank(who);
         usdt.approve(address(escrow), type(uint256).max);

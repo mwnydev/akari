@@ -2,6 +2,7 @@
 pragma solidity 0.8.37;
 
 import {Escrow} from "../src/Escrow.sol";
+import {MarketBase} from "../src/MarketBase.sol";
 import {FeeMath} from "../src/libraries/FeeMath.sol";
 import {MockAccountFactory} from "./mocks/MockAccount.sol";
 import {EscrowBase} from "./EscrowBase.sol";
@@ -48,7 +49,7 @@ contract EscrowSmartAccountTest is EscrowBase {
         (, uint256 otherKey) = makeAddrAndKey("other");
         bytes memory sig = _sign(o, otherKey);
         vm.prank(buyer);
-        vm.expectRevert(Escrow.BadSignature.selector);
+        vm.expectRevert(MarketBase.BadSignature.selector);
         escrow.createAndFund(o, sig);
     }
 
@@ -81,7 +82,7 @@ contract EscrowSmartAccountTest is EscrowBase {
             ERC6492_MAGIC
         );
         vm.prank(buyer);
-        vm.expectRevert(Escrow.BadSignature.selector);
+        vm.expectRevert(MarketBase.BadSignature.selector);
         escrow.createAndFund(o, sig);
     }
 }

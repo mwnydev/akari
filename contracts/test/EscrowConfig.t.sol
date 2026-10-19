@@ -69,10 +69,12 @@ contract EscrowConfigTest is EscrowBase {
     function test_campaign_gasSubsidyCountsOrders() public {
         _setCampaign(_c(block.timestamp, block.timestamp + 10 days, 100, 3, 1));
         assertEq(config.preview(1).baseGas, 0);
+        assertEq(config.preview(1).claimGas, 0);
         uint256 id = _create(_nextOffer(1));
         assertEq(escrow.getOrder(id).sellerGas, 0);
         assertEq(config.subsidyUsed(), 1);
         assertEq(config.preview(1).baseGas, 100_000);
+        assertEq(config.preview(1).claimGas, 20_000);
         id = _create(_nextOffer(2));
         assertEq(escrow.getOrder(id).sellerGas, 100_000);
         // a subsidized order: platform still sponsors, nothing is charged for gas
