@@ -33,6 +33,11 @@ COOKIE_SIGNING_KEY=<后端 COOKIE_SECRET 前 64 个字符> DATABASE_URL=<同后�
 回 `Set-Cookie: sid=; Max-Age=0`，浏览器的会话就没了（curl 有自己的 Cookie 罐，不受影响）。所以测试里的 API 请求一律
 用相对地址发到页面同源，经 Next rewrite 到同一个 forum-api。
 
+## 举报处理与楼层隐藏（`moderation.spec.ts`）
+
+只跑桌面。需要板块种子数据（同下）、forum-worker 在跑（结案通知经发件箱写入）、`DATABASE_URL`（直接写库任命版主）。
+本地不配 Turnstile（`NEXT_PUBLIC_TURNSTILE_SITE_KEY` 与后端 `TURNSTILE_SECRET` 都留空），新用户发帖不需要人机验证。
+
 ## 管理与仲裁（`staff.spec.ts`、`arbitration.spec.ts`）
 
 只跑桌面 Chromium（用 CDP 虚拟 WebAuthn 认证器）。需要：

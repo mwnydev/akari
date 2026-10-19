@@ -101,12 +101,3 @@ export function topicHeaderView(
     views: t.views,
   };
 }
-
-/**
- * 「热门」排序：后端没有 `sort=hot`，把已取到的这一页按回复数、浏览量排一遍（只是当页内的近似）。
- */
-export function hotOrder<T extends Pick<Schemas["TopicSummary"], "replies" | "views" | "id">>(
-  topics: T[],
-): T[] {
-  return [...topics].sort((a, b) => b.replies - a.replies || b.views - a.views || b.id - a.id);
-}

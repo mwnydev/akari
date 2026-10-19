@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 主题移动后，它的楼层与评论上待处理的案件跟到新板块（新板块的版主处理）。只扫待处理的案件（很少），\n-- 按主键回查楼层 / 评论。$1 topic_id, $2 新板块\nUPDATE report_cases rc SET forum_id = $2\nWHERE rc.status = 0 AND rc.forum_id <> $2\n  AND EXISTS (\n    SELECT 1 FROM posts p\n    WHERE p.topic_id = $1\n      AND p.id = CASE rc.target_kind\n                   WHEN 1 THEN rc.target_id\n                   ELSE (SELECT fc.post_id FROM floor_comments fc WHERE fc.id = rc.target_id)\n                 END\n  )\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c9d3c00e5bae6e0d7efda5ff72289b378566f244ed890a1d59a214c59606dbd8"
+}

@@ -3,13 +3,14 @@ import { Button, Card, EmptyState } from "@akari/ui";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { PostCaptchaProvider } from "../../../../components/captcha/PostCaptcha";
 import { PageError } from "../../../../components/PageError";
 import { AppShell } from "../../../../components/forum/AppShell";
 import { ListingFormLoader } from "../../../../components/trade/ListingFormLoader";
 import { load, serverApi } from "../../../../lib/api";
 import { listForums } from "../../../../lib/forums";
 import { boardHref, loginHref } from "../../../../lib/links";
-import { WALLET_ORIGIN } from "../../../../lib/public-config";
+import { needsPostCaptcha, WALLET_ORIGIN } from "../../../../lib/public-config";
 import { getMe } from "../../../../lib/session";
 
 export const metadata: Metadata = { title: "发起交易帖", robots: { index: false } };
@@ -17,7 +18,8 @@ export const metadata: Metadata = { title: "发起交易帖", robots: { index: f
 export default async function NewListingPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const here = `${boardHref(slug)}/listing`;
-  if (!(await getMe())) redirect(loginHref(here));
+  const me = await getMe();
+  if (!me) redirect(loginHref(here));
 
   const api = await serverApi();
   const [forums, wallet, tradeParams] = await Promise.all([
@@ -47,7 +49,9 @@ export default async function NewListingPage({ params }: { params: Promise<{ slu
         <h1 className="text-2xl font-semibold">发起交易帖</h1>
         <Card>
           {wallet.enabled ? (
-            <ListingFormLoader forumSlug={slug} params={tradeParams} />
+            <PostCaptchaProvider required={needsPostCaptcha(me)}>
+              <ListingFormLoader forumSlug={slug} params={tradeParams} />
+            </PostCaptchaProvider>
           ) : (
             <EmptyState
               title="发交易帖需要先开通交易"

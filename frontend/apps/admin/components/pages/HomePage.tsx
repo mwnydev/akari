@@ -6,6 +6,7 @@ import { toast } from "@akari/ui/toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound } from "lucide-react";
 import { api, unwrap } from "../../lib/api";
+import { FORUM_ORIGIN } from "../../lib/config";
 import { formatTime } from "../../lib/format";
 import { registerPasskey } from "../../lib/passkey";
 import { keys, useStaff } from "../../lib/queries";
@@ -13,13 +14,23 @@ import { QueryView, Section } from "../Section";
 import { useAdminSession } from "../session/SessionProvider";
 import { Table, Td } from "../Table";
 
-function Count({ title, value, href }: { title: string; value: number | undefined; href: string }) {
+function Count({
+  title,
+  value,
+  href,
+  action = "查看",
+}: {
+  title: string;
+  value: number | undefined;
+  href: string;
+  action?: string;
+}) {
   return (
     <Card className="space-y-1">
       <CardTitle>{title}</CardTitle>
       <p className="amount text-2xl font-semibold">{value ?? "…"}</p>
       <a href={href} className="text-sm text-accent hover:underline">
-        查看
+        {action}
       </a>
     </Card>
   );
@@ -85,9 +96,13 @@ export function HomePage() {
     queryKey: keys.suspensions,
     queryFn: () => unwrap(api.GET("/api/v1/admin/suspensions")),
   });
+  const reports = useQuery({
+    queryKey: keys.reports,
+    queryFn: () => unwrap(api.GET("/api/v1/admin/reports")),
+  });
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Count
           title="需要关注的仲裁案件"
           value={overview.data?.cases.length}
@@ -99,6 +114,12 @@ export function HomePage() {
           href="/suspensions/"
         />
         <Count title="在任管理人员" value={staff.data?.staff.length} href="/staff/" />
+        <Count
+          title="待处理的举报"
+          value={reports.data?.open}
+          href={`${FORUM_ORIGIN}/moderation/reports`}
+          action="去论坛处理"
+        />
       </div>
       <Passkeys />
     </>

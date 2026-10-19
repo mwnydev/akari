@@ -26,7 +26,10 @@ async fn main() -> anyhow::Result<()> {
     let kv = forum_kv::pool(&cfg.valkey_url)?;
     let captcha = match &cfg.turnstile_secret {
         Some(secret) => {
-            AnyCaptcha::Turnstile(Turnstile::new(reqwest::Client::new(), secret.clone()))
+            let client = reqwest::Client::builder()
+                .timeout(forum_auth::captcha::TIMEOUT)
+                .build()?;
+            AnyCaptcha::Turnstile(Turnstile::new(client, secret.clone()))
         }
         None => {
             tracing::warn!("TURNSTILE_SECRET not set: captcha disabled (development only)");

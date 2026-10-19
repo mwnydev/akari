@@ -21,6 +21,7 @@ import { listForums } from "../../../lib/forums";
 import { topicHref } from "../../../lib/links";
 import { headerViewer } from "../../../lib/nav";
 import { floorPage, parsePositiveInt } from "../../../lib/pagination";
+import { needsPostCaptcha } from "../../../lib/public-config";
 import { getMe } from "../../../lib/session";
 import { topicHeaderView } from "../../../lib/topic-views";
 
@@ -96,7 +97,7 @@ export default async function TopicPage({
   const last = page === data.total_pages;
 
   return (
-    <ComposerProvider>
+    <ComposerProvider captcha={needsPostCaptcha(me)}>
       <AppShell
         active={forum.slug}
         className="xl:grid xl:grid-cols-[minmax(0,48rem)_9rem] xl:gap-10"

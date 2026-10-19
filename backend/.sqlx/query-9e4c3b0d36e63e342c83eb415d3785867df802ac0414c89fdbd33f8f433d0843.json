@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM hot_topics",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "9e4c3b0d36e63e342c83eb415d3785867df802ac0414c89fdbd33f8f433d0843"
+}

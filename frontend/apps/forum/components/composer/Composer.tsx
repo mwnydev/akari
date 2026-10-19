@@ -9,6 +9,7 @@ import { api, unwrap } from "../../lib/browser-api";
 import { clearDraft, loadDraft, saveDraft, type Draft } from "../../lib/drafts";
 import type { UserCardView } from "../../lib/display";
 import { topicHref } from "../../lib/links";
+import { usePostCaptcha } from "../captcha/PostCaptcha";
 import type { QuoteTarget } from "../forum/ComposerContext";
 import { usePreview } from "../forum/preview";
 import { QueryProvider } from "../QueryProvider";
@@ -74,17 +75,18 @@ function withQuote(doc: JSONContent | null, q: QuoteTarget): JSONContent {
   };
 }
 
+/** `captcha`：新用户发主题、回帖时的 Turnstile 令牌（编辑不需要）。 */
 async function submit(
   target: ComposeTarget,
-  body: { title: string; html: string; source: JSONContent },
+  body: { title: string; html: string; source: JSONContent; captcha: string | null },
 ): Promise<string | null> {
-  const { html, source } = body;
+  const { html, source, captcha } = body;
   switch (target.kind) {
     case "topic": {
       const created = await unwrap(
         api.POST("/api/v1/forums/{slug}/topics", {
           params: { path: { slug: target.forumSlug } },
-          body: { title: body.title, html, source },
+          body: { title: body.title, html, source, captcha },
         }),
       );
       return topicHref(created.topic_id);
@@ -93,7 +95,7 @@ async function submit(
       const created = await unwrap(
         api.POST("/api/v1/topics/{id}/posts", {
           params: { path: { id: target.topicId } },
-          body: { html, source },
+          body: { html, source, captcha },
         }),
       );
       return topicHref(target.topicId, created.page, created.floor);
@@ -128,6 +130,8 @@ function ComposerForm({
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const titleRef = useRef(title);
   const preview = usePreview();
+  const postCaptcha = usePostCaptcha();
+  const captcha = target.kind === "edit" ? null : postCaptcha;
 
   // 引用回复：引用块放在初始内容最前面（BottomComposer 换引用时会重新挂载本组件）
   const [content] = useState(() => (quote ? withQuote(initial.doc, quote) : initial.doc));
@@ -161,8 +165,11 @@ function ComposerForm({
         title: title.trim(),
         html: editor.getHTML(),
         source: editor.getJSON(),
+        captcha: captcha?.token ?? null,
       });
     },
+    // Turnstile 令牌只能用一次
+    onSettled: () => captcha?.renew(),
     onSuccess: (href) => {
       clearTimeout(timer.current);
       clearDraft(key);
@@ -205,6 +212,7 @@ function ComposerForm({
         </Field>
       ) : null}
       <EditorField {...ed} invalid={localError === "内容不能为空"} />
+      {captcha?.widget}
       {error ? (
         <p role="alert" className="text-sm text-danger">
           {error}
@@ -220,7 +228,12 @@ function ComposerForm({
           </Button>
           <Button
             type="submit"
-            disabled={mutation.isPending || !editor || ed.upload?.kind === "busy"}
+            disabled={
+              mutation.isPending ||
+              !editor ||
+              ed.upload?.kind === "busy" ||
+              (captcha?.missing ?? false)
+            }
           >
             {mutation.isPending ? pending : idle}
           </Button>

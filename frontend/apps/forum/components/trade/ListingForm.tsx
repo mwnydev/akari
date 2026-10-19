@@ -10,6 +10,7 @@ import { useForm } from "react-hook-form";
 import { api, unwrap } from "../../lib/browser-api";
 import { FEE_PAYERS } from "../../lib/fees";
 import { WALLET_ORIGIN } from "../../lib/public-config";
+import { usePostCaptcha } from "../captcha/PostCaptcha";
 import { EditorField, useForumEditor } from "../composer/Editor";
 import { QueryProvider } from "../QueryProvider";
 import { listingSchema, listingTerms, type ListingInput } from "./listing-schema";
@@ -46,6 +47,7 @@ function Form({ forumSlug, params }: Props) {
     mentionable: [],
   });
   const editor = ed.editor;
+  const captcha = usePostCaptcha();
 
   const create = useMutation({
     mutationFn: (v: ListingInput) => {
@@ -57,11 +59,13 @@ function Form({ forumSlug, params }: Props) {
             title: v.title.trim(),
             html: editor.getHTML(),
             source: editor.getJSON(),
+            captcha: captcha.token,
             ...listingTerms(v),
           },
         }),
       );
     },
+    onSettled: () => captcha.renew(),
     onSuccess: (created) => router.push(`/trade/${created.listing_id}`),
   });
 
@@ -126,6 +130,7 @@ function Form({ forumSlug, params }: Props) {
         发帖后在钱包里签名报价，买家才能担保购买；成交以签名报价为准。填了参考汇率时页面另显示人民币参考价，
         只是参考，付款仍按 USDT。图片上传即将开放。
       </p>
+      {captcha.widget}
       {create.isError ? (
         <p role="alert" className="text-sm text-danger">
           {errorMessage(create.error)}
@@ -140,7 +145,10 @@ function Form({ forumSlug, params }: Props) {
         </p>
       ) : null}
       <div className="flex justify-end">
-        <Button type="submit" disabled={create.isPending || !editor || ed.upload?.kind === "busy"}>
+        <Button
+          type="submit"
+          disabled={create.isPending || !editor || ed.upload?.kind === "busy" || captcha.missing}
+        >
           {create.isPending ? "发布中…" : "发布交易帖"}
         </Button>
       </div>

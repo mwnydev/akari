@@ -430,3 +430,6 @@ pub async fn flush_views(db: &PgPool, cache: &ForumCache) -> Result<usize, Flush
 
 /// 通知分区维护间隔（建未来两个月的分区、删 180 天前的分区）。
 pub const PARTITION_INTERVAL: std::time::Duration = std::time::Duration::from_secs(86_400);
+
+/// 热门排名重算间隔（plan 第 9 节「热门榜刷新间隔 5 分钟」，见 [`forum_db::hot::refresh`]）。
+pub const HOT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(300);

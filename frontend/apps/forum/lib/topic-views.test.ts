@@ -2,7 +2,7 @@ import type { Schemas } from "@akari/api-client";
 import { describe, expect, it } from "vitest";
 import { boardColor } from "./board-color";
 import { cardLookup, NO_REPUTATION } from "./display";
-import { hotOrder, personCard, topicLink, topicRowView, tradeFacts } from "./topic-views";
+import { personCard, topicLink, topicRowView, tradeFacts } from "./topic-views";
 
 const summary: Schemas["TopicSummary"] = {
   id: 7,
@@ -80,11 +80,6 @@ describe("topic views", () => {
       // 卖家就是楼主：成功率取楼主名片上的信誉
       seller: { successPermille: 990, deals: 12, disputesLost: 0 },
     });
-  });
-
-  it("orders the hot tab by replies, then views", () => {
-    const t = (id: number, replies: number, views: number) => ({ id, replies, views });
-    expect(hotOrder([t(1, 2, 9), t(2, 5, 1), t(3, 2, 30)]).map((x) => x.id)).toEqual([2, 3, 1]);
   });
 
   it("uses the board's palette colour, else cycles by position", () => {

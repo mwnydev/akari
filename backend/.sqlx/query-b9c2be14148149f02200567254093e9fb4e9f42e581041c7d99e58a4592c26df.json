@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 首页热门：只取访问者看得到的板块，走 hot_topics_all（看不到的板块很少，边扫边过滤）。\n-- $1 forum_ids, $2 游标分数, $3 游标主题 ID（都不含）, $4 limit\nSELECT topic_id, score\nFROM hot_topics\nWHERE forum_id = ANY($1) AND (score, topic_id) < ($2, $3)\nORDER BY score DESC, topic_id DESC\nLIMIT $4\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "topic_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "hot_topics",
+            "name": "topic_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "score",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "hot_topics",
+            "name": "score"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4Array",
+        "Float8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b9c2be14148149f02200567254093e9fb4e9f42e581041c7d99e58a4592c26df"
+}

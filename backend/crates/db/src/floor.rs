@@ -280,29 +280,3 @@ pub async fn take_like_digest(
         likers: fresh.likers,
     }))
 }
-
-/// `reports.target_kind`。
-pub const REPORT_POST: i16 = 1;
-pub const REPORT_COMMENT: i16 = 2;
-
-/// 举报一条楼层或评论（同一人对同一内容重复举报不再记）。`forum_id` 是内容现在所在的板块。
-pub async fn report(
-    db: impl PgExecutor<'_>,
-    target_kind: i16,
-    target_id: i64,
-    forum_id: i32,
-    reporter_id: i64,
-    reason: &str,
-) -> Result<(), sqlx::Error> {
-    sqlx::query_file!(
-        "queries/report_create.sql",
-        target_kind,
-        target_id,
-        forum_id,
-        reporter_id,
-        reason
-    )
-    .execute(db)
-    .await?;
-    Ok(())
-}

@@ -1,7 +1,9 @@
 //! 发帖、回帖、评论、编辑共用的写入前检查：处罚、限流、新用户限制、内容过滤；以及写入后的缓存维护。
 
+use std::net::IpAddr;
 use std::time::Duration;
 
+use forum_auth::Captcha;
 use forum_content::Cleaned;
 use forum_core::ErrorCode;
 use forum_db::sanctions;
@@ -95,6 +97,31 @@ pub async fn limit_new_content(
         rule
     };
     limit(state, rule, actor.id).await
+}
+
+/// 注册 24 小时内的新用户发主题、回帖、评论前先过人机验证（plan 第 11 节「刷帖、广告」：Turnstile + 新号限制）；
+/// 组件的 `action` 为 `post`。没带令牌返回 `CAPTCHA_REQUIRED`（前端据此显示组件），令牌无效返回 `CAPTCHA_FAILED`；
+/// Turnstile 不可用时拒绝。开发环境没配置密钥时一律通过。
+pub async fn check_new_user_captcha(
+    state: &AppState,
+    actor: &Actor,
+    token: Option<&str>,
+    ip: IpAddr,
+) -> ApiResult<()> {
+    if !is_new_user(actor) {
+        return Ok(());
+    }
+    let token = token.filter(|t| !t.is_empty());
+    let passed = state
+        .captcha
+        .verify(token, ip, forum_auth::captcha::action::POST)
+        .await
+        .map_err(ApiError::internal)?;
+    match (passed, token) {
+        (true, _) => Ok(()),
+        (false, None) => Err(ApiError(ErrorCode::CaptchaRequired)),
+        (false, Some(_)) => Err(ApiError(ErrorCode::CaptchaFailed)),
+    }
 }
 
 /// 过滤内容并检查新用户外链。在事务外调用（plan 第 8 节）。

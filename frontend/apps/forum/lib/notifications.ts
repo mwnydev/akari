@@ -62,7 +62,27 @@ export function describeNotification(n: Notification, actor: string | null): Not
         href: id ? `/orders/${id}` : null,
       };
     }
+    case "system":
+      return describeSystem(p);
     default:
       return { text: "系统通知", href: null };
   }
+}
+
+/** 系统通知：按 `event` 区分（后端 `notify.<event>`）；不认识的只显示「系统通知」。 */
+function describeSystem(p: Record<string, unknown>): NotificationView {
+  if (p.event === "report_resolved") {
+    // 只说处理结果，不含处理方式与处罚内容（后端 report_case_resolve.sql）
+    const topic = int(p.topic_id);
+    const floor = int(p.floor);
+    const where = floor ? `（#${floor} 楼）` : "";
+    return {
+      text:
+        p.outcome === "actioned"
+          ? `你举报的内容${where}已处理，感谢反馈`
+          : `你举报的内容${where}经核查未发现违规`,
+      href: topic ? topicHref(topic, floor ? floorPage(floor) : 1, floor ?? undefined) : null,
+    };
+  }
+  return { text: "系统通知", href: null };
 }

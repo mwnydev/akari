@@ -1,6 +1,7 @@
 //! 板块列表、板块主题列表、发主题。
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::time::Duration;
 
 use axum::Json;
@@ -20,7 +21,9 @@ use utoipa::{IntoParams, ToSchema};
 use crate::access::{Viewer, visible_forums};
 use crate::cards;
 use crate::error::{ApiError, ApiResult, ErrorBody};
+use crate::middleware::ClientIp;
 use crate::posting::{self, TOPIC_RATE, after_commit, micros};
+use crate::routes::hot::{self, TopicSort};
 use crate::state::AppState;
 use crate::views::{BoardResponse, CreatedTopic, ForumView, TopicSummary};
 
@@ -45,10 +48,13 @@ pub async fn list(
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct BoardQuery {
-    /// 页码 1–200；与 `cursor` 二选一。
+    /// 页码 1–200；与 `cursor` 二选一。热门不用页码。
     pub page: Option<u32>,
-    /// 第 200 页之后的游标（取自上一页的 `next_cursor`）。
+    /// 第 200 页之后的游标（取自上一页的 `next_cursor`）；热门翻页也用它。
     pub cursor: Option<String>,
+    /// `latest`（默认，按最后回复时间，置顶帖在第 1 页）或 `hot`（热门，不含置顶帖）。
+    #[param(inline)]
+    pub sort: Option<TopicSort>,
 }
 
 pub fn parse_cursor(c: &str) -> ApiResult<(OffsetDateTime, i64)> {
@@ -82,6 +88,12 @@ pub async fn board(
         .ok_or(ApiError(ErrorCode::NotFound))?;
     if !viewer.can_view(&state, &forum).await? {
         return Err(ApiError(ErrorCode::NotFound));
+    }
+    if q.sort == Some(TopicSort::Hot) {
+        if q.page.is_some() {
+            return Err(ApiError(ErrorCode::InvalidParameter));
+        }
+        return hot::board(&state, &forum, q.cursor.as_deref()).await;
     }
 
     let mut pinned_ids = Vec::new();
@@ -170,7 +182,7 @@ pub async fn board(
     respond(&state, &forum, Vec::new(), normal, next_page, next_cursor).await
 }
 
-async fn respond(
+pub(crate) async fn respond(
     state: &AppState,
     forum: &forum_db::forums::Forum,
     pinned: Vec<Topic>,
@@ -247,6 +259,8 @@ pub struct NewTopicRequest {
     /// Tiptap `getJSON()` 原稿，重新编辑时加载。
     #[schema(value_type = Object)]
     pub source: Value,
+    /// 注册 24 小时内必填：Turnstile 令牌（组件的 `action` 为 `post`）。
+    pub captcha: Option<String>,
 }
 
 /// 发主题。发帖免审核（plan 第 4 节），新用户 24 小时内限频、不能发外链。
@@ -263,10 +277,11 @@ pub struct NewTopicRequest {
 pub async fn create_topic(
     State(state): State<AppState>,
     session: Session,
+    ClientIp(ip): ClientIp,
     Path(slug): Path<String>,
     Json(req): Json<NewTopicRequest>,
 ) -> ApiResult<(StatusCode, Json<CreatedTopic>)> {
-    let p = prepare_topic(&state, &session, &slug, &req, topics::KIND_NORMAL).await?;
+    let p = prepare_topic(&state, &session, ip, &slug, &req, topics::KIND_NORMAL).await?;
     let created = topics::create(&state.db, p.new_topic(&req, topics::KIND_NORMAL)).await?;
     p.after_create(&state, &created).await;
     Ok((
@@ -314,10 +329,11 @@ impl PreparedTopic {
     }
 }
 
-/// 发主题前的检查：登录、板块权限（交易帖只能发在允许交易的板块）、标题与内容过滤、新用户限制与限流。
+/// 发主题前的检查：登录、板块权限（交易帖只能发在允许交易的板块）、标题与内容过滤、新用户人机验证与限制、限流。
 pub async fn prepare_topic(
     state: &AppState,
     session: &Session,
+    ip: IpAddr,
     slug: &str,
     req: &NewTopicRequest,
     kind: i16,
@@ -342,6 +358,7 @@ pub async fn prepare_topic(
     }
     let title = forum_content::clean_title(&req.title)?;
     let cleaned = posting::clean(state, &actor, &req.html, &req.source)?;
+    posting::check_new_user_captcha(state, &actor, req.captcha.as_deref(), ip).await?;
     posting::limit_new_content(state, &actor, &TOPIC_RATE).await?;
     Ok(PreparedTopic {
         actor,

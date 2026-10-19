@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE posts SET status = CASE WHEN EXISTS (SELECT 1 FROM post_hides WHERE post_id = $1) THEN $4::smallint ELSE $2::smallint END\n         WHERE id = $1 AND status = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int2",
+        "Int2",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b70dbe260d7bbe54cb6e311afdc71d3dbb529d67ed453a0c10a7e148196d0c5c"
+}

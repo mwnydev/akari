@@ -123,6 +123,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/admin/forums/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** 修改板块。论坛里的板块列表立即生效；主题第 1 页缓存里的板块名与色块最长 10 分钟后更新。 */
+    patch: operations["admin_update_forum"];
+    trace?: never;
+  };
   "/api/v1/admin/login/finish": {
     parameters: {
       query?: never;
@@ -219,6 +236,23 @@ export interface paths {
     put?: never;
     /** 开始绑定后台 Passkey（RP ID 为后台中心域名）。 */
     post: operations["admin_register_start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/reports": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 后台概览：各板块待处理的举报案件数（处理在论坛的「举报处理」页）。 */
+    get: operations["admin_report_summary"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1088,6 +1122,44 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/moderation/reports": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 举报处理队列（新的在前）。版主只看自己负责的板块，管理员与站长看全部；不含访问者自己的内容。 */
+    get: operations["report_queue"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/moderation/reports/{id}/resolve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * 处理一件举报：按 `action` 驳回、隐藏、删除或处罚作者，并结案、通知举报人。需要内容现在所在板块的处理举报权限，
+     *     以及处理方式本身的权限（隐藏 / 删除 / 处罚，版主限本板块、处罚时长有上限）；不能处理自己内容上的举报。
+     *     内容已经是要求的状态（如已被删除）时只结案。
+     */
+    post: operations["resolve_report"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/moderation/sanctions/{id}": {
     parameters: {
       query?: never;
@@ -1428,14 +1500,35 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** 一楼的评论（「展开其余」），按时间正序，每页 50 条。已删除楼层的评论只有管理人员能看。 */
+    /** 一楼的评论（「展开其余」），按时间正序，每页 50 条。已删除楼层的评论只有管理人员能看，隐藏楼层的另有作者本人。 */
     get: operations["post_comments"];
     put?: never;
     /**
-     * 评论楼层。门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户与评论限频。
+     * 评论楼层。门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户人机验证与限频、评论限频。
      *     通知楼主、被回复的人与被 @ 的人，并推给打开着这个主题页的连接。
      */
     post: operations["create_comment"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/posts/{id}/hide": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * 隐藏楼层：管理人员看得到内容（带标记），作者看得到内容与隐藏理由，其他人只看到「已隐藏」；
+     *     隐藏后不能再点赞、评论、举报、编辑。需要板块的隐藏权限（版主限本板块），计入删帖限速与异常检测。
+     *     1 楼请隐藏主题。可取消隐藏、可一键撤销。
+     */
+    post: operations["hide_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1522,6 +1615,23 @@ export interface paths {
     get: operations["source"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/posts/{id}/unhide": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 取消隐藏楼层（隐藏的反向操作）。需要板块的隐藏权限，写审计日志（记下原隐藏理由，撤销时据此重新隐藏）。 */
+    post: operations["unhide_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2037,6 +2147,15 @@ export interface components {
       /** @description 原样传给 `navigator.credentials.create()`。 */
       options: Record<string, unknown>;
     };
+    AdminReportSummary: {
+      /** @description 有待处理案件的板块。 */
+      by_forum: components["schemas"]["ForumReportCount"][];
+      /**
+       * Format: int64
+       * @description 全站待处理的举报案件数。
+       */
+      open: number;
+    };
     AdminSessionView: {
       /**
        * Format: int64
@@ -2348,6 +2467,11 @@ export interface components {
       /** @description 评论作者与被回复的人。 */
       users: components["schemas"]["UserCardView"][];
     };
+    /**
+     * @description 被举报内容现在的状态。
+     * @enum {string}
+     */
+    ContentState: "normal" | "hidden" | "deleted";
     ConversationPage: {
       conversations: components["schemas"]["ConversationView"][];
       /** Format: int64 */
@@ -2474,6 +2598,7 @@ export interface components {
       | "CLAIM_BELOW_GAS"
       | "INVALID_EMAIL"
       | "CAPTCHA_FAILED"
+      | "CAPTCHA_REQUIRED"
       | "RESEND_TOO_SOON"
       | "RATE_LIMITED"
       | "INVALID_CODE"
@@ -2532,6 +2657,7 @@ export interface components {
       | "EVIDENCE_WINDOW_OPEN"
       | "EVIDENCE_WINDOW_CLOSED"
       | "CHAT_CHAIN_BROKEN"
+      | "REPORT_RESOLVED"
       | "RULING_MISMATCH"
       | "INTERNAL";
     /** @description 一条链上待执行的全部裁决，合成一个 Safe 批量交易文件（每天合并一笔执行）。 */
@@ -2577,6 +2703,27 @@ export interface components {
       /** Format: int64 */
       post_id: number;
     };
+    ForumReportCount: {
+      /** Format: int32 */
+      forum_id: number;
+      /** Format: int64 */
+      open: number;
+    };
+    ForumUpdateRequest: {
+      /** @description 能否发交易帖；修改需要 5 分钟内再验证过。 */
+      allow_trade?: boolean | null;
+      /** @description 色板里的 `#rrggbb`；`null` 清除（前端按排序位置轮换）；不传不改。 */
+      color?: string | null;
+      /** @description 最多 200 字，可以为空字符串。 */
+      description?: string | null;
+      /** @description 1–20 字。 */
+      name?: string | null;
+      /**
+       * Format: int32
+       * @description 同级板块里的排序，小的在前（0–9999）。
+       */
+      position?: number | null;
+    };
     ForumView: {
       /** @description 能否发交易帖。 */
       allow_trade: boolean;
@@ -2603,6 +2750,10 @@ export interface components {
     };
     Health: {
       status: string;
+    };
+    HideRequest: {
+      /** @description 必填，写入审计日志，并显示给楼层作者（其他人只看到「已隐藏」）。 */
+      reason: string;
     };
     ImageVariant: {
       /** Format: int32 */
@@ -2678,6 +2829,8 @@ export interface components {
       email: string;
       /** Format: int64 */
       id: number;
+      /** @description 注册不满 24 小时：发主题、回帖、评论要带 Turnstile 令牌（站点配置了人机验证时），且限频、不能发外链。 */
+      new_user: boolean;
       staff?: components["schemas"]["StaffView"] | null;
       username?: string | null;
     };
@@ -2802,6 +2955,8 @@ export interface components {
     NewCommentRequest: {
       /** @description 纯文本，1–500 字（换行与控制字符换成空格）；`@用户名` 会通知对方。 */
       body: string;
+      /** @description 注册 24 小时内必填：Turnstile 令牌（组件的 `action` 为 `post`）。 */
+      captcha?: string | null;
       /**
        * Format: int64
        * @description 回复这一楼里的某条评论（「回复 某人」）；为空表示直接评论楼层。
@@ -2846,6 +3001,8 @@ export interface components {
       upload_ids?: number[];
     };
     NewTopicRequest: {
+      /** @description 注册 24 小时内必填：Turnstile 令牌（组件的 `action` 为 `post`）。 */
+      captcha?: string | null;
       /** @description Tiptap `getHTML()` 的结果；服务端会重新过滤。 */
       html: string;
       /** @description Tiptap `getJSON()` 原稿，重新编辑时加载。 */
@@ -3158,6 +3315,8 @@ export interface components {
       | "topic_moderate"
       | "topic_hide"
       | "post_delete"
+      | "post_hide"
+      | "reports"
       | "post_edit"
       | "mute"
       | "auction_ban"
@@ -3182,7 +3341,14 @@ export interface components {
       edited_at?: string | null;
       /** Format: int32 */
       floor: number;
-      /** @description 已过滤的 HTML；已删除的楼层为空字符串。 */
+      /**
+       * @description 被管理人员隐藏：管理人员与作者看得到内容（界面上带标记 / 提示），其他人只看到「已隐藏」。
+       *     （`serde(default)` 只为读取本字段加入之前缓存的主题页，接口总会返回。）
+       */
+      hidden: boolean;
+      /** @description 隐藏理由，只给管理人员与作者本人。 */
+      hidden_reason: string | null;
+      /** @description 已过滤的 HTML；已删除的楼层，以及访问者看不到的隐藏楼层为空字符串。 */
       html: string;
       /** Format: int64 */
       id: number;
@@ -3304,12 +3470,91 @@ export interface components {
       reason?: string | null;
     };
     ReplyRequest: {
+      /** @description 注册 24 小时内必填：Turnstile 令牌（组件的 `action` 为 `post`）。 */
+      captcha?: string | null;
       html: string;
       source: Record<string, unknown>;
+    };
+    ReportCaseView: {
+      /** @description 已处理时采取的措施：`hide` / `delete` / `sanction`。 */
+      action?: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int64 */
+      id: number;
+      /** Format: date-time */
+      last_reported_at: string;
+      /** @description 最近的几条举报，新的在前。 */
+      latest: components["schemas"]["ReportEntryView"][];
+      /**
+       * Format: int32
+       * @description 举报次数（不同的人）。
+       */
+      reports: number;
+      /** Format: date-time */
+      resolved_at?: string | null;
+      /** Format: int64 */
+      resolved_by?: number | null;
+      status: components["schemas"]["ReportStatus"];
+      target: components["schemas"]["ReportTargetView"];
+    };
+    ReportEntryView: {
+      /** Format: date-time */
+      created_at: string;
+      reason: string;
+      /**
+       * Format: int64
+       * @description 举报人：只给管理员与站长；版主为空。
+       */
+      reporter_id?: number | null;
+    };
+    ReportQueue: {
+      cases: components["schemas"]["ReportCaseView"][];
+      /** Format: int64 */
+      next_cursor?: number | null;
+      /**
+       * Format: int64
+       * @description 访问者能处理的待处理案件总数（入口上的数字）。
+       */
+      open_count: number;
+      /** @description 内容作者、处理人（以及给管理员与站长的举报人）的名片。 */
+      users: components["schemas"]["UserCardView"][];
     };
     ReportRequest: {
       /** @description 可以不填，最多 500 字。 */
       reason?: string;
+    };
+    /** @enum {string} */
+    ReportStatus: "open" | "dismissed" | "actioned";
+    /** @enum {string} */
+    ReportTargetKind: "post" | "comment";
+    ReportTargetView: {
+      /** Format: int64 */
+      author_id: number;
+      /** @description 纯文本前 200 字（评论为正文）。 */
+      excerpt: string;
+      /** Format: int32 */
+      floor: number;
+      /**
+       * Format: int32
+       * @description 内容现在所在的板块。
+       */
+      forum_id: number;
+      /**
+       * Format: int64
+       * @description 楼层或评论的 ID。
+       */
+      id: number;
+      kind: components["schemas"]["ReportTargetKind"];
+      /**
+       * Format: int64
+       * @description 所在楼层（评论为它所在的楼层）。
+       */
+      post_id: number;
+      state: components["schemas"]["ContentState"];
+      /** Format: int64 */
+      topic_id: number;
+      topic_title: string;
     };
     /** @description 名片上的交易信誉（plan 第 7 节；只统计最终确认的链上订单）。 */
     ReputationView: {
@@ -3335,6 +3580,14 @@ export interface components {
        * @description 成功率（万分比）= 成功 ÷（成功 + 本人责任失败）；不满 10 笔为空。
        */
       success_rate_bps?: number | null;
+    };
+    /** @enum {string} */
+    ResolveAction: "dismiss" | "hide" | "delete" | "sanction";
+    ResolveRequest: {
+      action: components["schemas"]["ResolveAction"];
+      /** @description 必填，1–500 字：写入处理方式与结案的审计日志；隐藏时显示给内容作者，处罚时通知被处罚人。 */
+      reason: string;
+      sanction?: components["schemas"]["SanctionTerms"] | null;
     };
     RestoreCommentRequest: {
       /** @description 写入审计日志。 */
@@ -3518,7 +3771,12 @@ export interface components {
       /** @description 新的在前，最多 100 条。 */
       sanctions: components["schemas"]["SanctionView"][];
     };
-    SanctionRequest: {
+    SanctionRequest: components["schemas"]["SanctionTerms"] & {
+      /** @description 预设理由或补充说明，写入审计日志并通知对方。 */
+      reason: string;
+    };
+    /** @description 处罚用户的条款（处罚接口与举报处理共用）。 */
+    SanctionTerms: {
       /**
        * Format: int64
        * @description 时长（秒，60 秒到 10 年）；为空表示永久。版主禁言最长 7 天、禁拍最长 30 天，且不能永久。
@@ -3531,8 +3789,6 @@ export interface components {
       forum_id?: number | null;
       /** @description `mute` / `auction_ban` / `ban` / `device_ban`（IP 封禁用 `POST /api/v1/moderation/ip-bans`）。 */
       kind: components["schemas"]["SanctionKind"];
-      /** @description 预设理由或补充说明，写入审计日志并通知对方。 */
-      reason: string;
     };
     SanctionView: {
       /** @description 仍在生效（未解除、未到期）。 */
@@ -3625,7 +3881,7 @@ export interface components {
       suspended: boolean;
     };
     StartRequest: {
-      /** @description Cloudflare Turnstile 令牌。 */
+      /** @description Cloudflare Turnstile 令牌（组件的 `action` 为 `login`）。 */
       captcha?: string | null;
       email: string;
     };
@@ -4329,6 +4585,63 @@ export interface operations {
       };
     };
   };
+  admin_update_forum: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ForumUpdateRequest"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ForumView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
   admin_login_finish: {
     parameters: {
       query?: never;
@@ -4568,6 +4881,33 @@ export interface operations {
         };
       };
       429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_report_summary: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AdminReportSummary"];
+        };
+      };
+      401: {
         headers: {
           [name: string]: unknown;
         };
@@ -6744,10 +7084,12 @@ export interface operations {
   board: {
     parameters: {
       query?: {
-        /** @description 页码 1–200；与 `cursor` 二选一。 */
+        /** @description 页码 1–200；与 `cursor` 二选一。热门不用页码。 */
         page?: number | null;
-        /** @description 第 200 页之后的游标（取自上一页的 `next_cursor`）。 */
+        /** @description 第 200 页之后的游标（取自上一页的 `next_cursor`）；热门翻页也用它。 */
         cursor?: string | null;
+        /** @description `latest`（默认，按最后回复时间，置顶帖在第 1 页）或 `hot`（热门，不含置顶帖）。 */
+        sort?: ("latest" | "hot") | null;
       };
       header?: never;
       path: {
@@ -7084,6 +7426,117 @@ export interface operations {
         };
       };
       403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  report_queue: {
+    parameters: {
+      query?: {
+        /** @description 待处理（默认）或已结案。 */
+        status?: ("open" | "resolved") | null;
+        /** @description 游标：上一页的 `next_cursor`。 */
+        cursor?: number | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReportQueue"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  resolve_report: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ResolveRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
         headers: {
           [name: string]: unknown;
         };
@@ -8226,6 +8679,69 @@ export interface operations {
       };
     };
   };
+  hide_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["HideRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
   history: {
     parameters: {
       query?: {
@@ -8527,11 +9043,76 @@ export interface operations {
       };
     };
   };
+  unhide_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["HideRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
   latest_topics: {
     parameters: {
       query?: {
-        /** @description 上一页的 `next_cursor`。 */
+        /** @description 上一页的 `next_cursor`（最新与热门的游标格式不同，不能混用）。 */
         cursor?: string | null;
+        /** @description `latest`（默认，按最后回复时间）或 `hot`（热门，见 `routes::hot`）。 */
+        sort?: ("latest" | "hot") | null;
       };
       header?: never;
       path?: never;

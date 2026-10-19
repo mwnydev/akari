@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 板块热门：排名表里分数从高到低，按 (分数, 主题 ID) 游标翻页，走 hot_topics_forum。\n-- $1 forum_id, $2 游标分数, $3 游标主题 ID（都不含）, $4 limit\nSELECT topic_id, score\nFROM hot_topics\nWHERE forum_id = $1 AND (score, topic_id) < ($2, $3)\nORDER BY score DESC, topic_id DESC\nLIMIT $4\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "topic_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "hot_topics",
+            "name": "topic_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "score",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "hot_topics",
+            "name": "score"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Float8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "ac222d8ac8830e6c6eb5d0430f0a6bcedac11f42ca87e033262cf1305f5aa24b"
+}

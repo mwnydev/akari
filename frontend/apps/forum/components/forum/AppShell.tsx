@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { headerViewer } from "../../lib/nav";
 import { getMe } from "../../lib/session";
-import { isArbitrator } from "../../lib/staff";
+import { canHandleReports, isArbitrator } from "../../lib/staff";
 import { UnreadBadge } from "../live/UnreadBadge";
 import { AccountMenu } from "./AccountMenu";
 import { ForumShell } from "./ForumShell";
@@ -31,7 +31,11 @@ export async function AppShell({
           nav={nav}
           viewer={viewer}
           unread={<UnreadBadge />}
-          account={viewer ? <AccountMenu viewer={viewer} /> : undefined}
+          account={
+            viewer ? (
+              <AccountMenu viewer={viewer} reports={canHandleReports(me?.staff)} />
+            ) : undefined
+          }
           arbitration={isArbitrator(me?.staff)}
         />
       }

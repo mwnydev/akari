@@ -73,6 +73,8 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::posts::history))
         .routes(routes!(routes::posts::source))
         .routes(routes!(routes::posts::restore))
+        .routes(routes!(routes::posts::hide))
+        .routes(routes!(routes::posts::unhide))
         .routes(routes!(routes::floor::like, routes::floor::unlike))
         .routes(routes!(
             routes::floor::comments,
@@ -89,6 +91,8 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         ))
         .routes(routes!(routes::moderation::ban_ip))
         .routes(routes!(routes::moderation::lift))
+        .routes(routes!(routes::reports::report_queue))
+        .routes(routes!(routes::reports::resolve_report))
         .routes(routes!(routes::wallet::overview))
         .routes(routes!(routes::wallet::reverify_start))
         .routes(routes!(routes::wallet::reverify_verify))
@@ -174,7 +178,9 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::admin::audit_log))
         .routes(routes!(routes::admin::admin_search_users))
         .routes(routes!(routes::admin::admin_forums))
+        .routes(routes!(routes::admin_forums::admin_update_forum))
         .routes(routes!(routes::admin::arbitration_overview))
+        .routes(routes!(routes::reports::admin_report_summary))
         .routes(routes!(routes::admin::arbitration_execution))
         .split_for_parts()
 }
@@ -208,7 +214,13 @@ impl ApiCors {
         let admin = CorsLayer::new()
             .allow_origin(AllowOrigin::list(admin_origin.iter().cloned()))
             .allow_credentials(true)
-            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::PATCH,
+                Method::DELETE,
+            ])
             .allow_headers([header::CONTENT_TYPE]);
         Self {
             wallet_origins,

@@ -1,0 +1,163 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 举报队列（待处理）：每个板块从部分索引 report_cases_open 取最新的 $3 件再合并（板块只有几十个），\n-- 不含访问者自己的内容。$1 forum_ids, $2 游标（上一页最后一件的 ID，不含）, $3 limit, $4 访问者\nSELECT c.id AS \"id!\", c.target_kind AS \"target_kind!\", c.target_id AS \"target_id!\", c.forum_id AS \"forum_id!\",\n       c.target_author_id AS \"target_author_id!\", c.reports AS \"reports!\", c.last_reported_at AS \"last_reported_at!\",\n       c.created_at AS \"created_at!\", c.status AS \"status!\", c.action, c.resolved_by, c.resolved_at\nFROM unnest($1::int[]) AS f (id)\nCROSS JOIN LATERAL (\n  SELECT r.id, r.target_kind, r.target_id, r.forum_id, r.target_author_id, r.reports, r.last_reported_at,\n         r.created_at, r.status, r.action, r.resolved_by, r.resolved_at\n  FROM report_cases r\n  WHERE r.forum_id = f.id AND r.status = 0 AND r.id < $2 AND r.target_author_id <> $4\n  ORDER BY r.id DESC\n  LIMIT $3\n) c\nORDER BY c.id DESC\nLIMIT $3\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "target_kind!",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "target_kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "target_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "target_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "forum_id!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "forum_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "target_author_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "target_author_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "reports!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "reports"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "last_reported_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "last_reported_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "status!",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "action",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "action"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "resolved_by",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "resolved_by"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "resolved_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "report_cases",
+            "name": "resolved_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4Array",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "bf9aa9ad9337dea06d31dc3c81134b398d567f2e76c3639f4104119b01827089"
+}

@@ -48,6 +48,8 @@ export function LiveFloor({
   now: Date;
 }) {
   const card = personCard(author);
+  // 隐藏的楼层：管理人员与作者看得到内容（带说明），其他人拿到的内容是空的
+  const hiddenFor = post.hidden ? (mod ? "staff" : perms.own ? "author" : "others") : null;
   return (
     <Floor
       floor={post.floor}
@@ -70,6 +72,7 @@ export function LiveFloor({
         quoteHref={topicHref(topic.id, page, post.floor)}
         title={post.floor === 1 ? topic.title : undefined}
         deleted={post.deleted}
+        hidden={post.hidden}
         perms={perms}
         mentionable={mentionable}
         social={post.deleted ? null : social}
@@ -80,8 +83,24 @@ export function LiveFloor({
       >
         {post.deleted ? (
           <p className="text-fg-muted italic">该楼层已被删除</p>
+        ) : hiddenFor === "others" ? (
+          <p className="text-fg-muted italic">该楼层已被管理人员隐藏</p>
         ) : (
-          <Prose html={post.html} />
+          <>
+            {hiddenFor ? (
+              <p
+                role="note"
+                data-testid="hidden-notice"
+                className="mb-2 rounded-md bg-warning-soft px-3 py-1.5 text-sm text-warning"
+              >
+                {hiddenFor === "staff"
+                  ? "已隐藏，只有管理人员和作者看得到"
+                  : "这层楼已被管理人员隐藏，其他人看不到"}
+                {post.hidden_reason ? `。理由：${post.hidden_reason}` : null}
+              </p>
+            ) : null}
+            <Prose html={post.html} />
+          </>
         )}
       </FloorContent>
     </Floor>
@@ -136,7 +155,8 @@ export function LiveFloors({
         perms={{
           canEdit: !p.deleted && (data.can_moderate || (own && !topic.flags.locked)),
           asModerator: data.can_moderate && !own,
-          hasHistory: p.edited_at != null && (!p.deleted || data.can_moderate),
+          hasHistory:
+            p.edited_at != null && (data.can_moderate || (!p.deleted && (!p.hidden || own))),
           own,
         }}
       />

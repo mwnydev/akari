@@ -31,6 +31,7 @@ use super::me::current_user_id;
 use super::messages;
 use crate::access::Viewer;
 use crate::error::{ApiError, ApiResult, ErrorBody};
+use crate::middleware::ClientIp;
 use crate::state::AppState;
 use crate::views::hex0x;
 use crate::wallet::recent_passkey;
@@ -252,6 +253,7 @@ struct ListingSnapshot<'a> {
 pub async fn create_listing(
     State(state): State<AppState>,
     session: Session,
+    ClientIp(ip): ClientIp,
     Path(slug): Path<String>,
     Json(req): Json<NewListingRequest>,
 ) -> ApiResult<(StatusCode, Json<CreatedListing>)> {
@@ -284,7 +286,7 @@ pub async fn create_listing(
         ..t.clone()
     };
 
-    let p = prepare_topic(&state, &session, &slug, &req.topic, topics::KIND_TRADE).await?;
+    let p = prepare_topic(&state, &session, ip, &slug, &req.topic, topics::KIND_TRADE).await?;
     let snapshot = ListingSnapshot {
         v: 1,
         title: &p.title,

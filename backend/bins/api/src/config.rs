@@ -22,7 +22,8 @@ pub struct Config {
     pub allowed_origins: Vec<String>,
     /// 只有 `AKARI_ENV=development` 才能设 `COOKIE_SECURE=false`（本地 http 开发）。
     pub cookie_secure: bool,
-    /// 为空时使用不校验的 NoopCaptcha（仅开发环境）。
+    /// Cloudflare Turnstile 密钥（`TURNSTILE_SECRET`）：登录验证码与新用户发帖都校验。只有 `AKARI_ENV=development`
+    /// 可以不设（此时用不校验的 NoopCaptcha），测试与生产服务器缺了拒绝启动。
     pub turnstile_secret: Option<String>,
     /// 本站主机名，逗号分隔（如 `forum.example,www.forum.example`）；判断帖子里的站外链接用。
     pub internal_hosts: Vec<String>,
@@ -409,6 +410,18 @@ fn trade_limits() -> anyhow::Result<TradeLimits> {
     Ok(l)
 }
 
+fn turnstile_secret(
+    value: Option<String>,
+    deployment: Deployment,
+) -> anyhow::Result<Option<String>> {
+    match value.filter(|s| !s.is_empty()) {
+        None if deployment != Deployment::Development => {
+            bail!("TURNSTILE_SECRET is required unless AKARI_ENV=development")
+        }
+        v => Ok(v),
+    }
+}
+
 fn cookie_secure(value: Option<&str>, deployment: Deployment) -> anyhow::Result<bool> {
     match value.unwrap_or_default() {
         "" | "true" => Ok(true),
@@ -436,9 +449,7 @@ impl Config {
                 std::env::var("COOKIE_SECURE").ok().as_deref(),
                 deployment,
             )?,
-            turnstile_secret: std::env::var("TURNSTILE_SECRET")
-                .ok()
-                .filter(|s| !s.is_empty()),
+            turnstile_secret: turnstile_secret(std::env::var("TURNSTILE_SECRET").ok(), deployment)?,
             internal_hosts: sites.internal_hosts,
             wallet_rp_id: sites.wallet_rp_id,
             wallet_origins: sites.wallet_origins,
@@ -466,7 +477,10 @@ impl Config {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::{Deployment, Sites, check_sites, cookie_secure, origin_host, production_sites};
+    use super::{
+        Deployment, Sites, check_sites, cookie_secure, origin_host, production_sites,
+        turnstile_secret,
+    };
 
     fn sites(forum: &[&str], rp: &str, wallet: &[&str]) -> Sites {
         Sites {
@@ -501,6 +515,28 @@ mod tests {
         assert_eq!(Deployment::parse(None).unwrap(), Deployment::Development);
         for typo in ["prod", "Production", "production ", "dev"] {
             assert!(Deployment::parse(Some(typo)).is_err(), "{typo}");
+        }
+    }
+
+    #[test]
+    fn turnstile_secret_only_optional_in_development() {
+        assert_eq!(
+            turnstile_secret(None, Deployment::Development).unwrap(),
+            None
+        );
+        assert_eq!(
+            turnstile_secret(Some(String::new()), Deployment::Development).unwrap(),
+            None
+        );
+        for d in [Deployment::Staging, Deployment::Production] {
+            assert!(turnstile_secret(None, d).is_err());
+            assert!(turnstile_secret(Some(String::new()), d).is_err());
+            assert_eq!(
+                turnstile_secret(Some("0x4AAA".to_owned()), d)
+                    .unwrap()
+                    .as_deref(),
+                Some("0x4AAA")
+            );
         }
     }
 

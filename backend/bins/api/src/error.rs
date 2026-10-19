@@ -63,6 +63,7 @@ fn status(code: ErrorCode) -> StatusCode {
         ErrorCode::Unauthorized => StatusCode::UNAUTHORIZED,
         ErrorCode::OriginRejected
         | ErrorCode::CaptchaFailed
+        | ErrorCode::CaptchaRequired
         | ErrorCode::Forbidden
         | ErrorCode::TopicLocked
         | ErrorCode::ExternalLinkForbidden
@@ -89,7 +90,8 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::CaseStateInvalid
         | ErrorCode::EvidenceWindowOpen
         | ErrorCode::EvidenceWindowClosed
-        | ErrorCode::ChatChainBroken => StatusCode::CONFLICT,
+        | ErrorCode::ChatChainBroken
+        | ErrorCode::ReportResolved => StatusCode::CONFLICT,
         ErrorCode::SponsorUnavailable
         | ErrorCode::ChainUnavailable
         | ErrorCode::UploadsUnavailable => StatusCode::SERVICE_UNAVAILABLE,

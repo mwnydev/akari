@@ -32,7 +32,7 @@ const PATTERNS: &[&str] = &[
 const ALLOWED: &[(&str, &str, usize, &str)] = &[
     (
         "bins/api/src/main.rs",
-        "Client::new(",
+        "Client::builder(",
         1,
         "Turnstile siteverify (Cloudflare)",
     ),

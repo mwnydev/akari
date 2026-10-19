@@ -1,73 +1,84 @@
 -- {{ ansible_managed }}
--- 各程序数据库账号的表级授权，逐条对应 backend/crates/db/migrations 里每个迁移文件开头的「数据库账号另需」说明；
--- 新迁移写了授权说明就在这里补上，并把 group_vars 的 pg_grants_schema_version 改成该迁移的版本号。
--- 所有语句可重复执行。任何账号都不授予审计日志、仲裁裁决与陈述、订单聊天、提币额度流水的 UPDATE / DELETE。
+-- 各程序数据库账号的授权矩阵（plan 第 2、8 节：每个程序一个账号、最小权限）。按程序列出它用到的每张表，
+-- 能收窄到列的就收窄到列。由代码推出、由测试核对：backend/crates/db/tests/grants.rs 从各程序的源码推出它会执行的
+-- 全部 SQL，在迁移完成的库上套用本脚本后以各账号逐条 EXPLAIN（PostgreSQL 照常检查表与列权限），并要求这里授权的
+-- 每张表都被该程序的某条 SQL 用到——新查询用到没授权的表、或这里多给了权限，CI 都会失败。
+--
+-- 改了这里或加了迁移，把 group_vars/all.yml 的 pg_grants_schema_version 改成最新迁移的版本号。
+-- 本文件只能是纯 SQL（测试原样执行，只去掉第一行的 Jinja 注释）。整个脚本一个事务、可重复执行：先收回四个账号在
+-- public 模式下的全部权限再按矩阵授予，提交前别的连接看到的仍是旧权限，不会有中间状态。
+-- 任何账号都没有审计日志、仲裁裁决与陈述、订单聊天、提币额度流水的 UPDATE / DELETE（只增表另有触发器兜底）。
 BEGIN;
 
--- 20261103000001_chain_indexer：链上派生表只有 forum_indexer 写
-GRANT SELECT, INSERT, UPDATE, DELETE ON chains, escrow_orders, escrow_events,
-  indexer_cursors, indexer_checkpoints TO forum_indexer;
-GRANT INSERT ON outbox TO forum_indexer;
-GRANT SELECT ON wallets TO forum_indexer;
-GRANT SELECT ON chains, escrow_orders, escrow_events TO forum_api, forum_worker, forum_sponsor;
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON chains, escrow_orders, escrow_events,
-  indexer_cursors, indexer_checkpoints FROM forum_api, forum_worker, forum_sponsor;
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM forum_api, forum_worker, forum_indexer, forum_sponsor;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM forum_api, forum_worker, forum_indexer, forum_sponsor;
 
--- 20261104000001_sponsor
-GRANT SELECT, INSERT, UPDATE ON sponsorships, sponsored_calls, sponsor_accounts TO forum_sponsor;
-GRANT SELECT ON wallets TO forum_sponsor;
-GRANT INSERT ON outbox TO forum_sponsor;
-
--- 20261110000001_orders_stream_wallet_versions
-GRANT SELECT ON offers TO forum_indexer;
-GRANT UPDATE (status, updated_at) ON offers TO forum_indexer;
-
--- 20261117000001_withdraw_addresses
+-- ---------------------------------------------------------------------------------------------------------------
+-- forum_api：论坛 HTTP API。论坛表读写；链上派生表（订单、链配置）只读；发件箱只写（读不到验证码等 payload）。
+-- ---------------------------------------------------------------------------------------------------------------
+GRANT SELECT, INSERT, UPDATE ON users, user_devices, user_levels, posts, post_sources, topics, floor_comments,
+  post_counters, conversations, notification_reads, order_message_reads, passkeys, offers, uploads,
+  sanctions, staff_suspensions, site_settings, report_cases TO forum_api;
+GRANT SELECT, INSERT, DELETE ON post_likes, user_blocks, staff_roles TO forum_api;
+GRANT SELECT, INSERT, UPDATE, DELETE ON post_hides TO forum_api;
+GRANT SELECT, INSERT ON post_edits, reports, messages, order_messages, trade_listings, wallets, exp_ledger,
+  admin_audit_logs, arbitration_rulings, arbitration_statements, withdraw_credit_ledger TO forum_api;
 GRANT SELECT, INSERT ON withdraw_addresses TO forum_api;
 GRANT UPDATE (revoked_at) ON withdraw_addresses TO forum_api;
-GRANT SELECT ON withdraw_addresses TO forum_sponsor;
-
--- 20261117000002_withdraw_credits：额度由触发器以属主身份维护，流水只增
-GRANT SELECT, INSERT ON withdraw_credit_ledger TO forum_api, forum_indexer, forum_sponsor;
-GRANT SELECT ON withdraw_credits TO forum_api, forum_sponsor;
-GRANT SELECT ON sponsorships TO forum_api;
-
--- 20261118000001_messaging
-GRANT SELECT, INSERT ON messages, order_messages, order_negotiations TO forum_indexer;
-GRANT SELECT ON conversations TO forum_indexer;
-GRANT UPDATE (last_message_id, low_read_id, high_read_id) ON conversations TO forum_indexer;
-GRANT SELECT, INSERT ON notifications TO forum_worker;
-GRANT SELECT ON notification_reads, messages, conversations, order_messages, escrow_orders TO forum_worker;
-
--- 20261119000001_profiles_reputation_uploads：信誉与经验只认最终确认的订单
-GRANT SELECT, INSERT, UPDATE ON user_trade_stats, user_levels TO forum_indexer;
-GRANT SELECT, INSERT ON exp_ledger TO forum_indexer;
-GRANT SELECT ON level_thresholds TO forum_indexer;
-GRANT SELECT, INSERT, UPDATE ON user_trade_stats, user_levels, job_cursors, uploads TO forum_worker;
-GRANT SELECT, INSERT ON exp_ledger TO forum_worker;
-
--- 20261125000001_arbitration
-GRANT SELECT, INSERT, UPDATE ON arbitration_cases TO forum_indexer;
-GRANT SELECT ON arbitration_rulings, staff_roles, users TO forum_indexer;
-GRANT INSERT ON admin_audit_logs TO forum_indexer;
-GRANT SELECT, UPDATE ON arbitration_cases TO forum_worker;
-GRANT SELECT, INSERT, UPDATE ON arbitration_assignments TO forum_worker;
-GRANT SELECT ON arbitration_rulings, staff_roles TO forum_worker;
-GRANT INSERT ON admin_audit_logs TO forum_worker;
 GRANT SELECT, UPDATE ON arbitration_cases, arbitration_assignments TO forum_api;
-GRANT SELECT, INSERT ON arbitration_rulings, arbitration_statements TO forum_api;
-REVOKE UPDATE, DELETE, TRUNCATE ON admin_audit_logs, arbitration_rulings, arbitration_statements,
-  order_messages, withdraw_credit_ledger FROM forum_api, forum_worker, forum_indexer, forum_sponsor;
+GRANT SELECT ON forums TO forum_api;
+GRANT UPDATE (name, description, color, position, allow_trade) ON forums TO forum_api;
+GRANT SELECT ON chains, escrow_orders, order_negotiations, notifications, level_thresholds, user_trade_stats,
+  sponsorships, withdraw_credits, hot_topics TO forum_api;
+GRANT INSERT ON outbox TO forum_api;
+GRANT SELECT (id, dedupe_key, created_at) ON outbox TO forum_api;
+-- 回帖与发主题在一条语句里先取楼层 ID（nextval），其余表的 identity 列插入不需要序列权限
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO forum_api;
 
--- 20261128000001_staff_alert_dedupe：告警去重只读这三列（RETURNING id 与去重查询），读不到 payload
-GRANT SELECT (id, dedupe_key, created_at) ON outbox TO forum_indexer, forum_sponsor;
-
--- 20261201000001_floor_social：合并点赞通知时读赞、推进水位
-GRANT SELECT ON post_likes, posts TO forum_worker;
+-- ---------------------------------------------------------------------------------------------------------------
+-- forum_worker：发件箱投递、浏览数回写、报价过期、经验与信誉校对、图片转换、仲裁分配与期限、热门排名。
+-- ---------------------------------------------------------------------------------------------------------------
+GRANT SELECT ON outbox TO forum_worker;
+GRANT UPDATE (attempts, last_error, next_attempt_at, failed_at, payload, sent_at) ON outbox TO forum_worker;
+GRANT SELECT, INSERT ON notifications, exp_ledger, arbitration_assignments TO forum_worker;
+GRANT UPDATE (ended_at, ended_reason) ON arbitration_assignments TO forum_worker;
+GRANT SELECT ON arbitration_cases TO forum_worker;
+GRANT UPDATE (status, ready_at, stalled_alerted_at, timeout_alerted_at, updated_at) ON arbitration_cases TO forum_worker;
+GRANT SELECT, INSERT, UPDATE ON user_levels, user_trade_stats, job_cursors TO forum_worker;
+GRANT SELECT ON uploads TO forum_worker;
+GRANT UPDATE (status, attempts, lease_until, width, height, variants, error, updated_at) ON uploads TO forum_worker;
+GRANT SELECT ON offers TO forum_worker;
+GRANT UPDATE (status, updated_at) ON offers TO forum_worker;
+GRANT SELECT ON topics TO forum_worker;
+GRANT UPDATE (view_count) ON topics TO forum_worker;
 GRANT SELECT ON post_counters TO forum_worker;
 GRANT UPDATE (like_notify_pending, likes_notified_at) ON post_counters TO forum_worker;
+GRANT SELECT, INSERT, DELETE ON hot_topics TO forum_worker;
+GRANT SELECT ON posts, post_likes, users, staff_roles, arbitration_rulings, level_thresholds, messages,
+  conversations, order_messages, escrow_orders, chains TO forum_worker;
 
--- 序列（各表 id）
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO forum_api, forum_indexer, forum_sponsor;
+-- ---------------------------------------------------------------------------------------------------------------
+-- forum_indexer：链上事件 → 订单（唯一能写订单、链上事件、交易信誉的账号）；订单聊天与仲裁建案随订单状态写入。
+-- ---------------------------------------------------------------------------------------------------------------
+GRANT SELECT, INSERT, UPDATE, DELETE ON escrow_events, indexer_checkpoints TO forum_indexer;
+GRANT SELECT, INSERT, UPDATE ON chains, escrow_orders, indexer_cursors, user_trade_stats,
+  arbitration_cases TO forum_indexer;
+GRANT SELECT, INSERT ON messages, order_messages, order_negotiations, withdraw_credit_ledger TO forum_indexer;
+GRANT SELECT ON conversations TO forum_indexer;
+GRANT UPDATE (last_message_id, low_read_id, high_read_id) ON conversations TO forum_indexer;
+GRANT SELECT ON offers TO forum_indexer;
+GRANT UPDATE (status, updated_at) ON offers TO forum_indexer;
+GRANT SELECT ON wallets, users, staff_roles, arbitration_rulings TO forum_indexer;
+GRANT INSERT ON outbox TO forum_indexer;
+GRANT SELECT (id, dedupe_key, created_at) ON outbox TO forum_indexer;
+
+-- ---------------------------------------------------------------------------------------------------------------
+-- forum_sponsor：代付签名与代发；只给本人已生效的提币地址代付。
+-- ---------------------------------------------------------------------------------------------------------------
+GRANT SELECT, INSERT, UPDATE ON sponsorships, sponsor_accounts TO forum_sponsor;
+GRANT SELECT, INSERT ON sponsored_calls, withdraw_credit_ledger TO forum_sponsor;
+GRANT SELECT ON wallets, withdraw_addresses, withdraw_credits TO forum_sponsor;
+GRANT INSERT ON outbox TO forum_sponsor;
+GRANT SELECT (id, dedupe_key, created_at) ON outbox TO forum_sponsor;
 
 COMMIT;

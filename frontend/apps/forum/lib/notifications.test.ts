@@ -39,6 +39,21 @@ describe("describeNotification", () => {
     ).toEqual({ text: "订单 #7 已付款（区块回滚后的状态修正）", href: "/orders/7" });
   });
 
+  it("tells reporters only the outcome of their report", () => {
+    expect(
+      describeNotification(
+        n("system", { event: "report_resolved", outcome: "actioned", topic_id: 9, floor: 25 }),
+        null,
+      ),
+    ).toEqual({ text: "你举报的内容（#25 楼）已处理，感谢反馈", href: "/t/9?page=2#floor-25" });
+    expect(
+      describeNotification(
+        n("system", { event: "report_resolved", outcome: "dismissed", topic_id: 9, floor: 1 }),
+        null,
+      ).text,
+    ).toBe("你举报的内容（#1 楼）经核查未发现违规");
+  });
+
   it("falls back gracefully on unexpected payloads", () => {
     expect(describeNotification(n("reply", { topic_id: "x" }), null)).toEqual({
       text: "有人 回复了你",

@@ -113,5 +113,10 @@ pub async fn visible_forums(state: &AppState, viewer: &Viewer) -> ApiResult<Vec<
 
 /// 注册不满 24 小时。
 pub fn is_new_user(actor: &Actor) -> bool {
-    OffsetDateTime::now_utc() - actor.created_at < NEW_USER_PERIOD
+    registered_recently(actor.created_at)
+}
+
+/// `created_at` 注册的账号还不满 24 小时。
+pub fn registered_recently(created_at: OffsetDateTime) -> bool {
+    OffsetDateTime::now_utc() - created_at < NEW_USER_PERIOD
 }

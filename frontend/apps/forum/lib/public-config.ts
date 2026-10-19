@@ -8,8 +8,16 @@ export const WALLET_ORIGIN =
   process.env.NEXT_PUBLIC_WALLET_ORIGIN ??
   (process.env.NODE_ENV === "production" ? "https://wallet.akari.cc" : "http://localhost:3001");
 
-/** Cloudflare Turnstile site key；未设置时登录页不渲染人机验证（后端未配置 TURNSTILE_SECRET 时也不校验）。 */
+/**
+ * Cloudflare Turnstile site key；未设置时登录页与新用户发帖都不渲染人机验证（只用于开发：后端没配置
+ * TURNSTILE_SECRET 时也不校验，测试与生产的后端缺了密钥拒绝启动）。
+ */
 export const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+
+/** 发主题、回帖、评论要先过人机验证：站点配置了 Turnstile，且访问者注册不满 24 小时。 */
+export function needsPostCaptcha(me: { new_user: boolean } | null | undefined): boolean {
+  return TURNSTILE_SITE_KEY !== "" && me?.new_user === true;
+}
 
 /** 每页楼层数，与后端 `forum_db::posts::PAGE_SIZE` 一致。 */
 export const POSTS_PER_PAGE = 20;

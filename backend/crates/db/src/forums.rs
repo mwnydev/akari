@@ -20,6 +20,23 @@ pub struct Forum {
     pub color: Option<String>,
 }
 
+/// 板块色板（迁移 20261202000001 的 CHECK 与 frontend/apps/forum/app/globals.css 的 `--color-board-*`，改色板要几处一起改；
+/// 测试核对它与数据库约束一致）。
+pub const PALETTE: [&str; 6] = [
+    "#d1453b", "#2f7fd8", "#2e9d5c", "#e08e1b", "#8059c9", "#1d9bb0",
+];
+
+/// 后台修改板块：为空的字段不改。
+#[derive(Debug, Clone, Default)]
+pub struct ForumPatch<'a> {
+    pub name: Option<&'a str>,
+    pub description: Option<&'a str>,
+    /// `Some(None)` 清除色块（前端按位置轮换）。
+    pub color: Option<Option<&'a str>>,
+    pub position: Option<i32>,
+    pub allow_trade: Option<bool>,
+}
+
 /// 后台创建板块用的参数。
 #[derive(Debug, Clone)]
 pub struct NewForum<'a> {
@@ -91,4 +108,30 @@ pub async fn create(db: impl PgExecutor<'_>, f: &NewForum<'_>) -> Result<i32, sq
     .fetch_one(db)
     .await?;
     Ok(row.id)
+}
+
+/// 修改板块（后台），返回修改后的板块；不存在返回 `None`。
+pub async fn update(
+    db: impl PgExecutor<'_>,
+    id: i32,
+    p: &ForumPatch<'_>,
+) -> Result<Option<Forum>, sqlx::Error> {
+    sqlx::query_as!(
+        Forum,
+        "UPDATE forums SET name = coalesce($2, name), description = coalesce($3, description),
+                color = CASE WHEN $4 THEN $5 ELSE color END, position = coalesce($6, position),
+                allow_trade = coalesce($7, allow_trade)
+         WHERE id = $1
+         RETURNING id, parent_id, slug, name, description, position,
+                   view_min_level, post_min_level, reply_min_level, allow_trade, color",
+        id,
+        p.name,
+        p.description,
+        p.color.is_some(),
+        p.color.flatten(),
+        p.position,
+        p.allow_trade
+    )
+    .fetch_optional(db)
+    .await
 }

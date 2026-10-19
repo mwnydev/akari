@@ -56,7 +56,8 @@ function quoteExcerpt(floor: number): string {
  * 楼层里的交互部分：正文（编辑时原地换成编辑器）、嵌入内容、右对齐的操作行（赞、评论、引用回复、编辑、「…」），
  * 以及下方的点赞评论块。正文由服务端渲染后作为 children 传入。
  * `social` 为空（已删除的楼层）时不显示赞和评论；`viewer` 为空（游客）时只读。
- * `canModerate` = 能删除别人的评论；`mod` 给管理人员，「…」菜单里多出恢复楼层、处罚作者。
+ * `hidden`：被管理人员隐藏的楼层（与已删除的一样不能点赞、评论、引用、编辑、举报，管理人员仍可删除）。
+ * `canModerate` = 能删除别人的评论；`mod` 给管理人员，「…」菜单里多出隐藏、恢复楼层、处罚作者。
  */
 export function FloorContent({
   topicId,
@@ -66,6 +67,7 @@ export function FloorContent({
   quoteHref,
   title,
   deleted = false,
+  hidden = false,
   perms,
   mentionable = [],
   social,
@@ -85,6 +87,7 @@ export function FloorContent({
   /** 1 楼编辑时可以一起改标题 */
   title?: string | undefined;
   deleted?: boolean;
+  hidden?: boolean;
   perms?: FloorPermissions | undefined;
   mentionable?: UserCardView[];
   social: PostSocial | null;
@@ -101,8 +104,12 @@ export function FloorContent({
   const afterSubmit = useAfterSubmit();
   const composer = useComposer();
   const close = () => setDialog(null);
-  const canEdit = (perms?.canEdit ?? false) && !deleted;
-  const moderation = usePostModeration({ id: postId, floor, deleted }, mod);
+  const frozen = deleted || hidden;
+  const canEdit = (perms?.canEdit ?? false) && !frozen;
+  // 隐藏的楼层只有管理人员能删除
+  const canDelete =
+    (perms?.canEdit ?? false) && !deleted && (!hidden || (perms?.asModerator ?? false));
+  const moderation = usePostModeration({ id: postId, floor, deleted, hidden }, mod);
   const own = perms?.own ?? false;
   const preview = usePreview();
 
@@ -123,7 +130,7 @@ export function FloorContent({
       onSelect: () => setDialog("history"),
     });
   }
-  if (viewer && !own && !deleted) {
+  if (viewer && !own && !frozen) {
     menu.push({
       label: "举报",
       icon: <Flag size={16} aria-hidden />,
@@ -135,7 +142,7 @@ export function FloorContent({
       },
     });
   }
-  if (canEdit) {
+  if (canDelete) {
     menu.push({
       label: "删除",
       icon: <Trash2 size={16} aria-hidden />,
@@ -148,7 +155,7 @@ export function FloorContent({
 
   const actions = (
     <>
-      {canReply && composer && !deleted ? (
+      {canReply && composer && !frozen ? (
         <Button
           variant="subtle"
           size="sm"
@@ -195,8 +202,8 @@ export function FloorContent({
           children
         )}
       </div>
-      {extra && !deleted ? <div className="mt-3">{extra}</div> : null}
-      {social && !deleted ? (
+      {extra && !frozen ? <div className="mt-3">{extra}</div> : null}
+      {social && !frozen ? (
         <SocialRow
           topicId={topicId}
           postId={postId}

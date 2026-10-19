@@ -223,26 +223,52 @@ pub struct PostView {
     pub id: i64,
     pub floor: i32,
     pub author_id: i64,
-    /// 已过滤的 HTML；已删除的楼层为空字符串。
+    /// 已过滤的 HTML；已删除的楼层，以及访问者看不到的隐藏楼层为空字符串。
     pub html: String,
     pub deleted: bool,
+    /// 被管理人员隐藏：管理人员与作者看得到内容（界面上带标记 / 提示），其他人只看到「已隐藏」。
+    /// （`serde(default)` 只为读取本字段加入之前缓存的主题页，接口总会返回。）
+    #[serde(default)]
+    #[schema(required = true)]
+    pub hidden: bool,
+    /// 隐藏理由，只给管理人员与作者本人。
+    #[serde(default)]
+    #[schema(required = true)]
+    pub hidden_reason: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
     pub edited_at: Option<OffsetDateTime>,
 }
 
-impl From<Post> for PostView {
-    fn from(p: Post) -> Self {
-        let deleted = p.status != forum_db::posts::STATUS_NORMAL;
+impl PostView {
+    /// 楼层与它的隐藏理由（隐藏楼层才有）。隐藏楼层保留内容，按访问者裁剪见 [`Self::redact`]。
+    pub fn new(p: Post, hidden_reason: Option<String>) -> Self {
+        let hidden = p.status == forum_db::posts::STATUS_HIDDEN;
+        let deleted = p.status != forum_db::posts::STATUS_NORMAL && !hidden;
         Self {
             id: p.id,
             floor: p.floor,
             author_id: p.author_id,
             html: if deleted { String::new() } else { p.html },
             deleted,
+            hidden,
+            hidden_reason: hidden_reason.filter(|_| hidden),
             created_at: p.created_at,
             edited_at: p.edited_at,
+        }
+    }
+
+    /// 访问者能看到这一楼的内容：未删除，且不是隐藏楼层或访问者是管理人员 / 作者。
+    pub fn readable(&self, staff: bool, viewer: Option<i64>) -> bool {
+        !self.deleted && (!self.hidden || staff || viewer == Some(self.author_id))
+    }
+
+    /// 按访问者裁剪隐藏楼层：看不到的去掉内容与理由。
+    pub fn redact(&mut self, staff: bool, viewer: Option<i64>) {
+        if self.hidden && !self.readable(staff, viewer) {
+            self.html.clear();
+            self.hidden_reason = None;
         }
     }
 }

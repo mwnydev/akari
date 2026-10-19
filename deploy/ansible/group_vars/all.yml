@@ -19,7 +19,7 @@ pg_app_accounts:
   - { system_user: forum-worker, role: forum_worker }
   - { system_user: forum-indexer, role: forum_indexer }
   - { system_user: forum-sponsor, role: forum_sponsor }
-pg_grants_schema_version: 20261201000001
+pg_grants_schema_version: 20261211000001
 valkey_version: 9.1.2
 valkey_sha256: 0d2a79936cbafa5f527a5175536bb17bd3f767f95f53529e59dddfacf762eec0 # gitleaks:allow（公开校验和）
 

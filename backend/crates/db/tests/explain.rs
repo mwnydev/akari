@@ -32,6 +32,7 @@ const BIG_TABLES: &[&str] = &[
     "post_counters",
     "floor_comments",
     "reports",
+    "report_cases",
 ];
 
 #[derive(Debug, Default)]
@@ -1071,7 +1072,10 @@ async fn floor_social_queries_use_indexes(db: PgPool) {
         SELECT p.id, (SELECT count(*) FROM post_likes l WHERE l.post_id = p.id),
                (SELECT count(*) FROM floor_comments c WHERE c.post_id = p.id AND c.status = 0)
         FROM posts p;
-        INSERT INTO reports (target_kind, target_id, forum_id, reporter_id) SELECT 1, g, 1, 1 + g % 1000 FROM generate_series(1, 20000) g;
+        INSERT INTO report_cases (target_kind, target_id, forum_id, target_author_id)
+        SELECT 1, g, 1, 1 + g % 1000 FROM generate_series(1, 20000) g;
+        INSERT INTO reports (target_kind, target_id, forum_id, reporter_id, case_id)
+        SELECT 1, g, 1, 1 + g % 1000, g FROM generate_series(1, 20000) g;
         ANALYZE;
         ",
     )
@@ -1237,8 +1241,151 @@ async fn floor_social_queries_use_indexes(db: PgPool) {
             .bind(5_i64)
             .bind(1_i32)
             .bind(7_i64)
-            .bind(""),
+            .bind("")
+            .bind(5_i64),
     )
     .await;
     assert!(info.seq_scans.is_empty(), "report_create: {plan:#}");
+}
+
+/// 举报队列、楼层隐藏与热门排序（迁移 20261211000001）。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn report_queue_and_hot_queries_use_indexes(db: PgPool) {
+    seed(&db).await;
+    sqlx::raw_sql(
+        r"
+        -- 主题分布到近 500 天（热门只看近 14 天：约 1300 个），1 楼带点赞计数
+        UPDATE topics SET created_at = now() - id * interval '15 minutes', last_post_at = now() - id * interval '14 minutes';
+        INSERT INTO post_counters (post_id, likes) SELECT id, id % 13 FROM posts WHERE floor = 1;
+        INSERT INTO floor_comments (post_id, author_id, body) SELECT id, author_id, 'c' FROM posts;
+        -- 2 万件已结案的举报案件、每板块几十件待处理，各一两条举报
+        INSERT INTO report_cases (target_kind, target_id, forum_id, target_author_id, status, action, resolved_by, resolved_at)
+        SELECT 1 + g % 2, g, 1 + g % 3, 1 + g % 1000,
+               CASE WHEN g % 200 = 0 THEN 0 ELSE 2 END, CASE WHEN g % 200 = 0 THEN NULL ELSE 'delete' END,
+               CASE WHEN g % 200 = 0 THEN NULL ELSE 1 END, CASE WHEN g % 200 = 0 THEN NULL ELSE now() END
+        FROM generate_series(1, 20000) g;
+        INSERT INTO reports (target_kind, target_id, forum_id, reporter_id, case_id)
+        SELECT c.target_kind, c.target_id, c.forum_id, 1 + (c.id * 3 + k) % 1000, c.id
+        FROM report_cases c, generate_series(1, 2) k;
+        INSERT INTO hot_topics (topic_id, forum_id, score) SELECT id, forum_id, 1.0 / id FROM topics WHERE id <= 3000;
+        ANALYZE;
+        ",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+    let boards = vec![1_i32, 2, 3];
+
+    for (name, sql, index) in [
+        (
+            "report_queue_open",
+            q!("report_queue_open.sql"),
+            "report_cases_open",
+        ),
+        (
+            "report_queue_resolved",
+            q!("report_queue_resolved.sql"),
+            "report_cases_resolved",
+        ),
+    ] {
+        check(
+            &db,
+            name,
+            sqlx::query(sql)
+                .bind(&boards)
+                .bind(i64::MAX)
+                .bind(31_i64)
+                .bind(7_i64),
+            index,
+        )
+        .await;
+    }
+
+    let cases: Vec<i64> = (19_900..19_930).collect();
+    let sql = q!("reports_of_cases.sql");
+    check(
+        &db,
+        "reports_of_cases",
+        sqlx::query(sql).bind(&cases).bind(5_i64),
+        "reports_case",
+    )
+    .await;
+
+    // 写语句：案件按部分唯一索引 / 主键定位，结案通知按案件取举报人
+    let sql = q!("report_case_upsert.sql");
+    let (info, plan) = explain(
+        &db,
+        sqlx::query(sql)
+            .bind(1_i16)
+            .bind(5_i64)
+            .bind(1_i32)
+            .bind(7_i64),
+    )
+    .await;
+    assert!(info.seq_scans.is_empty(), "report_case_upsert: {plan:#}");
+
+    let sql = q!("report_case_resolve.sql");
+    for index in ["report_cases_pkey", "reports_case"] {
+        check(
+            &db,
+            "report_case_resolve",
+            sqlx::query(sql)
+                .bind(200_i64)
+                .bind(2_i16)
+                .bind("hide")
+                .bind(1_i64)
+                .bind(2_i64)
+                .bind(3_i32),
+            index,
+        )
+        .await;
+    }
+
+    // 主题移动：只扫待处理的案件（部分索引），按主键回查楼层与评论
+    let sql = q!("report_cases_follow_topic.sql");
+    let open = ["report_cases_open", "report_cases_open_target"];
+    for indexes in [&open[..], &["posts_pkey"]] {
+        check_any(
+            &db,
+            "report_cases_follow_topic",
+            sqlx::query(sql).bind(2_i64).bind(3_i32),
+            indexes,
+        )
+        .await;
+    }
+
+    // 热门重算：近 14 天的主题走 topics_latest 范围扫描，1 楼与计数按唯一索引 / 主键各取一行
+    let sql = q!("hot_refresh.sql");
+    for index in [
+        "topics_latest",
+        "posts_topic_id_floor_key",
+        "post_counters_pkey",
+    ] {
+        check(&db, "hot_refresh", sqlx::query(sql).bind(1000_i64), index).await;
+    }
+
+    let sql = q!("hot_board.sql");
+    check(
+        &db,
+        "hot_board",
+        sqlx::query(sql)
+            .bind(2_i32)
+            .bind(f64::INFINITY)
+            .bind(i64::MAX)
+            .bind(50_i64),
+        "hot_topics_forum",
+    )
+    .await;
+    let sql = q!("hot_latest.sql");
+    check(
+        &db,
+        "hot_latest",
+        sqlx::query(sql)
+            .bind(&boards)
+            .bind(0.01_f64)
+            .bind(100_i64)
+            .bind(50_i64),
+        "hot_topics_all",
+    )
+    .await;
 }

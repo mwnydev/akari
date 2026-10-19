@@ -1,6 +1,7 @@
 //! 管理角色与权限（ADR 0013）：站长、管理员、版主三个角色；所有管理接口都经 [`StaffRoles::allows`] 判断。
 //!
-//! - 版主：只在自己负责的板块内置顶、精华、锁帖、隐藏、移动、删帖（软删除）、禁言（≤ 7 天）、禁拍（≤ 30 天）；
+//! - 版主：只在自己负责的板块内置顶、精华、锁帖、隐藏（主题与楼层）、移动、删帖（软删除）、处理举报、
+//!   禁言（≤ 7 天）、禁拍（≤ 30 天）；
 //! - 管理员：全站的用户、板块、内容管理，更长的禁言与禁拍、封号（含永久）、IP / 设备封禁；
 //! - 站长：全部权限，另外任免管理员与版主、改阈值、一键撤销、恢复被暂停的管理权限（这几项只在后台做）。
 //!
@@ -60,6 +61,10 @@ pub enum Permission {
     TopicHide,
     /// 删除他人楼层（软删除）与恢复。
     PostDelete,
+    /// 隐藏 / 取消隐藏楼层。
+    PostHide,
+    /// 查看与处理举报队列（处理方式本身另需对应的权限，如删帖、禁言）。
+    Reports,
     /// 编辑他人楼层。
     PostEdit,
     Mute,
@@ -81,11 +86,13 @@ pub enum Permission {
 }
 
 impl Permission {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 17] = [
         Self::BoardAccess,
         Self::TopicModerate,
         Self::TopicHide,
         Self::PostDelete,
+        Self::PostHide,
+        Self::Reports,
         Self::PostEdit,
         Self::Mute,
         Self::AuctionBan,
@@ -107,6 +114,8 @@ impl Permission {
                 | Self::TopicModerate
                 | Self::TopicHide
                 | Self::PostDelete
+                | Self::PostHide
+                | Self::Reports
                 | Self::Mute
                 | Self::AuctionBan
                 | Self::ViewSanctions
@@ -385,6 +394,8 @@ mod tests {
             Permission::TopicModerate,
             Permission::TopicHide,
             Permission::PostDelete,
+            Permission::PostHide,
+            Permission::Reports,
             Permission::Mute,
             Permission::AuctionBan,
         ] {

@@ -1,4 +1,4 @@
-//! 楼层。删除只改状态，楼层号保留。
+//! 楼层。删除、隐藏只改状态，楼层号保留。
 
 use serde_json::Value;
 use sqlx::{PgExecutor, Postgres, Transaction};
@@ -7,6 +7,8 @@ use time::OffsetDateTime;
 pub const STATUS_NORMAL: i16 = 0;
 pub const STATUS_DELETED_BY_AUTHOR: i16 = 1;
 pub const STATUS_DELETED_BY_STAFF: i16 = 2;
+/// 被管理人员隐藏：管理人员与作者看得到内容，其他人看不到；不能再点赞、评论、举报、编辑（写入语句都要求状态为 0）。
+pub const STATUS_HIDDEN: i16 = 3;
 /// 每页楼层数（plan 第 9 节）。
 pub const PAGE_SIZE: i32 = 20;
 
@@ -191,20 +193,22 @@ pub async fn history(
     .await
 }
 
-/// 恢复被管理人员删除的楼层。返回是否改动。
+/// 恢复被管理人员删除的楼层：删除前是隐藏的（还有隐藏理由）恢复成隐藏，否则恢复正常。返回是否改动。
 pub async fn restore(db: impl PgExecutor<'_>, id: i64) -> Result<bool, sqlx::Error> {
     let r = sqlx::query!(
-        "UPDATE posts SET status = $2 WHERE id = $1 AND status = $3",
+        "UPDATE posts SET status = CASE WHEN EXISTS (SELECT 1 FROM post_hides WHERE post_id = $1) THEN $4::smallint ELSE $2::smallint END
+         WHERE id = $1 AND status = $3",
         id,
         STATUS_NORMAL,
-        STATUS_DELETED_BY_STAFF
+        STATUS_DELETED_BY_STAFF,
+        STATUS_HIDDEN
     )
     .execute(db)
     .await?;
     Ok(r.rows_affected() == 1)
 }
 
-/// 软删除；已删除的不再改。返回是否改动。
+/// 软删除（只改正常的楼层；管理人员删除还包括隐藏的楼层）；已删除的不再改。返回是否改动。
 pub async fn soft_delete(
     db: impl PgExecutor<'_>,
     id: i64,
@@ -214,4 +218,58 @@ pub async fn soft_delete(
         .execute(db)
         .await?;
     Ok(r.rows_affected() == 1)
+}
+
+/// 隐藏楼层（只改未删除、未隐藏的），记下理由。返回是否改动。
+pub async fn hide(
+    db: impl PgExecutor<'_>,
+    id: i64,
+    reason: &str,
+    by: i64,
+) -> Result<bool, sqlx::Error> {
+    let row = sqlx::query!(
+        "WITH p AS (UPDATE posts SET status = $4 WHERE id = $1 AND status = $5 RETURNING id)
+         INSERT INTO post_hides (post_id, reason, hidden_by) SELECT id, $2, $3 FROM p
+         ON CONFLICT (post_id) DO UPDATE SET reason = EXCLUDED.reason, hidden_by = EXCLUDED.hidden_by, hidden_at = now()
+         RETURNING post_id",
+        id,
+        reason,
+        by,
+        STATUS_HIDDEN,
+        STATUS_NORMAL
+    )
+    .fetch_optional(db)
+    .await?;
+    Ok(row.is_some())
+}
+
+/// 取消隐藏。返回是否改动。
+pub async fn unhide(db: impl PgExecutor<'_>, id: i64) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"WITH p AS (UPDATE posts SET status = $2 WHERE id = $1 AND status = $3 RETURNING id),
+                d AS (DELETE FROM post_hides WHERE post_id IN (SELECT id FROM p))
+           SELECT EXISTS (SELECT 1 FROM p) AS "changed!""#,
+        id,
+        STATUS_NORMAL,
+        STATUS_HIDDEN
+    )
+    .fetch_one(db)
+    .await
+}
+
+/// 隐藏楼层现在的隐藏理由。
+pub async fn hide_reasons(
+    db: impl PgExecutor<'_>,
+    ids: &[i64],
+) -> Result<Vec<(i64, String)>, sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query!(
+        "SELECT post_id, reason FROM post_hides WHERE post_id = ANY($1)",
+        ids
+    )
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.post_id, r.reason)).collect())
 }

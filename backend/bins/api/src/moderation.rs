@@ -9,7 +9,7 @@ use std::time::Duration;
 use forum_core::ErrorCode;
 use forum_core::staff::{ModerationSettings, Permission, Scope, StaffRoles};
 use forum_db::topics::{self, FLAG_FEATURED, Topic};
-use forum_db::{Postgres, Transaction, audit, outbox, sanctions};
+use forum_db::{Postgres, Transaction, audit, outbox, reports, sanctions};
 use forum_db::{floor, posts};
 use forum_kv::SlidingWindow;
 use forum_kv::forum_cache;
@@ -29,6 +29,8 @@ pub mod action {
     pub const POST_EDIT: &str = "post.edit";
     pub const POST_DELETE: &str = "post.delete";
     pub const POST_RESTORE: &str = "post.restore";
+    pub const POST_HIDE: &str = "post.hide";
+    pub const POST_UNHIDE: &str = "post.unhide";
     pub const COMMENT_DELETE: &str = "comment.delete";
     pub const COMMENT_RESTORE: &str = "comment.restore";
     pub const MUTE: &str = "user.mute";
@@ -37,6 +39,8 @@ pub mod action {
     pub const DEVICE_BAN: &str = "user.device_ban";
     pub const IP_BAN: &str = "ip.ban";
     pub const SANCTION_LIFT: &str = "sanction.lift";
+    /// 举报结案（处理方式本身另有一条日志，如 `post.hide`）；撤销即重新打开案件。
+    pub const REPORT_RESOLVE: &str = "report.resolve";
 }
 
 /// 限速与异常检测的操作类别。
@@ -44,7 +48,7 @@ pub mod action {
 pub enum Class {
     /// 置顶、精华、锁定、移动、编辑、恢复。
     Content,
-    /// 删帖、删评论、隐藏主题。
+    /// 删帖、删评论、隐藏主题与楼层。
     Delete,
     /// 处罚与解除处罚。
     Sanction,
@@ -67,6 +71,7 @@ impl Class {
             Self::Delete => Some((
                 &[
                     action::POST_DELETE,
+                    action::POST_HIDE,
                     action::COMMENT_DELETE,
                     action::TOPIC_HIDE,
                 ],
@@ -273,7 +278,10 @@ pub async fn change_topic(
 ) -> ApiResult<Option<TopicEffect>> {
     let (old_forum, new_forum, old_flags, new_flags) = match change {
         TopicChange::Move(to) => match topics::move_to(&mut **tx, topic.id, to).await? {
-            Some(from) => (from, to, topic.flags, topic.flags),
+            Some(from) => {
+                reports::follow_topic(&mut **tx, topic.id, to).await?;
+                (from, to, topic.flags, topic.flags)
+            }
             None => return Ok(None),
         },
         TopicChange::Flags { set, clear } => {
@@ -351,6 +359,13 @@ struct MoveDetail {
 struct PostDetail {
     topic_id: i64,
     edit_id: Option<i64>,
+    /// 取消隐藏前的隐藏理由（`post.unhide`）。
+    hidden_reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ReportDetail {
+    case_id: i64,
 }
 
 #[derive(Deserialize)]
@@ -419,7 +434,11 @@ pub async fn revert(
         });
     }
     match a {
-        action::POST_DELETE | action::POST_RESTORE | action::POST_EDIT => {
+        action::POST_DELETE
+        | action::POST_RESTORE
+        | action::POST_EDIT
+        | action::POST_HIDE
+        | action::POST_UNHIDE => {
             let (Some(id), Some(d)) = (
                 target_id(entry, "post:"),
                 parse::<PostDetail>(&entry.detail),
@@ -430,6 +449,14 @@ pub async fn revert(
                 action::POST_DELETE => posts::restore(&mut **tx, id).await?,
                 action::POST_RESTORE => {
                     posts::soft_delete(&mut **tx, id, posts::STATUS_DELETED_BY_STAFF).await?
+                }
+                action::POST_HIDE => posts::unhide(&mut **tx, id).await?,
+                // 重新隐藏，理由用取消隐藏时记下的原隐藏理由
+                action::POST_UNHIDE => {
+                    let Some(reason) = d.hidden_reason.as_deref() else {
+                        return Ok(NotRevertible);
+                    };
+                    posts::hide(&mut **tx, id, reason, by).await?
                 }
                 _ => match d.edit_id {
                     Some(edit_id) => restore_edit(state, tx, by, id, edit_id).await?,
@@ -464,6 +491,10 @@ pub async fn revert(
                     .is_empty(),
             ))
         }
+        action::REPORT_RESOLVE => match parse::<ReportDetail>(&entry.detail) {
+            Some(d) => Ok(done(reports::reopen(&mut **tx, d.case_id).await?)),
+            None => Ok(NotRevertible),
+        },
         action::SANCTION_LIFT => match parse::<LiftDetail>(&entry.detail) {
             Some(d) => Ok(done(sanctions::unrevoke(&mut **tx, d.sanction_id).await?)),
             None => Ok(NotRevertible),

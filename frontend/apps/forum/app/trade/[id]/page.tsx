@@ -23,7 +23,7 @@ import { cardLookup, formatTime } from "../../../lib/display";
 import { FEE_PAYERS, feePayerOf, orderCostPreview } from "../../../lib/fees";
 import { topicHref } from "../../../lib/links";
 import { headerViewer } from "../../../lib/nav";
-import { WALLET_ORIGIN } from "../../../lib/public-config";
+import { WALLET_ORIGIN, needsPostCaptcha } from "../../../lib/public-config";
 import { getMe } from "../../../lib/session";
 import { personCard, topicHeaderView } from "../../../lib/topic-views";
 
@@ -88,7 +88,7 @@ export default async function TradePage({ params }: { params: Params }) {
   const now = new Date();
 
   return (
-    <ComposerProvider>
+    <ComposerProvider captcha={needsPostCaptcha(me)}>
       <AppShell active={forum.slug} className={columns}>
         <div className="min-w-0 xl:col-start-1 xl:row-start-1">
           <TopicHeader topic={topicHeaderView(topic, forum)} />

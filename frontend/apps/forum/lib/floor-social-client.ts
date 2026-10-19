@@ -20,15 +20,17 @@ export function listComments(postId: number, after: number): Promise<Schemas["Co
   );
 }
 
+/** `captcha`：注册 24 小时内要带的 Turnstile 令牌。 */
 export function createComment(
   postId: number,
   body: string,
   replyTo: number | null,
+  captcha: string | null = null,
 ): Promise<Schemas["CreatedComment"]> {
   return unwrap(
     api.POST("/api/v1/posts/{id}/comments", {
       params: { path: { id: postId } },
-      body: { body, reply_to: replyTo },
+      body: { body, reply_to: replyTo, captcha },
     }),
   );
 }

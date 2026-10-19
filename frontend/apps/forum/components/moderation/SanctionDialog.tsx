@@ -5,7 +5,7 @@ import { Field, Input } from "@akari/ui";
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import * as z from "zod/mini";
 import { api, unwrap } from "../../lib/browser-api";
 import { formatTime } from "../../lib/display";
@@ -41,6 +41,89 @@ const Schema = z
   );
 type Input = z.infer<typeof Schema>;
 
+/** 处罚的条款字段（处罚弹窗与举报处理共用），表单值须含 `kind`、`scope`、`duration`、`ip`。 */
+export interface SanctionValues {
+  kind: SanctionKind;
+  scope: "board" | "site";
+  /** 时长档位的秒数；"" = 永久 */
+  duration: string;
+  ip: string;
+}
+
+export function SanctionFields<T extends SanctionValues>({
+  form: typed,
+  choices,
+  staff,
+}: {
+  form: UseFormReturn<T>;
+  choices: ReturnType<typeof sanctionChoices>;
+  staff: Schemas["StaffView"];
+}) {
+  // 只用到 SanctionValues 的字段；泛型表单的 register 对具体字段名收窄不了，这里按子集看待
+  const form = typed as unknown as UseFormReturn<SanctionValues>;
+  const kind = form.watch("kind");
+  const choice = choices.find((c) => c.kind === kind);
+  const durations = durationChoices(durationLimit(staff, kind));
+  return (
+    <>
+      <Field label="处罚">
+        <select
+          className={selectClass}
+          {...form.register("kind", {
+            onChange: () => {
+              const c = choices.find((x) => x.kind === form.getValues("kind"));
+              form.setValue("scope", c?.board ? "board" : "site");
+              form.setValue("duration", "86400");
+            },
+          })}
+        >
+          {choices.map((c) => (
+            <option key={c.kind} value={c.kind}>
+              {SANCTION_LABEL[c.kind]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {choice?.board && choice.site ? (
+        <Field label="范围">
+          <select className={selectClass} {...form.register("scope")}>
+            <option value="board">只限本板块</option>
+            <option value="site">全站</option>
+          </select>
+        </Field>
+      ) : null}
+      {kind === "ip_ban" ? (
+        <Field
+          label="IP 或网段"
+          hint="如 203.0.113.7 或 203.0.113.0/24（IPv4 最大 /16、IPv6 最大 /32）；只拦登录"
+          error={form.formState.errors.ip?.message}
+        >
+          <Input {...form.register("ip")} />
+        </Field>
+      ) : null}
+      <Field
+        label="时长"
+        {...(durations.at(-1)?.secs === null
+          ? {}
+          : { hint: `你的角色最长 ${durations.at(-1)?.label ?? ""}，更长或封号请交管理员处理` })}
+      >
+        <select className={selectClass} {...form.register("duration")}>
+          {durations.map((d) => (
+            <option key={d.label} value={d.secs ?? ""}>
+              {d.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {kind === "ban" ? (
+        <p className="text-sm text-fg-muted">
+          封号后不能发帖、回帖、编辑和发私信；仍可登录查看订单与钱包、提币（托管资金永远能取回）。
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 interface Props {
   user: { id: number; name: string };
   /** 在哪个板块里处罚（版主只能限这个板块） */
@@ -65,8 +148,6 @@ function SanctionForm({ user, forumId, staff, onClose }: Props) {
   });
   const [done, setDone] = useState<Schemas["SanctionsCreated"] | null>(null);
   const kind = form.watch("kind") as SanctionKind;
-  const choice = choices.find((c) => c.kind === kind);
-  const durations = durationChoices(durationLimit(staff, kind));
 
   const submit = useMutation({
     mutationFn: (v: Input) => {
@@ -122,60 +203,7 @@ function SanctionForm({ user, forumId, staff, onClose }: Props) {
       onClose={onClose}
       onSubmit={form.handleSubmit((v) => submit.mutate(v))}
     >
-      <Field label="处罚">
-        <select
-          className={selectClass}
-          {...form.register("kind", {
-            onChange: () => {
-              const c = choices.find((x) => x.kind === form.getValues("kind"));
-              form.setValue("scope", c?.board ? "board" : "site");
-              form.setValue("duration", "86400");
-            },
-          })}
-        >
-          {choices.map((c) => (
-            <option key={c.kind} value={c.kind}>
-              {SANCTION_LABEL[c.kind]}
-            </option>
-          ))}
-        </select>
-      </Field>
-      {choice?.board && choice.site ? (
-        <Field label="范围">
-          <select className={selectClass} {...form.register("scope")}>
-            <option value="board">只限本板块</option>
-            <option value="site">全站</option>
-          </select>
-        </Field>
-      ) : null}
-      {kind === "ip_ban" ? (
-        <Field
-          label="IP 或网段"
-          hint="如 203.0.113.7 或 203.0.113.0/24（IPv4 最大 /16、IPv6 最大 /32）；只拦登录"
-          error={form.formState.errors.ip?.message}
-        >
-          <Input {...form.register("ip")} />
-        </Field>
-      ) : null}
-      <Field
-        label="时长"
-        {...(durations.at(-1)?.secs === null
-          ? {}
-          : { hint: `你的角色最长 ${durations.at(-1)?.label ?? ""}，更长或封号请交管理员处理` })}
-      >
-        <select className={selectClass} {...form.register("duration")}>
-          {durations.map((d) => (
-            <option key={d.label} value={d.secs ?? ""}>
-              {d.label}
-            </option>
-          ))}
-        </select>
-      </Field>
-      {kind === "ban" ? (
-        <p className="text-sm text-fg-muted">
-          封号后不能发帖、回帖、编辑和发私信；仍可登录查看订单与钱包、提币（托管资金永远能取回）。
-        </p>
-      ) : null}
+      <SanctionFields form={form} choices={choices} staff={staff} />
       <ReasonFields form={form} />
     </ModDialog>
   );

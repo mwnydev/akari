@@ -18,6 +18,8 @@ pub enum ErrorCode {
     InvalidEmail,
     #[error("captcha failed")]
     CaptchaFailed,
+    #[error("captcha required")]
+    CaptchaRequired,
     #[error("resend too soon")]
     ResendTooSoon,
     #[error("rate limited")]
@@ -134,6 +136,8 @@ pub enum ErrorCode {
     EvidenceWindowClosed,
     #[error("order chat hash chain broken")]
     ChatChainBroken,
+    #[error("report already resolved")]
+    ReportResolved,
     #[error("ruling differs from the signed one")]
     RulingMismatch,
     #[error("internal error")]
@@ -149,6 +153,7 @@ impl ErrorCode {
             Self::ClaimBelowGas => "可领取金额不足以支付领取 gas 费",
             Self::InvalidEmail => "邮箱格式不正确",
             Self::CaptchaFailed => "人机验证未通过，请重试",
+            Self::CaptchaRequired => "注册 24 小时内发帖需要先完成人机验证",
             Self::ResendTooSoon => "验证码发送太频繁，请 60 秒后再试",
             Self::RateLimited => "操作太频繁，请稍后再试",
             Self::InvalidCode => "验证码错误或已过期",
@@ -213,6 +218,7 @@ impl ErrorCode {
             Self::ChatChainBroken => {
                 "订单聊天记录校验失败（可能被改动），暂停裁决并已记录，请联系站长"
             }
+            Self::ReportResolved => "这条举报已经处理过了",
             Self::RulingMismatch => "提交的裁决与 Passkey 确认的内容不一致，请重新确认",
             Self::Internal => "服务暂时不可用，请稍后再试",
         }

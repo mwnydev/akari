@@ -1,5 +1,5 @@
 import { Avatar } from "@akari/ui";
-import { LogOut, Settings, User } from "lucide-react";
+import { Flag, LogOut, Settings, User } from "lucide-react";
 import { LogoutButton } from "./LogoutButton";
 import type { HeaderViewer } from "./SiteHeader";
 
@@ -10,10 +10,16 @@ const item =
   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-60";
 
 /**
- * 顶栏头像：点开账号菜单（个人主页、账号设置、退出）。浏览器原生 popover，不需要 JS：
- * Esc、点外面都会收起；菜单里是普通链接，只有「退出」是客户端组件。
+ * 顶栏头像：点开账号菜单（个人主页、账号设置、退出；能处理举报的管理人员多一个「举报处理」）。浏览器原生 popover，
+ * 不需要 JS：Esc、点外面都会收起；菜单里是普通链接，只有「退出」是客户端组件。
  */
-export function AccountMenu({ viewer }: { viewer: HeaderViewer }) {
+export function AccountMenu({
+  viewer,
+  reports = false,
+}: {
+  viewer: HeaderViewer;
+  reports?: boolean;
+}) {
   return (
     <>
       <button
@@ -35,6 +41,12 @@ export function AccountMenu({ viewer }: { viewer: HeaderViewer }) {
           <User size={16} aria-hidden />
           个人主页
         </a>
+        {reports ? (
+          <a href="/moderation/reports" className={item}>
+            <Flag size={16} aria-hidden />
+            举报处理
+          </a>
+        ) : null}
         <a href="/settings" className={item}>
           <Settings size={16} aria-hidden />
           账号设置

@@ -23,10 +23,12 @@ use utoipa::{IntoParams, ToSchema};
 use crate::access::{Viewer, topic_access, visible_forums};
 use crate::cards;
 use crate::error::{ApiError, ApiResult, ErrorBody};
+use crate::middleware::ClientIp;
 use crate::moderation::{self, Class, Moderator, TopicChange};
 use crate::posting::{self, REPLY_RATE, after_commit, micros};
 use crate::routes::floor;
 use crate::routes::forums::{TOPICS_PER_PAGE, cursor_of, parse_cursor, summaries, topic_user_ids};
+use crate::routes::hot::{self, TopicSort};
 use crate::state::AppState;
 use crate::views::{
     CreatedPost, ForumView, LatestResponse, ModerationResult, PostView, Timeline, TimelinePoint,
@@ -55,10 +57,25 @@ async fn build_body(
         return Ok(None);
     };
     let rows = posts::page(&state.db, topic_id, page).await?;
+    let hidden: Vec<i64> = rows
+        .iter()
+        .filter(|p| p.status == posts::STATUS_HIDDEN)
+        .map(|p| p.id)
+        .collect();
+    let mut reasons: HashMap<i64, String> = posts::hide_reasons(&state.db, &hidden)
+        .await?
+        .into_iter()
+        .collect();
     Ok(Some(TopicPageBody {
         forum: (&forum).into(),
         topic: (&topic).into(),
-        posts: rows.into_iter().map(PostView::from).collect(),
+        posts: rows
+            .into_iter()
+            .map(|p| {
+                let reason = reasons.remove(&p.id);
+                PostView::new(p, reason)
+            })
+            .collect(),
     }))
 }
 
@@ -97,7 +114,7 @@ pub async fn get(
         return Err(ApiError(ErrorCode::InvalidParameter));
     }
     let viewer = Viewer::load(&state, &session).await?;
-    let body = if page == 1 {
+    let mut body = if page == 1 {
         page1(&state, id).await?
     } else {
         build_body(&state, id, page).await?
@@ -113,8 +130,12 @@ pub async fn get(
     let can_reply =
         viewer.user.is_some() && (staff || (!flags.locked && level >= body.forum.reply_min_level));
     let total_pages = (body.topic.last_floor + PAGE_SIZE - 1) / PAGE_SIZE;
-    let (social, social_users) =
-        floor::page_social(&state, &body.posts, viewer.user.map(|u| u.id)).await?;
+    // 缓存的页面里隐藏楼层带着内容，按访问者裁剪
+    let viewer_id = viewer.user.map(|u| u.id);
+    for p in &mut body.posts {
+        p.redact(staff, viewer_id);
+    }
+    let (social, social_users) = floor::page_social(&state, &body.posts, staff, viewer_id).await?;
     let user_ids: Vec<i64> = [body.topic.author_id]
         .into_iter()
         .chain(body.posts.iter().map(|p| p.author_id))
@@ -178,8 +199,11 @@ pub async fn timeline(
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct LatestQuery {
-    /// 上一页的 `next_cursor`。
+    /// 上一页的 `next_cursor`（最新与热门的游标格式不同，不能混用）。
     pub cursor: Option<String>,
+    /// `latest`（默认，按最后回复时间）或 `hot`（热门，见 `routes::hot`）。
+    #[param(inline)]
+    pub sort: Option<TopicSort>,
 }
 
 /// 每次从有序集合多取一些：要按可见板块过滤掉一部分。
@@ -205,6 +229,9 @@ pub async fn latest_topics(
         .into_iter()
         .map(|f| (f.id, f))
         .collect();
+    if q.sort == Some(TopicSort::Hot) {
+        return hot::latest(&state, &forums, q.cursor.as_deref()).await;
+    }
     // 扫描位置（不含）：上一页最后一个主题，之后是本次最后检查过的有序集合成员
     let mut pos = q
         .cursor
@@ -268,18 +295,28 @@ pub async fn latest_topics(
         out.extend(rows);
     }
     let next_cursor = pos.filter(|_| more).map(|(s, id)| cursor_of(s, id));
-    let mut forum_ids: Vec<i32> = out.iter().map(|t| t.forum_id).collect();
+    latest_response(&state, &forums, &out, next_cursor).await
+}
+
+/// 跨板块列表的响应：主题摘要、它们所在的板块与名片（最新与热门共用）。
+pub(crate) async fn latest_response(
+    state: &AppState,
+    forums: &HashMap<i32, Forum>,
+    topics: &[Topic],
+    next_cursor: Option<String>,
+) -> ApiResult<Json<LatestResponse>> {
+    let mut forum_ids: Vec<i32> = topics.iter().map(|t| t.forum_id).collect();
     forum_ids.sort_unstable();
     forum_ids.dedup();
-    let user_ids = topic_user_ids(out.iter());
+    let user_ids = topic_user_ids(topics.iter());
     Ok(Json(LatestResponse {
-        topics: summaries(&state, &out).await?,
+        topics: summaries(state, topics).await?,
         forums: forum_ids
             .iter()
             .filter_map(|id| forums.get(id))
             .map(ForumView::from)
             .collect(),
-        users: cards::load(&state, &user_ids).await?,
+        users: cards::load(state, &user_ids).await?,
         next_cursor,
     }))
 }
@@ -307,6 +344,8 @@ pub struct ReplyRequest {
     pub html: String,
     #[schema(value_type = Object)]
     pub source: Value,
+    /// 注册 24 小时内必填：Turnstile 令牌（组件的 `action` 为 `post`）。
+    pub captcha: Option<String>,
 }
 
 /// 回帖。楼层在一条多 CTE 语句里分配，HTML 在事务外过滤（plan 第 8 节）。
@@ -323,6 +362,7 @@ pub struct ReplyRequest {
 pub async fn reply(
     State(state): State<AppState>,
     session: Session,
+    ClientIp(ip): ClientIp,
     Path(id): Path<i64>,
     Json(req): Json<ReplyRequest>,
 ) -> ApiResult<(StatusCode, Json<CreatedPost>)> {
@@ -354,6 +394,7 @@ pub async fn reply(
     }
     posting::check_sanctions(&state, actor.id, Some(forum.id)).await?;
     let cleaned = posting::clean(&state, &actor, &req.html, &req.source)?;
+    posting::check_new_user_captcha(&state, &actor, req.captcha.as_deref(), ip).await?;
     posting::limit_new_content(&state, &actor, &REPLY_RATE).await?;
 
     let replied = posts::reply(

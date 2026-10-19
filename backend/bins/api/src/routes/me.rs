@@ -20,11 +20,14 @@ pub struct Me {
     pub username: Option<String>,
     /// 管理角色与权限；普通用户为空。论坛界面据此显示管理功能（服务端每个管理接口仍会再校验）。
     pub staff: Option<StaffView>,
+    /// 注册不满 24 小时：发主题、回帖、评论要带 Turnstile 令牌（站点配置了人机验证时），且限频、不能发外链。
+    pub new_user: bool,
 }
 
 impl Me {
     pub fn new(u: forum_db::users::User, roles: &StaffRoles) -> Self {
         Self {
+            new_user: crate::access::registered_recently(u.created_at),
             id: u.id,
             email: u.email,
             username: u.username,

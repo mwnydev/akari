@@ -47,7 +47,7 @@ pub const KIND_NEW_DEVICE: &str = "email.new_device";
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct StartRequest {
     pub email: String,
-    /// Cloudflare Turnstile 令牌。
+    /// Cloudflare Turnstile 令牌（组件的 `action` 为 `login`）。
     pub captcha: Option<String>,
 }
 
@@ -101,7 +101,11 @@ pub async fn start(
     check_access(&state, ip, device_id(&jar).as_deref()).await?;
     let passed = state
         .captcha
-        .verify(req.captcha.as_deref(), ip)
+        .verify(
+            req.captcha.as_deref(),
+            ip,
+            forum_auth::captcha::action::LOGIN,
+        )
         .await
         .map_err(ApiError::internal)?;
     if !passed {

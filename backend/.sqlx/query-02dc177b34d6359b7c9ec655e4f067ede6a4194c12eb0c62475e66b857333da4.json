@@ -1,0 +1,154 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE forums SET name = coalesce($2, name), description = coalesce($3, description),\n                color = CASE WHEN $4 THEN $5 ELSE color END, position = coalesce($6, position),\n                allow_trade = coalesce($7, allow_trade)\n         WHERE id = $1\n         RETURNING id, parent_id, slug, name, description, position,\n                   view_min_level, post_min_level, reply_min_level, allow_trade, color",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "parent_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "parent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "position",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "position"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "view_min_level",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "view_min_level"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "post_min_level",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "post_min_level"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "reply_min_level",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "reply_min_level"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "allow_trade",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "allow_trade"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "color",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "color"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Int4",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "02dc177b34d6359b7c9ec655e4f067ede6a4194c12eb0c62475e66b857333da4"
+}

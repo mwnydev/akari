@@ -14,8 +14,8 @@ import { boardColor } from "../lib/board-color";
 import { cardLookup } from "../lib/display";
 import { forumTree, listForums, type ForumView } from "../lib/forums";
 import { boardHref, loginHref } from "../lib/links";
+import { needsPostCaptcha } from "../lib/public-config";
 import { getMe } from "../lib/session";
-import { hotOrder } from "../lib/topic-views";
 
 type Search = Promise<Record<string, string | string[] | undefined>>;
 
@@ -29,17 +29,28 @@ function postableBoards(forums: ForumView[]) {
 }
 
 /**
- * 首页：跨板块最新主题（后端按最后回复时间，只含访问者看得到的板块）、热门、板块目录三个标签页。
- * `?cursor=` 翻到更早的；`?tab=hot` / `?tab=boards` 直接打开对应标签页（侧栏「热门」）。
+ * 首页：跨板块最新主题（后端按最后回复时间，只含访问者看得到的板块）、热门（后端 `sort=hot`，排名每 5 分钟更新）、
+ * 板块目录三个标签页。`?cursor=` 翻到更早的最新主题，`?hot=` 翻热门的下一页；`?tab=hot` / `?tab=boards`
+ * 直接打开对应标签页（侧栏「热门」）。
  */
 export default async function Home({ searchParams }: { searchParams: Search }) {
   const sp = await searchParams;
   const cursor = typeof sp.cursor === "string" && sp.cursor ? sp.cursor : undefined;
-  const tab = typeof sp.tab === "string" && TABS.includes(sp.tab) ? sp.tab : "latest";
+  const hotCursor = typeof sp.hot === "string" && sp.hot ? sp.hot : undefined;
+  const tab = hotCursor
+    ? "hot"
+    : typeof sp.tab === "string" && TABS.includes(sp.tab)
+      ? sp.tab
+      : "latest";
   const api = await serverApi();
-  const [forums, latest, me] = await Promise.all([
+  const [forums, latest, hot, me] = await Promise.all([
     listForums(),
     load(api.GET("/api/v1/topics/latest", { params: { query: cursor ? { cursor } : {} } })),
+    load(
+      api.GET("/api/v1/topics/latest", {
+        params: { query: { sort: "hot", ...(hotCursor ? { cursor: hotCursor } : {}) } },
+      }),
+    ),
     getMe(),
   ]);
   if (forums instanceof ApiError) {
@@ -78,12 +89,29 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
           </p>
         ) : null,
       },
-      { value: "hot", label: "热门", rows: liveFeedRows(hotOrder(latest.topics), ctx) },
     ];
+    if (!(hot instanceof ApiError)) {
+      const hotCtx = { user: cardLookup(hot.users), forum: (id: number) => byId.get(id) };
+      lists.push({
+        value: "hot",
+        label: "热门",
+        rows: liveFeedRows(hot.topics, hotCtx),
+        footer: hot.next_cursor ? (
+          <p className="py-3 text-center text-sm">
+            <Link
+              href={`/?hot=${encodeURIComponent(hot.next_cursor)}`}
+              className="text-accent hover:underline"
+            >
+              更多热门主题
+            </Link>
+          </p>
+        ) : null,
+      });
+    }
   }
 
   return (
-    <ComposerProvider>
+    <ComposerProvider captcha={needsPostCaptcha(me)}>
       <AppShell active={tab === "hot" ? "hot" : "home"}>
         <h1 className="sr-only">Akari 论坛</h1>
         {lists ? (

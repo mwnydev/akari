@@ -244,6 +244,54 @@
         }
       }
     },
+    "/api/v1/admin/forums/{id}": {
+      "patch": {
+        "tags": ["admin"],
+        "summary": "修改板块。论坛里的板块列表立即生效；主题第 1 页缓存里的板块名与色块最长 10 分钟后更新。",
+        "operationId": "admin_update_forum",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int32" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ForumUpdateRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ForumView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/login/finish": {
       "post": {
         "tags": ["admin"],
@@ -413,6 +461,27 @@
             }
           },
           "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reports": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "后台概览：各板块待处理的举报案件数（处理在论坛的「举报处理」页）。",
+        "operationId": "admin_report_summary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AdminReportSummary" }
+              }
+            }
+          },
+          "401": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
@@ -2107,16 +2176,25 @@
           {
             "name": "page",
             "in": "query",
-            "description": "页码 1–200；与 `cursor` 二选一。",
+            "description": "页码 1–200；与 `cursor` 二选一。热门不用页码。",
             "required": false,
             "schema": { "type": ["integer", "null"], "format": "int32", "minimum": 0 }
           },
           {
             "name": "cursor",
             "in": "query",
-            "description": "第 200 页之后的游标（取自上一页的 `next_cursor`）。",
+            "description": "第 200 页之后的游标（取自上一页的 `next_cursor`）；热门翻页也用它。",
             "required": false,
             "schema": { "type": ["string", "null"] }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`latest`（默认，按最后回复时间，置顶帖在第 1 页）或 `hot`（热门，不含置顶帖）。",
+            "required": false,
+            "schema": {
+              "oneOf": [{ "type": "string", "enum": ["latest", "hot"] }, { "type": "null" }]
+            }
           }
         ],
         "responses": {
@@ -2369,6 +2447,102 @@
             }
           },
           "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/moderation/reports": {
+      "get": {
+        "tags": ["moderation"],
+        "summary": "举报处理队列（新的在前）。版主只看自己负责的板块，管理员与站长看全部；不含访问者自己的内容。",
+        "operationId": "report_queue",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "待处理（默认）或已结案。",
+            "required": false,
+            "schema": {
+              "oneOf": [{ "type": "string", "enum": ["open", "resolved"] }, { "type": "null" }]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "游标：上一页的 `next_cursor`。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ReportQueue" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/moderation/reports/{id}/resolve": {
+      "post": {
+        "tags": ["moderation"],
+        "summary": "处理一件举报：按 `action` 驳回、隐藏、删除或处罚作者，并结案、通知举报人。需要内容现在所在板块的处理举报权限，\n以及处理方式本身的权限（隐藏 / 删除 / 处罚，版主限本板块、处罚时长有上限）；不能处理自己内容上的举报。\n内容已经是要求的状态（如已被删除）时只结案。",
+        "operationId": "resolve_report",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ResolveRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
@@ -3249,7 +3423,7 @@
     "/api/v1/posts/{id}/comments": {
       "get": {
         "tags": ["forum"],
-        "summary": "一楼的评论（「展开其余」），按时间正序，每页 50 条。已删除楼层的评论只有管理人员能看。",
+        "summary": "一楼的评论（「展开其余」），按时间正序，每页 50 条。已删除楼层的评论只有管理人员能看，隐藏楼层的另有作者本人。",
         "operationId": "post_comments",
         "parameters": [
           {
@@ -3281,7 +3455,7 @@
       },
       "post": {
         "tags": ["forum"],
-        "summary": "评论楼层。门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户与评论限频。\n通知楼主、被回复的人与被 @ 的人，并推给打开着这个主题页的连接。",
+        "summary": "评论楼层。门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户人机验证与限频、评论限频。\n通知楼主、被回复的人与被 @ 的人，并推给打开着这个主题页的连接。",
         "operationId": "create_comment",
         "parameters": [
           {
@@ -3303,6 +3477,55 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/CreatedComment" } }
             }
           },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/posts/{id}/hide": {
+      "post": {
+        "tags": ["forum"],
+        "summary": "隐藏楼层：管理人员看得到内容（带标记），作者看得到内容与隐藏理由，其他人只看到「已隐藏」；\n隐藏后不能再点赞、评论、举报、编辑。需要板块的隐藏权限（版主限本板块），计入删帖限速与异常检测。\n1 楼请隐藏主题。可取消隐藏、可一键撤销。",
+        "operationId": "hide_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/HideRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
           "400": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
@@ -3577,6 +3800,55 @@
         }
       }
     },
+    "/api/v1/posts/{id}/unhide": {
+      "post": {
+        "tags": ["forum"],
+        "summary": "取消隐藏楼层（隐藏的反向操作）。需要板块的隐藏权限，写审计日志（记下原隐藏理由，撤销时据此重新隐藏）。",
+        "operationId": "unhide_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/HideRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/topics/latest": {
       "get": {
         "tags": ["forum"],
@@ -3586,9 +3858,18 @@
           {
             "name": "cursor",
             "in": "query",
-            "description": "上一页的 `next_cursor`。",
+            "description": "上一页的 `next_cursor`（最新与热门的游标格式不同，不能混用）。",
             "required": false,
             "schema": { "type": ["string", "null"] }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "`latest`（默认，按最后回复时间）或 `hot`（热门，见 `routes::hot`）。",
+            "required": false,
+            "schema": {
+              "oneOf": [{ "type": "string", "enum": ["latest", "hot"] }, { "type": "null" }]
+            }
           }
         ],
         "responses": {
@@ -4589,6 +4870,22 @@
           }
         }
       },
+      "AdminReportSummary": {
+        "type": "object",
+        "required": ["open", "by_forum"],
+        "properties": {
+          "by_forum": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ForumReportCount" },
+            "description": "有待处理案件的板块。"
+          },
+          "open": {
+            "type": "integer",
+            "format": "int64",
+            "description": "全站待处理的举报案件数。"
+          }
+        }
+      },
       "AdminSessionView": {
         "type": "object",
         "required": ["user_id", "expires_at", "absolute_expires_at"],
@@ -5083,6 +5380,11 @@
           }
         }
       },
+      "ContentState": {
+        "type": "string",
+        "description": "被举报内容现在的状态。",
+        "enum": ["normal", "hidden", "deleted"]
+      },
       "ConversationPage": {
         "type": "object",
         "required": ["conversations"],
@@ -5252,6 +5554,7 @@
           "CLAIM_BELOW_GAS",
           "INVALID_EMAIL",
           "CAPTCHA_FAILED",
+          "CAPTCHA_REQUIRED",
           "RESEND_TOO_SOON",
           "RATE_LIMITED",
           "INVALID_CODE",
@@ -5310,6 +5613,7 @@
           "EVIDENCE_WINDOW_OPEN",
           "EVIDENCE_WINDOW_CLOSED",
           "CHAT_CHAIN_BROKEN",
+          "REPORT_RESOLVED",
           "RULING_MISMATCH",
           "INTERNAL"
         ]
@@ -5367,6 +5671,38 @@
           "post_id": { "type": "integer", "format": "int64" }
         }
       },
+      "ForumReportCount": {
+        "type": "object",
+        "required": ["forum_id", "open"],
+        "properties": {
+          "forum_id": { "type": "integer", "format": "int32" },
+          "open": { "type": "integer", "format": "int64" }
+        }
+      },
+      "ForumUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "allow_trade": {
+            "type": ["boolean", "null"],
+            "description": "能否发交易帖；修改需要 5 分钟内再验证过。"
+          },
+          "color": {
+            "type": ["string", "null"],
+            "description": "色板里的 `#rrggbb`；`null` 清除（前端按排序位置轮换）；不传不改。"
+          },
+          "description": {
+            "type": ["string", "null"],
+            "description": "最多 200 字，可以为空字符串。"
+          },
+          "name": { "type": ["string", "null"], "description": "1–20 字。" },
+          "position": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "同级板块里的排序，小的在前（0–9999）。"
+          }
+        },
+        "additionalProperties": false
+      },
       "ForumView": {
         "type": "object",
         "required": [
@@ -5405,6 +5741,16 @@
         "type": "object",
         "required": ["status"],
         "properties": { "status": { "type": "string" } }
+      },
+      "HideRequest": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "必填，写入审计日志，并显示给楼层作者（其他人只看到「已隐藏」）。"
+          }
+        }
       },
       "ImageVariant": {
         "type": "object",
@@ -5509,10 +5855,14 @@
       },
       "Me": {
         "type": "object",
-        "required": ["id", "email"],
+        "required": ["id", "email", "new_user"],
         "properties": {
           "email": { "type": "string" },
           "id": { "type": "integer", "format": "int64" },
+          "new_user": {
+            "type": "boolean",
+            "description": "注册不满 24 小时：发主题、回帖、评论要带 Turnstile 令牌（站点配置了人机验证时），且限频、不能发外链。"
+          },
           "staff": {
             "oneOf": [
               {
@@ -5693,6 +6043,10 @@
             "type": "string",
             "description": "纯文本，1–500 字（换行与控制字符换成空格）；`@用户名` 会通知对方。"
           },
+          "captcha": {
+            "type": ["string", "null"],
+            "description": "注册 24 小时内必填：Turnstile 令牌（组件的 `action` 为 `post`）。"
+          },
           "reply_to": {
             "type": ["integer", "null"],
             "format": "int64",
@@ -5766,6 +6120,10 @@
         "type": "object",
         "required": ["title", "html", "source"],
         "properties": {
+          "captcha": {
+            "type": ["string", "null"],
+            "description": "注册 24 小时内必填：Turnstile 令牌（组件的 `action` 为 `post`）。"
+          },
           "html": {
             "type": "string",
             "description": "Tiptap `getHTML()` 的结果；服务端会重新过滤。"
@@ -6222,6 +6580,8 @@
           "topic_moderate",
           "topic_hide",
           "post_delete",
+          "post_hide",
+          "reports",
           "post_edit",
           "mute",
           "auction_ban",
@@ -6242,14 +6602,34 @@
       },
       "PostView": {
         "type": "object",
-        "required": ["id", "floor", "author_id", "html", "deleted", "created_at"],
+        "required": [
+          "id",
+          "floor",
+          "author_id",
+          "html",
+          "deleted",
+          "hidden",
+          "hidden_reason",
+          "created_at"
+        ],
         "properties": {
           "author_id": { "type": "integer", "format": "int64" },
           "created_at": { "type": "string", "format": "date-time" },
           "deleted": { "type": "boolean" },
           "edited_at": { "type": ["string", "null"], "format": "date-time" },
           "floor": { "type": "integer", "format": "int32" },
-          "html": { "type": "string", "description": "已过滤的 HTML；已删除的楼层为空字符串。" },
+          "hidden": {
+            "type": "boolean",
+            "description": "被管理人员隐藏：管理人员与作者看得到内容（界面上带标记 / 提示），其他人只看到「已隐藏」。\n（`serde(default)` 只为读取本字段加入之前缓存的主题页，接口总会返回。）"
+          },
+          "hidden_reason": {
+            "type": ["string", "null"],
+            "description": "隐藏理由，只给管理人员与作者本人。"
+          },
+          "html": {
+            "type": "string",
+            "description": "已过滤的 HTML；已删除的楼层，以及访问者看不到的隐藏楼层为空字符串。"
+          },
           "id": { "type": "integer", "format": "int64" }
         }
       },
@@ -6419,12 +6799,122 @@
       "ReplyRequest": {
         "type": "object",
         "required": ["html", "source"],
-        "properties": { "html": { "type": "string" }, "source": { "type": "object" } }
+        "properties": {
+          "captcha": {
+            "type": ["string", "null"],
+            "description": "注册 24 小时内必填：Turnstile 令牌（组件的 `action` 为 `post`）。"
+          },
+          "html": { "type": "string" },
+          "source": { "type": "object" }
+        }
+      },
+      "ReportCaseView": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "reports",
+          "created_at",
+          "last_reported_at",
+          "target",
+          "latest"
+        ],
+        "properties": {
+          "action": {
+            "type": ["string", "null"],
+            "description": "已处理时采取的措施：`hide` / `delete` / `sanction`。"
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "id": { "type": "integer", "format": "int64" },
+          "last_reported_at": { "type": "string", "format": "date-time" },
+          "latest": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ReportEntryView" },
+            "description": "最近的几条举报，新的在前。"
+          },
+          "reports": {
+            "type": "integer",
+            "format": "int32",
+            "description": "举报次数（不同的人）。"
+          },
+          "resolved_at": { "type": ["string", "null"], "format": "date-time" },
+          "resolved_by": { "type": ["integer", "null"], "format": "int64" },
+          "status": { "$ref": "#/components/schemas/ReportStatus" },
+          "target": { "$ref": "#/components/schemas/ReportTargetView" }
+        }
+      },
+      "ReportEntryView": {
+        "type": "object",
+        "required": ["reason", "created_at"],
+        "properties": {
+          "created_at": { "type": "string", "format": "date-time" },
+          "reason": { "type": "string" },
+          "reporter_id": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "举报人：只给管理员与站长；版主为空。"
+          }
+        }
+      },
+      "ReportQueue": {
+        "type": "object",
+        "required": ["cases", "users", "open_count"],
+        "properties": {
+          "cases": { "type": "array", "items": { "$ref": "#/components/schemas/ReportCaseView" } },
+          "next_cursor": { "type": ["integer", "null"], "format": "int64" },
+          "open_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "访问者能处理的待处理案件总数（入口上的数字）。"
+          },
+          "users": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/UserCardView" },
+            "description": "内容作者、处理人（以及给管理员与站长的举报人）的名片。"
+          }
+        }
       },
       "ReportRequest": {
         "type": "object",
         "properties": { "reason": { "type": "string", "description": "可以不填，最多 500 字。" } },
         "additionalProperties": false
+      },
+      "ReportStatus": { "type": "string", "enum": ["open", "dismissed", "actioned"] },
+      "ReportTargetKind": { "type": "string", "enum": ["post", "comment"] },
+      "ReportTargetView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "post_id",
+          "topic_id",
+          "topic_title",
+          "floor",
+          "forum_id",
+          "author_id",
+          "excerpt",
+          "state"
+        ],
+        "properties": {
+          "author_id": { "type": "integer", "format": "int64" },
+          "excerpt": { "type": "string", "description": "纯文本前 200 字（评论为正文）。" },
+          "floor": { "type": "integer", "format": "int32" },
+          "forum_id": {
+            "type": "integer",
+            "format": "int32",
+            "description": "内容现在所在的板块。"
+          },
+          "id": { "type": "integer", "format": "int64", "description": "楼层或评论的 ID。" },
+          "kind": { "$ref": "#/components/schemas/ReportTargetKind" },
+          "post_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "所在楼层（评论为它所在的楼层）。"
+          },
+          "state": { "$ref": "#/components/schemas/ContentState" },
+          "topic_id": { "type": "integer", "format": "int64" },
+          "topic_title": { "type": "string" }
+        }
       },
       "ReputationView": {
         "type": "object",
@@ -6454,6 +6944,28 @@
             "minimum": 0
           }
         }
+      },
+      "ResolveAction": { "type": "string", "enum": ["dismiss", "hide", "delete", "sanction"] },
+      "ResolveRequest": {
+        "type": "object",
+        "required": ["action", "reason"],
+        "properties": {
+          "action": { "$ref": "#/components/schemas/ResolveAction" },
+          "reason": {
+            "type": "string",
+            "description": "必填，1–500 字：写入处理方式与结案的审计日志；隐藏时显示给内容作者，处罚时通知被处罚人。"
+          },
+          "sanction": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SanctionTerms",
+                "description": "`sanction` 时必填。"
+              },
+              { "type": "null" }
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "RestoreCommentRequest": {
         "type": "object",
@@ -6743,8 +7255,24 @@
         }
       },
       "SanctionRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SanctionTerms" },
+          {
+            "type": "object",
+            "required": ["reason"],
+            "properties": {
+              "reason": {
+                "type": "string",
+                "description": "预设理由或补充说明，写入审计日志并通知对方。"
+              }
+            }
+          }
+        ]
+      },
+      "SanctionTerms": {
         "type": "object",
-        "required": ["kind", "reason"],
+        "description": "处罚用户的条款（处罚接口与举报处理共用）。",
+        "required": ["kind"],
         "properties": {
           "duration_secs": {
             "type": ["integer", "null"],
@@ -6759,10 +7287,6 @@
           "kind": {
             "$ref": "#/components/schemas/SanctionKind",
             "description": "`mute` / `auction_ban` / `ban` / `device_ban`（IP 封禁用 `POST /api/v1/moderation/ip-bans`）。"
-          },
-          "reason": {
-            "type": "string",
-            "description": "预设理由或补充说明，写入审计日志并通知对方。"
           }
         }
       },
@@ -6898,7 +7422,10 @@
         "type": "object",
         "required": ["email"],
         "properties": {
-          "captcha": { "type": ["string", "null"], "description": "Cloudflare Turnstile 令牌。" },
+          "captcha": {
+            "type": ["string", "null"],
+            "description": "Cloudflare Turnstile 令牌（组件的 `action` 为 `login`）。"
+          },
           "email": { "type": "string" }
         }
       },

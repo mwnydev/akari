@@ -19,9 +19,8 @@ import { boardColor } from "../../../lib/board-color";
 import { cardLookup } from "../../../lib/display";
 import { boardHref, loginHref } from "../../../lib/links";
 import { parsePositiveInt } from "../../../lib/pagination";
-import { BOARD_MAX_PAGE } from "../../../lib/public-config";
+import { BOARD_MAX_PAGE, needsPostCaptcha } from "../../../lib/public-config";
 import { getMe } from "../../../lib/session";
-import { hotOrder } from "../../../lib/topic-views";
 
 type Params = Promise<{ slug: string }>;
 type Search = Promise<Record<string, string | string[] | undefined>>;
@@ -44,6 +43,14 @@ const loadBoard = cache(async (slug: string, page: number, cursor: string | unde
     }),
   ),
 );
+
+/** 板块热门（后端 `sort=hot`，不含置顶帖；排名每 5 分钟更新），`?hot=` 翻下一页。 */
+const loadHot = async (slug: string, cursor: string | undefined) =>
+  load(
+    (await serverApi()).GET("/api/v1/forums/{slug}/topics", {
+      params: { path: { slug }, query: { sort: "hot", ...(cursor ? { cursor } : {}) } },
+    }),
+  );
 
 export async function generateMetadata({
   params,
@@ -68,8 +75,14 @@ export default async function BoardPage({
   searchParams: Search;
 }) {
   const { slug } = await params;
-  const q = boardQuery(await searchParams);
-  const [data, me] = await Promise.all([loadBoard(slug, q.page, q.cursor), getMe()]);
+  const sp = await searchParams;
+  const q = boardQuery(sp);
+  const hotCursor = typeof sp.hot === "string" && sp.hot ? sp.hot : undefined;
+  const [data, hot, me] = await Promise.all([
+    loadBoard(slug, q.page, q.cursor),
+    loadHot(slug, hotCursor),
+    getMe(),
+  ]);
   if (data instanceof ApiError) {
     if (data.status === 404) notFound();
     return (
@@ -106,7 +119,7 @@ export default async function BoardPage({
   const deep = q.page > 1 || q.cursor !== undefined;
 
   return (
-    <ComposerProvider>
+    <ComposerProvider captcha={needsPostCaptcha(me)}>
       <AppShell active={forum.slug}>
         <header className="mb-4">
           <h1 className="flex items-center gap-2 text-2xl leading-snug font-semibold">
@@ -118,13 +131,27 @@ export default async function BoardPage({
         <TopicFeed
           lists={[
             { value: "latest", label: "最新", rows: liveFeedRows(topics, ctx), footer: pager },
-            // 置顶帖仍在最前，其余按热度排
-            {
-              value: "hot",
-              label: "热门",
-              rows: liveFeedRows([...data.pinned, ...hotOrder(data.topics)], ctx),
-            },
+            ...(hot instanceof ApiError
+              ? []
+              : [
+                  {
+                    value: "hot",
+                    label: "热门",
+                    rows: liveFeedRows(hot.topics, { user: cardLookup(hot.users) }),
+                    footer: hot.next_cursor ? (
+                      <p className="py-3 text-center text-sm">
+                        <Link
+                          href={`${boardHref(forum.slug)}?hot=${encodeURIComponent(hot.next_cursor)}`}
+                          className="text-accent hover:underline"
+                        >
+                          更多热门主题
+                        </Link>
+                      </p>
+                    ) : null,
+                  },
+                ]),
           ]}
+          defaultTab={hotCursor ? "hot" : undefined}
           filters={forum.allow_trade ? ["trade"] : []}
           action={
             me ? (

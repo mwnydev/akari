@@ -26,6 +26,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   CLAIM_BELOW_GAS: "可领取金额不足以支付领取 gas 费",
   INVALID_EMAIL: "邮箱格式不正确",
   CAPTCHA_FAILED: "人机验证未通过，请重试",
+  CAPTCHA_REQUIRED: "注册 24 小时内发帖需要先完成人机验证",
   RESEND_TOO_SOON: "验证码发送太频繁，请稍后再试",
   RATE_LIMITED: "操作太频繁，请稍后再试",
   INVALID_CODE: "验证码错误或已过期",
@@ -85,6 +86,7 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   EVIDENCE_WINDOW_OPEN: "举证期还没结束，结束后才能裁决",
   EVIDENCE_WINDOW_CLOSED: "举证期已结束，不能再提交陈述或证据",
   CHAT_CHAIN_BROKEN: "订单聊天记录校验失败（可能被改动），暂停裁决并已记录，请联系站长",
+  REPORT_RESOLVED: "这条举报已经处理过了",
   RULING_MISMATCH: "提交的裁决与 Passkey 确认的内容不一致，请重新确认",
   INTERNAL: "服务暂时不可用，请稍后再试",
 };

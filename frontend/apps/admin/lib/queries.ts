@@ -10,6 +10,7 @@ export const keys = {
   suspensions: ["admin-suspensions"] as const,
   settings: ["admin-settings"] as const,
   passkeys: ["admin-passkeys"] as const,
+  reports: ["admin-reports"] as const,
   arbitration: (days: number) => ["admin-arbitration", days] as const,
   execution: ["admin-execution"] as const,
   audit: (actor: number | null, cursor: number | null) => ["admin-audit", actor, cursor] as const,

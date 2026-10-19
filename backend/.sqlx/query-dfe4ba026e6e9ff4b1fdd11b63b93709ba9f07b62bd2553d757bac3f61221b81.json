@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE report_cases c SET status = 0, action = NULL, resolved_by = NULL, resolved_at = NULL\n         WHERE c.id = $1 AND c.status <> 0\n           AND NOT EXISTS (SELECT 1 FROM report_cases o\n                           WHERE o.target_kind = c.target_kind AND o.target_id = c.target_id AND o.status = 0)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dfe4ba026e6e9ff4b1fdd11b63b93709ba9f07b62bd2553d757bac3f61221b81"
+}

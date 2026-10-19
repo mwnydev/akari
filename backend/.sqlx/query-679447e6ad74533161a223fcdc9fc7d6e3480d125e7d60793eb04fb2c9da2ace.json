@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 结案（只改待处理的），同一条语句给每位举报人排一条通知：只说处理结果（已处理 / 未发现违规），\n-- 不含处理方式、处罚内容与处理人。$1 case_id, $2 status, $3 action, $4 resolved_by, $5 topic_id, $6 floor\nWITH c AS (\n  UPDATE report_cases SET status = $2, action = $3, resolved_by = $4, resolved_at = now()\n  WHERE id = $1 AND status = 0\n  RETURNING id\n), n AS (\n  INSERT INTO outbox (kind, payload)\n  SELECT 'notify.report_resolved',\n         jsonb_build_object('to', r.reporter_id, 'outcome', CASE WHEN $2 = 2 THEN 'actioned' ELSE 'dismissed' END,\n                            'topic_id', $5::bigint, 'floor', $6::int)\n  FROM c JOIN reports r ON r.case_id = c.id\n)\nSELECT EXISTS (SELECT 1 FROM c) AS \"resolved!\"\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "resolved!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int2",
+        "Text",
+        "Int8",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "679447e6ad74533161a223fcdc9fc7d6e3480d125e7d60793eb04fb2c9da2ace"
+}

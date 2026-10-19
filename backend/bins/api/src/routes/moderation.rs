@@ -12,6 +12,7 @@ use axum::http::StatusCode;
 use forum_core::ErrorCode;
 use forum_core::staff::{Permission, Scope};
 use forum_db::sanctions::{self, NewSanction, Sanction};
+use forum_db::{Postgres, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::format_description::well_known::Rfc3339;
@@ -139,14 +140,21 @@ impl SanctionView {
     }
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct SanctionRequest {
+/// 处罚用户的条款（处罚接口与举报处理共用）。
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
+pub struct SanctionTerms {
     /// `mute` / `auction_ban` / `ban` / `device_ban`（IP 封禁用 `POST /api/v1/moderation/ip-bans`）。
     pub kind: SanctionKind,
     /// 禁言、禁拍只限这个板块；为空表示全站（版主必须填自己负责的板块）。
     pub forum_id: Option<i32>,
     /// 时长（秒，60 秒到 10 年）；为空表示永久。版主禁言最长 7 天、禁拍最长 30 天，且不能永久。
     pub duration_secs: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SanctionRequest {
+    #[serde(flatten)]
+    pub terms: SanctionTerms,
     /// 预设理由或补充说明，写入审计日志并通知对方。
     pub reason: String,
 }
@@ -213,66 +221,90 @@ pub async fn sanction_user(
 ) -> ApiResult<(StatusCode, Json<SanctionsCreated>)> {
     let actor = Viewer::load(&state, &session).await?.require()?;
     let reason = moderation::reason(&req.reason)?;
-    if req.kind == SanctionKind::IpBan {
+    let (m, ends_at) = authorize_sanction(&state, actor.id, user_id, req.terms).await?;
+    let mut tx = state.db.begin().await?;
+    m.guard(&state, &mut tx).await?;
+    let ids = apply_sanction(&mut tx, actor.id, user_id, req.terms, ends_at, reason).await?;
+    tx.commit().await?;
+    Ok((StatusCode::CREATED, Json(SanctionsCreated { ids, ends_at })))
+}
+
+/// 核对一次处罚（事务之前）：权限与限速、对象与板块存在、只能处罚角色比自己低的人、时长在权限内。
+/// 返回已授权的操作者与到期时间（为空表示永久）。
+pub(crate) async fn authorize_sanction(
+    state: &AppState,
+    actor_id: i64,
+    user_id: i64,
+    terms: SanctionTerms,
+) -> ApiResult<(Moderator, Option<OffsetDateTime>)> {
+    if terms.kind == SanctionKind::IpBan {
         return Err(ApiError(ErrorCode::InvalidParameter));
     }
-    let scope = req.kind.scope(req.forum_id)?;
-    let p = req.kind.permission();
-    let m = Moderator::authorize(&state, actor.id, p, scope, Class::Sanction).await?;
+    let scope = terms.kind.scope(terms.forum_id)?;
+    let p = terms.kind.permission();
+    let m = Moderator::authorize(state, actor_id, p, scope, Class::Sanction).await?;
     forum_db::users::find_by_id(&state.db, user_id)
         .await?
         .ok_or(ApiError(ErrorCode::NotFound))?;
-    if let Some(f) = req.forum_id {
+    if let Some(f) = terms.forum_id {
         forum_db::forums::by_id(&state.db, f)
             .await?
             .ok_or(ApiError(ErrorCode::NotFound))?;
     }
-    check_target(&state, &m, user_id).await?;
-    let ends_at = ends_at(&m, p, scope, req.duration_secs)?;
+    check_target(state, &m, user_id).await?;
+    let ends_at = ends_at(&m, p, scope, terms.duration_secs)?;
+    Ok((m, ends_at))
+}
 
-    let mut tx = state.db.begin().await?;
-    m.guard(&state, &mut tx).await?;
-    let ids = if req.kind == SanctionKind::DeviceBan {
+/// 在管理事务里（已做过异常检测）写处罚、审计日志与给对方的通知，返回新处罚的 ID。处罚接口与举报处理共用。
+pub(crate) async fn apply_sanction(
+    tx: &mut Transaction<'_, Postgres>,
+    actor_id: i64,
+    user_id: i64,
+    terms: SanctionTerms,
+    ends_at: Option<OffsetDateTime>,
+    reason: &str,
+) -> ApiResult<Vec<i64>> {
+    let ids = if terms.kind == SanctionKind::DeviceBan {
         let ids =
-            sanctions::create_device_bans(&mut *tx, user_id, ends_at, reason, actor.id).await?;
+            sanctions::create_device_bans(&mut **tx, user_id, ends_at, reason, actor_id).await?;
         if ids.is_empty() {
             return Err(ApiError(ErrorCode::NotFound));
         }
         ids
     } else {
         let s = NewSanction {
-            kind: req.kind.id(),
+            kind: terms.kind.id(),
             user_id,
-            forum_id: req.forum_id,
+            forum_id: terms.forum_id,
             ends_at,
             reason,
-            created_by: actor.id,
+            created_by: actor_id,
         };
-        vec![sanctions::create(&mut *tx, s).await?]
+        vec![sanctions::create(&mut **tx, s).await?]
     };
     let until = rfc3339(ends_at)?;
     forum_db::audit::append(
-        &mut *tx,
-        actor.id,
-        req.kind.action(),
+        &mut **tx,
+        actor_id,
+        terms.kind.action(),
         Some(&format!("user:{user_id}")),
         Some(reason),
-        &json!({ "sanction_ids": ids, "forum_id": req.forum_id, "ends_at": until }),
+        &json!({ "sanction_ids": ids, "forum_id": terms.forum_id, "ends_at": until }),
     )
     .await?;
-    if req.kind != SanctionKind::DeviceBan {
+    if terms.kind != SanctionKind::DeviceBan {
         forum_db::outbox::enqueue(
-            &mut *tx,
+            &mut **tx,
             "notify.sanction",
             &json!({
-                "to": user_id, "kind": req.kind, "forum_id": req.forum_id, "ends_at": until, "reason": reason,
+                "to": user_id, "kind": terms.kind, "forum_id": terms.forum_id, "ends_at": until, "reason": reason,
             }),
             forum_db::outbox::PRIORITY_NORMAL,
         )
         .await?;
     }
-    tx.commit().await?;
-    Ok((StatusCode::CREATED, Json(SanctionsCreated { ids, ends_at })))
+    Ok(ids)
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

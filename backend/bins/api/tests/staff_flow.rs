@@ -1698,3 +1698,241 @@ async fn owner_lookups_and_arbitration_overview(db: PgPool) {
         );
     }
 }
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn owner_edits_boards_and_sees_report_counts(db: PgPool) {
+    let ns = namespace();
+    let Some(state) = state_with(db.clone(), wallet_state(), &ns) else {
+        return;
+    };
+    let app = router_of(state);
+    let f = forum(&db, "general").await;
+    let mut o = owner(&app, &db).await;
+    let (_, uc) = member(&app, &db).await;
+    let (_, rc) = member(&app, &db).await;
+    let path = format!("/api/v1/admin/forums/{f}");
+    let patch = |body: Value, cookies: Vec<String>| {
+        let (app, path) = (app.clone(), path.clone());
+        async move { admin_call(&app, "PATCH", &path, Some(body), &cookies).await }
+    };
+
+    // 论坛会话不行，只有后台会话（站长）
+    assert_eq!(
+        patch(json!({"name": "x"}), uc.clone()).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    let r = patch(
+        json!({"name": " 综合 ", "description": "什么都聊", "color": "#2e9d5c", "position": 3}),
+        o.admin.clone(),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(
+        (&r.body["name"], &r.body["color"], &r.body["position"]),
+        (&json!("综合"), &json!("#2e9d5c"), &json!(3))
+    );
+    let listed = call(&app, "GET", "/api/v1/forums", None, &[]).await.body;
+    assert_eq!(listed[0]["name"], "综合");
+    // 色板外的颜色、空名称、未知字段、什么都不改都拒绝；null 清除颜色
+    assert_eq!(
+        patch(json!({"slug": "x"}), o.admin.clone()).await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    for bad in [json!({"color": "#123456"}), json!({"name": ""}), json!({})] {
+        assert_eq!(
+            patch(bad.clone(), o.admin.clone()).await.status,
+            StatusCode::BAD_REQUEST,
+            "{bad}"
+        );
+    }
+    let r = patch(json!({"color": null}), o.admin.clone()).await;
+    assert!(r.body["color"].is_null(), "{:?}", r.body);
+    assert_eq!(r.body["name"], "综合");
+    let missing = admin_call(
+        &app,
+        "PATCH",
+        "/api/v1/admin/forums/9999",
+        Some(json!({"name": "x"})),
+        &o.admin,
+    )
+    .await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+
+    // 能否发交易帖涉及钱：超过 5 分钟要先再验证
+    age_session(&ns, &o.admin, "reverified_at", 301).await;
+    let r = patch(json!({"allow_trade": true}), o.admin.clone()).await;
+    assert_eq!(code(&r).1, Some("ADMIN_REVERIFY_REQUIRED"));
+    assert_eq!(
+        patch(json!({"position": 1}), o.admin.clone()).await.status,
+        StatusCode::OK
+    );
+    assertion(&app, &mut o.auth, "reverify", &o.admin).await;
+    let r = patch(json!({"allow_trade": true}), o.admin.clone()).await;
+    assert_eq!(r.body["allow_trade"], true, "{:?}", r.body);
+
+    // 每次修改写审计日志（只记改动的字段）并推送管理员群
+    let details: Vec<Value> = sqlx::query_scalar(
+        "SELECT detail FROM admin_audit_logs WHERE action = 'forum.update' AND actor_id = $1 ORDER BY id",
+    )
+    .bind(o.id)
+    .fetch_all(&db)
+    .await
+    .unwrap();
+    assert_eq!(details.len(), 4);
+    assert_eq!(
+        details[3],
+        json!({"old": {"allow_trade": false}, "new": {"allow_trade": true}})
+    );
+    let alerts: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM outbox WHERE kind = 'staff_alert' AND payload->>'event' = 'forum.update'",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(alerts, 4);
+
+    // 色板与数据库约束一致
+    let check: String = sqlx::query_scalar(
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'forums_color_palette'",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    for c in forums::PALETTE {
+        assert!(check.contains(c), "{c} not in {check}");
+    }
+    assert_eq!(check.matches('#').count(), forums::PALETTE.len());
+
+    // 后台概览：各板块待处理的举报
+    let t = topic(&app, &uc, "general").await;
+    let p = reply_id(&app, &uc, t).await;
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/posts/{p}/report"),
+        Some(json!({})),
+        &rc,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let r = admin_call(&app, "GET", "/api/v1/admin/reports", None, &o.admin).await;
+    assert_eq!(
+        r.body,
+        json!({"open": 1, "by_forum": [{"forum_id": f, "open": 1}]})
+    );
+    assert_eq!(
+        admin_call(&app, "GET", "/api/v1/admin/reports", None, &uc)
+            .await
+            .status,
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn batch_revoke_reopens_reports_and_unhides_posts(db: PgPool) {
+    let ns = namespace();
+    let Some(state) = state_with(db.clone(), wallet_state(), &ns) else {
+        return;
+    };
+    let app = router_of(state);
+    let f = forum(&db, "general").await;
+    let (_, uc) = member(&app, &db).await;
+    let (_, rc) = member(&app, &db).await;
+    let (m_id, m) = member(&app, &db).await;
+    grant(&db, m_id, staff::ROLE_MODERATOR, Some(f)).await;
+    let o = owner(&app, &db).await;
+    let t = topic(&app, &uc, "general").await;
+    let p = reply_id(&app, &uc, t).await;
+    let p2 = reply_id(&app, &uc, t).await;
+    let from = time::OffsetDateTime::now_utc() - time::Duration::minutes(5);
+
+    // 被盗的版主账号：驳回一条举报、隐藏一楼、隐藏后又取消另一楼
+    for post in [p, p2] {
+        let r = call(
+            &app,
+            "POST",
+            &format!("/api/v1/posts/{post}/report"),
+            Some(json!({})),
+            &rc,
+        )
+        .await;
+        assert_eq!(r.status, StatusCode::NO_CONTENT);
+    }
+    let q = call(&app, "GET", "/api/v1/moderation/reports", None, &m)
+        .await
+        .body;
+    let case = q["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["target"]["id"] == p)
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/moderation/reports/{case}/resolve"),
+        Some(json!({"action": "dismiss", "reason": "不违规"})),
+        &m,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{:?}", r.body);
+    let hide = |post: i64, verb: &'static str| {
+        let (app, m) = (app.clone(), m.clone());
+        async move {
+            call(
+                &app,
+                "POST",
+                &format!("/api/v1/posts/{post}/{verb}"),
+                Some(json!({"reason": "x"})),
+                &m,
+            )
+            .await
+        }
+    };
+    assert_eq!(hide(p, "hide").await.status, StatusCode::NO_CONTENT);
+    assert_eq!(hide(p2, "hide").await.status, StatusCode::NO_CONTENT);
+    assert_eq!(hide(p2, "unhide").await.status, StatusCode::NO_CONTENT);
+    let to = time::OffsetDateTime::now_utc() + time::Duration::minutes(1);
+
+    let r = admin_call(
+        &app,
+        "POST",
+        "/api/v1/admin/revoke",
+        Some(json!({
+            "actor_id": m_id, "from": from.format(&Rfc3339).unwrap(), "to": to.format(&Rfc3339).unwrap(),
+            "reason": "账号被盗", "execute": true,
+        })),
+        &o.admin,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let items: Vec<(&str, &str)> = r.body["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| (i["action"].as_str().unwrap(), i["status"].as_str().unwrap()))
+        .collect();
+    // 新的在前：取消隐藏 → 重新隐藏（理由用原来的）；之后撤销那次隐藏 → 恢复正常；隐藏 → 取消；结案 → 重新打开
+    assert_eq!(
+        items,
+        [
+            ("post.unhide", "reverted"),
+            ("post.hide", "reverted"),
+            ("post.hide", "reverted"),
+            ("report.resolve", "reverted"),
+        ]
+    );
+    let statuses: Vec<i16> =
+        sqlx::query_scalar("SELECT status FROM posts WHERE id = ANY($1) ORDER BY id")
+            .bind(vec![p, p2])
+            .fetch_all(&db)
+            .await
+            .unwrap();
+    assert_eq!(statuses, [0, 0]);
+    let q = call(&app, "GET", "/api/v1/moderation/reports", None, &m)
+        .await
+        .body;
+    assert_eq!(q["open_count"], 2);
+}

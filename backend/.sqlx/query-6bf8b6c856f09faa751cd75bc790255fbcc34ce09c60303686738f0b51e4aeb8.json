@@ -1,0 +1,119 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id, c.post_id, c.author_id, c.status, left(c.body, 200) AS \"excerpt!\",\n                  p.topic_id, p.floor, t.title, t.forum_id\n           FROM floor_comments c JOIN posts p ON p.id = c.post_id JOIN topics t ON t.id = p.topic_id\n           WHERE c.id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "post_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "post_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "author_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "author_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "status",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "floor_comments",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "excerpt!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "topic_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "topic_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "floor",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "floor"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "forum_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "topics",
+            "name": "forum_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6bf8b6c856f09faa751cd75bc790255fbcc34ce09c60303686738f0b51e4aeb8"
+}

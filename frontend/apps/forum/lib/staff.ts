@@ -16,6 +16,11 @@ export function can(staff: Staff | null | undefined, p: Permission, forumId?: nu
   );
 }
 
+/** 能处理举报（版主在自己的板块，管理员与站长全站）：顶栏账号菜单里的「举报处理」入口。 */
+export function canHandleReports(staff: Staff | null | undefined): boolean {
+  return can(staff, "reports") || (staff?.boards ?? []).some((b) => can(staff, "reports", b));
+}
+
 /** 能接仲裁案件（站长、管理员）。 */
 export function isArbitrator(staff: Staff | null | undefined): boolean {
   return Boolean(staff?.roles.some((r) => r === "owner" || r === "admin"));
@@ -56,6 +61,14 @@ export function sanctionChoices(
     const board = boardScoped(kind) && forumId !== undefined && can(staff, p, forumId);
     return site || board ? [{ kind, site, board }] : [];
   });
+}
+
+/** 针对用户本人的处罚（举报处理里处罚作者用；IP 封禁不针对某个用户）。 */
+export function userSanctionChoices(
+  staff: Staff | null | undefined,
+  forumId: number,
+): ReturnType<typeof sanctionChoices> {
+  return sanctionChoices(staff, forumId).filter((c) => c.kind !== "ip_ban");
 }
 
 const HOUR = 3600;

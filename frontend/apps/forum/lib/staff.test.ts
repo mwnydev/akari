@@ -1,6 +1,14 @@
 import type { Me } from "@akari/api-client";
 import { describe, expect, it } from "vitest";
-import { can, durationChoices, durationLimit, isArbitrator, sanctionChoices } from "./staff";
+import {
+  can,
+  canHandleReports,
+  durationChoices,
+  durationLimit,
+  isArbitrator,
+  sanctionChoices,
+  userSanctionChoices,
+} from "./staff";
 
 type Staff = NonNullable<Me["staff"]>;
 
@@ -9,6 +17,8 @@ const MOD_PERMS = [
   "topic_moderate",
   "topic_hide",
   "post_delete",
+  "post_hide",
+  "reports",
   "mute",
   "auction_ban",
   "view_sanctions",
@@ -38,6 +48,18 @@ const admin: Staff = {
 };
 
 describe("permission gating", () => {
+  it("offers the report queue to moderators and admins, not to suspended staff", () => {
+    expect(canHandleReports(moderator)).toBe(true);
+    expect(canHandleReports(admin)).toBe(true);
+    expect(canHandleReports({ ...moderator, suspended: true })).toBe(false);
+    expect(canHandleReports({ ...moderator, board_permissions: ["board_access"] })).toBe(false);
+    expect(canHandleReports(null)).toBe(false);
+    // 举报处理里处罚的是作者本人，没有 IP 封禁
+    expect(userSanctionChoices(admin, 3).map((c) => c.kind)).not.toContain("ip_ban");
+    expect(userSanctionChoices(moderator, 3).map((c) => c.kind)).toEqual(["mute", "auction_ban"]);
+    expect(userSanctionChoices(moderator, 4)).toEqual([]);
+  });
+
   it("moderators act only in their own boards", () => {
     expect(can(moderator, "topic_hide", 3)).toBe(true);
     expect(can(moderator, "topic_hide", 4)).toBe(false);

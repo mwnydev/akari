@@ -25,6 +25,7 @@ import {
   watchTopicSocial,
   type TopicSocialEvent,
 } from "../../lib/floor-social-client";
+import { usePostCaptcha } from "../captcha/PostCaptcha";
 import { usePreview } from "./preview";
 import { initialSocial, MAX_LIKERS, socialReducer, type CommentEntry } from "./social-state";
 
@@ -216,7 +217,7 @@ export function FloorSocialBlock({
     }
   };
 
-  const submit = async (text: string): Promise<void> => {
+  const submit = async (text: string, captcha: string | null): Promise<void> => {
     if (!target || !viewer) return;
     const replyTo = target.kind === "comment" ? target.comment : null;
     try {
@@ -230,7 +231,7 @@ export function FloorSocialBlock({
         };
         dispatch({ type: "added", comment, total: state.total + 1 });
       } else {
-        const created = await createComment(postId, text, replyTo?.id ?? null);
+        const created = await createComment(postId, text, replyTo?.id ?? null, captcha);
         const who = (id: number) =>
           id === viewer.id ? viewer : (s.people.get(id) ?? { id, username: null });
         dispatch({
@@ -354,40 +355,47 @@ function CommentForm({
 }: {
   target: Target;
   floor: number;
-  onSubmit: (text: string) => Promise<void>;
+  /** `captcha`：新用户的 Turnstile 令牌（不需要时为 null） */
+  onSubmit: (text: string, captcha: string | null) => Promise<void>;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const captcha = usePostCaptcha();
   const to = target.kind === "comment" ? userName(target.comment.author) : null;
   const send = async (e: FormEvent) => {
     e.preventDefault();
     const text = draft.trim();
     if (!text) return;
     setSending(true);
-    await onSubmit(text);
+    await onSubmit(text, captcha.token);
+    // Turnstile 令牌只能用一次
+    captcha.renew();
     setSending(false);
   };
   return (
-    <form className="mt-2 flex items-center gap-2" onSubmit={(e) => void send(e)}>
-      <Input
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onClose();
-        }}
-        aria-label={to ? `回复 ${to}` : `评论 #${floor}`}
-        placeholder={to ? `回复 ${to}：` : "评论…"}
-        maxLength={MAX_COMMENT}
-        className="h-9"
-      />
-      <Button type="submit" size="sm" disabled={!draft.trim() || sending}>
-        发送
-      </Button>
-      <Button variant="subtle" size="sm" onClick={onClose}>
-        取消
-      </Button>
+    <form className="mt-2 space-y-2" onSubmit={(e) => void send(e)}>
+      {captcha.widget}
+      <div className="flex items-center gap-2">
+        <Input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") onClose();
+          }}
+          aria-label={to ? `回复 ${to}` : `评论 #${floor}`}
+          placeholder={to ? `回复 ${to}：` : "评论…"}
+          maxLength={MAX_COMMENT}
+          className="h-9"
+        />
+        <Button type="submit" size="sm" disabled={!draft.trim() || sending || captcha.missing}>
+          发送
+        </Button>
+        <Button variant="subtle" size="sm" onClick={onClose}>
+          取消
+        </Button>
+      </div>
     </form>
   );
 }

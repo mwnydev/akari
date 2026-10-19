@@ -11,7 +11,7 @@ import * as z from "zod/mini";
 import { QueryProvider } from "../../components/QueryProvider";
 import { api, unwrap } from "../../lib/browser-api";
 import { TURNSTILE_SITE_KEY } from "../../lib/public-config";
-import { Turnstile } from "./Turnstile";
+import { Turnstile } from "../../components/captcha/Turnstile";
 
 const EmailSchema = z.object({
   email: z.email({ error: "请输入正确的邮箱地址" }),
@@ -64,7 +64,12 @@ function Steps({ next }: { next: string }) {
   });
 
   const turnstile = TURNSTILE_SITE_KEY ? (
-    <Turnstile siteKey={TURNSTILE_SITE_KEY} round={captchaRound} onToken={setCaptcha} />
+    <Turnstile
+      siteKey={TURNSTILE_SITE_KEY}
+      action="login"
+      round={captchaRound}
+      onToken={setCaptcha}
+    />
   ) : null;
 
   const verify = useMutation({

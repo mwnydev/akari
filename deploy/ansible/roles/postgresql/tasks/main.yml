@@ -108,7 +108,7 @@
   become: true
   become_user: postgres
 
-- name: Table grants (each migration's header lists what its tables need)
+- name: Table grants (per-service matrix, checked against the code by backend/crates/db/tests/grants.rs)
   ansible.builtin.template:
     src: grants.sql.j2
     dest: /etc/postgresql/akari-grants.sql

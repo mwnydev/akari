@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 软删除：正常的楼层；管理人员（$2 = 2）也可以删除隐藏的楼层（隐藏理由保留，恢复后仍是隐藏）。\n-- $1 id, $2 status\nUPDATE posts SET status = $2 WHERE id = $1 AND (status = 0 OR (status = 3 AND $2 = 2::smallint))\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5a372e02a0ee6d33877c95d2ca0b3da23a6b1ebfa5e313d66b1d26d0e0e7bdd1"
+}

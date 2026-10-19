@@ -8,6 +8,7 @@ const links = [
   { href: "/", label: "概览" },
   { href: "/arbitration/", label: "仲裁" },
   { href: "/staff/", label: "人员" },
+  { href: "/boards/", label: "板块" },
   { href: "/suspensions/", label: "权限暂停" },
   { href: "/revoke/", label: "批量撤销" },
   { href: "/audit/", label: "审计日志" },

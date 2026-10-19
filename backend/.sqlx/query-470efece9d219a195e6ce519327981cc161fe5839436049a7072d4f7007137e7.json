@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 举报（同一人对同一内容只记一次，不论之前的案件是否已结案）。\n-- $1 target_kind, $2 target_id, $3 forum_id, $4 reporter_id, $5 reason, $6 case_id\nINSERT INTO reports (target_kind, target_id, forum_id, reporter_id, reason, case_id)\nVALUES ($1, $2, $3, $4, $5, $6)\nON CONFLICT (target_kind, target_id, reporter_id) DO NOTHING\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int2",
+        "Int8",
+        "Int4",
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "470efece9d219a195e6ce519327981cc161fe5839436049a7072d4f7007137e7"
+}
