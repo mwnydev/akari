@@ -1,6 +1,7 @@
 pub mod aa;
 pub mod admin;
 pub mod admin_auth;
+pub mod arbitration;
 pub mod auth;
 pub mod chain;
 pub mod forums;
@@ -13,6 +14,7 @@ pub mod order_chat;
 pub mod orders;
 pub mod posts;
 pub mod presence;
+pub mod ruling_passkey;
 pub mod topics;
 pub mod trade;
 pub mod uploads;

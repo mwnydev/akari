@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT o.state, o.disputed_at,\n                      o.amount >= $2::bigint * power(10::numeric, c.token_decimals) AS \"two_person!\"\n               FROM escrow_orders o JOIN chains c ON c.chain_id = o.chain_id WHERE o.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "disputed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "disputed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "two_person!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "262ba0185e4357ad581ec4776d2bb32e337810e1adcfda627bc5b678b71eff67"
+}

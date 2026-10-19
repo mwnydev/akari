@@ -80,17 +80,6 @@ pub async fn revoke(db: impl PgExecutor<'_>, id: i64) -> Result<Option<Assignmen
     .await
 }
 
-/// 能否看全部订单详情与订单聊天（仲裁是管理员与站长的权限，ADR 0013 第 2 条）。
-pub async fn is_arbiter(db: impl PgExecutor<'_>, user_id: i64) -> Result<bool, sqlx::Error> {
-    let row = sqlx::query!(
-        r#"SELECT EXISTS (SELECT 1 FROM staff_roles WHERE user_id = $1 AND role IN (1, 3)) AS "ok!""#,
-        user_id
-    )
-    .fetch_one(db)
-    .await?;
-    Ok(row.ok)
-}
-
 /// 暂停管理权限；已在暂停中返回 `None`（不重复记录、不重复告警）。
 pub async fn suspend(
     db: impl PgExecutor<'_>,

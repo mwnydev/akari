@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE arbitration_assignments SET ended_at = now(), ended_reason = 'ruled' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a4db4ce4f02c585131b6ed7d941749041e4d9a583972b90d5684031ba33d1d1c"
+}

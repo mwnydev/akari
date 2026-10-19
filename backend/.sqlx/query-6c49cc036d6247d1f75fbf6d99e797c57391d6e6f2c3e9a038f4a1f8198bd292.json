@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO passkeys (user_id, purpose, credential_id, credential, last_used_at)\n         VALUES ($1, $2, $3, $4, now())\n         ON CONFLICT (credential_id) DO NOTHING\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "passkeys",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int2",
+        "Bytea",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6c49cc036d6247d1f75fbf6d99e797c57391d6e6f2c3e9a038f4a1f8198bd292"
+}

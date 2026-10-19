@@ -1,0 +1,193 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, case_id, arbitrator_id, assignment_id, kind, to_buyer_bps, bond_to_buyer_bps,\n                  principal_to_buyer::text AS \"principal_to_buyer!\", principal_to_seller::text AS \"principal_to_seller!\",\n                  bond_to_buyer::text AS \"bond_to_buyer!\", reason, chat_head, chat_count, signed_intent, passkey_id,\n                  created_at\n           FROM arbitration_rulings WHERE case_id = $1 ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "case_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "case_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "arbitrator_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "arbitrator_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "assignment_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "assignment_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "to_buyer_bps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "to_buyer_bps"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "bond_to_buyer_bps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "bond_to_buyer_bps"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "principal_to_buyer!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "principal_to_seller!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "bond_to_buyer!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "reason"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "chat_head",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "chat_head"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "chat_count",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "chat_count"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "signed_intent",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "signed_intent"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "passkey_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "passkey_id"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "135c288bf9b4626a0ca20e00757656efe8210917d47ca9b952b14d0554d1705b"
+}

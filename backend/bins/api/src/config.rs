@@ -38,6 +38,13 @@ pub struct Config {
     pub admin_origin: String,
     /// 品牌名：Passkey 显示名称「品牌名 钱包签名（勿删）· 用户名」。
     pub brand_name: String,
+    /// 论坛裁决 Passkey 的 RP ID（ADR 0012、0013）：论坛主机（生产 `akari.cc`，开发 `localhost`）。
+    /// 只用于签署裁决，与钱包 RP ID 必须不同（两者都是 `localhost` 的本地开发除外）。
+    pub ruling_rp_id: String,
+    /// 裁决页面的 Origin（生产 `https://akari.cc`），必须是论坛来源之一、不能是钱包来源。
+    pub ruling_origin: String,
+    /// 仲裁 Safe（3 人 2/3，即合约的 `arbiter`）；只写进给签名人导入的 Safe 交易文件，未设置时文件里不带 Safe 地址。
+    pub arbitration_safe: Option<Address>,
     pub chain: ChainConfig,
     /// `CHAIN_CONFIG` 指向的链配置文件（RPC 用于校验钱包地址）；未设置时钱包地址登记不可用。
     pub chain_file: Option<forum_chain::config::ChainConfig>,
@@ -80,6 +87,9 @@ pub mod domains {
     /// 后台 Passkey 的 RP ID（ADR 0013，仅站长）。
     pub const ADMIN_RP_ID: &str = "administrator.akari.cc";
     pub const ADMIN_ORIGIN: &str = "https://administrator.akari.cc";
+    /// 论坛裁决 Passkey 的 RP ID 与裁决页面就是论坛主站（ADR 0013）。
+    pub const RULING_RP_ID: &str = FORUM_HOST;
+    pub const RULING_ORIGIN: &str = FORUM_ORIGIN;
 }
 
 /// 页面来源与 Passkey 域名。
@@ -91,15 +101,19 @@ struct Sites {
     wallet_origins: Vec<String>,
     admin_rp_id: String,
     admin_origin: String,
+    ruling_rp_id: String,
+    ruling_origin: String,
 }
 
-const SITE_VARS: [&str; 6] = [
+const SITE_VARS: [&str; 8] = [
     "ALLOWED_ORIGINS",
     "INTERNAL_HOSTS",
     "WALLET_RP_ID",
     "WALLET_ORIGINS",
     "ADMIN_RP_ID",
     "ADMIN_ORIGIN",
+    "RULING_RP_ID",
+    "RULING_ORIGIN",
 ];
 
 fn sites(deployment: Deployment) -> anyhow::Result<Sites> {
@@ -120,6 +134,8 @@ fn sites(deployment: Deployment) -> anyhow::Result<Sites> {
         wallet_origins: list(&var("WALLET_ORIGINS")?),
         admin_rp_id: var("ADMIN_RP_ID")?,
         admin_origin: var("ADMIN_ORIGIN")?,
+        ruling_rp_id: var("RULING_RP_ID")?,
+        ruling_origin: var("RULING_ORIGIN")?,
     })
 }
 
@@ -131,6 +147,8 @@ fn production_sites() -> Sites {
         wallet_origins: vec![domains::WALLET_ORIGIN.to_owned()],
         admin_rp_id: domains::ADMIN_RP_ID.to_owned(),
         admin_origin: domains::ADMIN_ORIGIN.to_owned(),
+        ruling_rp_id: domains::RULING_RP_ID.to_owned(),
+        ruling_origin: domains::RULING_ORIGIN.to_owned(),
     }
 }
 
@@ -168,7 +186,9 @@ fn origin_host(origin: &str, deployment: Deployment) -> anyhow::Result<String> {
 /// - 所有来源都是 https（开发环境可用本机 http）且互不重叠：钱包、后台来源都不是论坛来源，后台来源也不是钱包来源；
 /// - 钱包与后台 Passkey 的 RP ID 必须覆盖自己的页面（钱包看第一个来源，其余为关联来源），两者不同，
 ///   且不能是论坛主站、其父域名或任何别的站点来源（论坛页面被 XSS 时也请求不到这些 Passkey）。
-///   开发环境 RP ID 为 localhost 时各站只差端口，不检查隔离。
+///   开发环境 RP ID 为 localhost 时各站只差端口，不检查隔离；
+/// - 论坛裁决 Passkey 的 RP ID 就是裁决页面（某个论坛来源，不是钱包来源）的主机，且不等于钱包 RP ID：
+///   论坛页面请求得到的凭证永远不是钱包凭证。
 fn check_sites(sites: &Sites, deployment: Deployment) -> anyhow::Result<()> {
     ensure!(
         !sites.allowed_origins.is_empty(),
@@ -232,6 +252,22 @@ fn check_sites(sites: &Sites, deployment: Deployment) -> anyhow::Result<()> {
             bail!("{name} {rp} must not cover the other site {h}");
         }
     }
+    ensure!(
+        sites.allowed_origins.contains(&sites.ruling_origin),
+        "RULING_ORIGIN must be one of ALLOWED_ORIGINS"
+    );
+    ensure!(
+        !sites.wallet_origins.contains(&sites.ruling_origin),
+        "RULING_ORIGIN must not be a wallet origin"
+    );
+    ensure!(
+        sites.ruling_rp_id == origin_host(&sites.ruling_origin, deployment)?,
+        "RULING_RP_ID must be the host of RULING_ORIGIN"
+    );
+    ensure!(
+        sites.ruling_rp_id != sites.wallet_rp_id || dev_loopback(&sites.ruling_rp_id),
+        "RULING_RP_ID must differ from WALLET_RP_ID"
+    );
     Ok(())
 }
 
@@ -412,6 +448,9 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "Akari".to_owned()),
+            ruling_rp_id: sites.ruling_rp_id,
+            ruling_origin: sites.ruling_origin,
+            arbitration_safe: opt_address("ARBITRATION_SAFE")?,
             chain,
             chain_file,
             trade_limits: trade_limits()?,
@@ -427,7 +466,7 @@ impl Config {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use super::{Deployment, Sites, check_sites, cookie_secure, production_sites};
+    use super::{Deployment, Sites, check_sites, cookie_secure, origin_host, production_sites};
 
     fn sites(forum: &[&str], rp: &str, wallet: &[&str]) -> Sites {
         Sites {
@@ -437,6 +476,11 @@ mod tests {
             wallet_origins: wallet.iter().map(|&s| s.to_owned()).collect(),
             admin_rp_id: "admin.test".to_owned(),
             admin_origin: "https://admin.test".to_owned(),
+            ruling_origin: forum.first().map_or_else(String::new, |&o| o.to_owned()),
+            ruling_rp_id: forum
+                .first()
+                .and_then(|o| origin_host(o, Deployment::Development).ok())
+                .unwrap_or_default(),
         }
     }
 
@@ -610,6 +654,39 @@ mod tests {
         assert!(cookie_secure(Some("false"), Deployment::Production).is_err());
         assert!(cookie_secure(Some("false"), Deployment::Staging).is_err());
         assert!(cookie_secure(Some("flase"), Deployment::Development).is_err());
+    }
+
+    #[test]
+    fn ruling_passkey_is_the_forum_host_and_never_the_wallet() {
+        let base = production_sites();
+        assert_eq!(base.ruling_rp_id, "akari.cc");
+        assert_eq!(base.ruling_origin, "https://akari.cc");
+        let with = |f: &dyn Fn(&mut Sites)| {
+            let mut s = base.clone();
+            f(&mut s);
+            check(&s, Deployment::Staging)
+        };
+        with(&|_| ()).unwrap();
+        // RP ID 必须等于裁决页面的主机
+        assert!(with(&|s| s.ruling_rp_id = "cc".to_owned()).is_err());
+        assert!(with(&|s| s.ruling_rp_id = "wallet.akari.cc".to_owned()).is_err());
+        // 裁决页面必须是论坛来源，不能是钱包页面或别的站点
+        assert!(with(&|s| s.ruling_origin = "https://evil.example".to_owned()).is_err());
+        let err = with(&|s| {
+            s.ruling_origin = "https://wallet.akari.cc".to_owned();
+            s.ruling_rp_id = "wallet.akari.cc".to_owned();
+            s.allowed_origins.push(s.ruling_origin.clone());
+        })
+        .unwrap_err();
+        assert!(err.contains("wallet origin"), "{err}");
+        // 本地开发论坛与钱包都是 localhost
+        let local = sites(
+            &["http://localhost:3000"],
+            "localhost",
+            &["http://localhost:3001"],
+        );
+        assert_eq!(local.ruling_rp_id, "localhost");
+        check(&local, Deployment::Development).unwrap();
     }
 
     #[test]

@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, status FROM arbitration_cases\n         WHERE closed_at IS NULL\n           AND (status IN ('owner_review', 'appealed', 'halted', 'ready') OR stalled_alerted_at IS NOT NULL)\n         ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8d85c452e6673a2fdf2fa45a2b8e3ed0de7b9ba9b97c583a23398f200fe30a36"
+}

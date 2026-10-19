@@ -5,12 +5,13 @@ use std::sync::Arc;
 
 use axum_extra::extract::cookie::Key;
 use forum_api::admin::AdminState;
+use forum_api::arbitration::ArbitrationState;
 use forum_api::config::Config;
 use forum_api::realtime::Hub;
 use forum_api::routes::aa::SponsorProxy;
 use forum_api::wallet::{AddressVerifier, ChainAddressVerifier, NoChainVerifier, WalletState};
 use forum_api::{AppState, app};
-use forum_auth::passkey::{UserHandles, admin_webauthn, wallet_webauthn, webauthn::Url};
+use forum_auth::passkey::{UserHandles, single_origin_webauthn, wallet_webauthn, webauthn::Url};
 use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha, Turnstile};
 use forum_kv::Realtime;
 
@@ -68,6 +69,19 @@ async fn main() -> anyhow::Result<()> {
             }
         },
     };
+    let arbitration = ArbitrationState {
+        webauthn: single_origin_webauthn(
+            &cfg.ruling_rp_id,
+            &cfg.brand_name,
+            &Url::parse(&cfg.ruling_origin)?,
+        )?,
+        origin: cfg.ruling_origin.clone(),
+        handles: UserHandles::ruling(&cfg.auth_secret)?,
+        brand: cfg.brand_name.clone(),
+        safe: cfg
+            .arbitration_safe
+            .map(|a| alloy::primitives::Address::from(a.0)),
+    };
     let media = match forum_media::StorageConfig::from_env()? {
         Some(c) => Some(Arc::new(forum_media::Storage::new(&c)?)),
         None => {
@@ -76,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
     let admin = AdminState {
-        webauthn: admin_webauthn(
+        webauthn: single_origin_webauthn(
             &cfg.admin_rp_id,
             &cfg.brand_name,
             &Url::parse(&cfg.admin_origin)?,
@@ -97,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
         internal_hosts: Arc::from(cfg.internal_hosts.clone()),
         wallet: Arc::new(wallet),
         admin: Arc::new(admin),
+        arbitration: Arc::new(arbitration),
         hub: Hub::new(
             Realtime::new(kv.clone(), cfg.kv_namespace.as_str()),
             cfg.valkey_url.clone(),

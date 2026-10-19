@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id AS case_id, c.order_id, c.status, a.role, a.due_at, c.evidence_until\n         FROM arbitration_assignments a JOIN arbitration_cases c ON c.id = a.case_id\n         WHERE a.arbitrator_id = $1 AND a.ended_at IS NULL AND c.closed_at IS NULL\n         ORDER BY a.due_at, c.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "case_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "order_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "order_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "role",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "arbitration_assignments",
+            "name": "role"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "due_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "arbitration_assignments",
+            "name": "due_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "evidence_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "evidence_until"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "45b510cb3b3750bd63fd32f626e2b4f83f7ea1f9b02db2240c29ef44fc1a01c9"
+}

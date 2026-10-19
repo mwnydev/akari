@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n             SELECT 1 FROM arbitration_cases c\n             WHERE c.order_id = $1 AND (\n               EXISTS (SELECT 1 FROM staff_roles s WHERE s.user_id = $2 AND s.role = $3)\n               OR EXISTS (SELECT 1 FROM arbitration_assignments a\n                          WHERE a.case_id = c.id AND a.arbitrator_id = $2\n                            AND a.ended_reason IS DISTINCT FROM 'reassigned'))\n           ) AS \"ok!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "70c39f67baacdb97d10cd536368fe9c307418bdce54a5c43e521c921aad64e28"
+}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT EXISTS (SELECT 1 FROM staff_roles WHERE user_id = $1 AND role IN (1, 3)) AS \"ok!\"",
+  "query": "SELECT arbitrator_recused($1, $2) AS \"ok!\"",
   "describe": {
     "columns": [
       {
@@ -12,6 +12,7 @@
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Int8"
       ]
     },
@@ -19,5 +20,5 @@
       null
     ]
   },
-  "hash": "82b70b074a8264c1f3f0905029fbc7144f1cd62eb34ba3a0f0f933b2f4c01e74"
+  "hash": "546d91c6b7c815aab15ed266635109b13648a940d5fe2e072806a60c0903fbe3"
 }

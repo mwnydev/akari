@@ -2,6 +2,7 @@
 
 pub mod access;
 pub mod admin;
+pub mod arbitration;
 pub mod cards;
 pub mod config;
 pub mod error;
@@ -116,6 +117,25 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::notifications::list))
         .routes(routes!(routes::notifications::read))
         .routes(routes!(routes::notifications::unread))
+        .routes(routes!(routes::arbitration::arbitration_queue))
+        .routes(routes!(routes::arbitration::arbitration_workload))
+        .routes(routes!(routes::arbitration::get_case))
+        .routes(routes!(routes::arbitration::order_case))
+        .routes(routes!(routes::arbitration::add_case_statement))
+        .routes(routes!(routes::arbitration::ruling_options))
+        .routes(routes!(routes::arbitration::submit_ruling))
+        .routes(routes!(routes::arbitration::appeal_case))
+        .routes(routes!(routes::arbitration::halt_case))
+        .routes(routes!(routes::arbitration::resume_case))
+        .routes(routes!(routes::arbitration::execution_batch))
+        .routes(routes!(routes::arbitration::public_ruling))
+        .routes(routes!(routes::ruling_passkey::list_ruling_passkeys))
+        .routes(routes!(routes::ruling_passkey::ruling_reverify_start))
+        .routes(routes!(routes::ruling_passkey::ruling_reverify_verify))
+        .routes(routes!(routes::ruling_passkey::ruling_register_start))
+        .routes(routes!(routes::ruling_passkey::ruling_register_finish))
+        .routes(routes!(routes::ruling_passkey::ruling_assert_start))
+        .routes(routes!(routes::ruling_passkey::ruling_assert_finish))
         .routes(routes!(routes::ws::connect))
         .routes(routes!(routes::admin_auth::admin_enroll_code))
         .routes(routes!(routes::admin_auth::admin_enroll_verify))

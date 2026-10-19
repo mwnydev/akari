@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE arbitration_cases SET status = $2, final_ruling_id = $3, published_at = $4, appeal_until = $5,\n                ready_at = $6, halted_from = NULL, updated_at = now()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9e1ad835e0ba3c0069496708bb8b4b6a59a979d2fb5eedd130bf97fdb6a012d7"
+}

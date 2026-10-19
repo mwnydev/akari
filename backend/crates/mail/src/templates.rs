@@ -101,6 +101,57 @@ pub fn withdraw_address_added(address: &str, active_at: &str, immediate: bool) -
     (subject, html, text)
 }
 
+/// 论坛裁决 Passkey 首次登记前的邮箱验证码（ADR 0013 第 4 条）。正文写明用途：被盗号者触发时本人能察觉。
+pub fn ruling_passkey_code(code: &str) -> Rendered {
+    let subject = format!("登记裁决 Passkey 验证码：{code}");
+    let body = "你正在登记用于签署仲裁裁决的 Passkey。";
+    let advice = "10 分钟内有效。如果不是你本人操作，说明有人登录了你的管理账号：请勿把验证码告诉任何人，并立即联系站长。";
+    let html = layout(
+        "登记裁决 Passkey",
+        &format!(
+            "<p>{body}验证码是：</p><p style=\"font-size:32px;letter-spacing:6px;font-weight:600;font-variant-numeric:tabular-nums\">{code}</p>\
+             <p>{advice}</p>"
+        ),
+    );
+    let text = format!(
+        "{body}验证码是：{code}\n{advice}\n\n官方永远不会向你索要验证码、恢复码，也不会要求私下转账。"
+    );
+    (subject, html, text)
+}
+
+fn escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// 仲裁案件提醒（发给站长）：`title` 为事件说明，`lines` 为逐行明细（裁决理由等用户输入的内容会转义）。
+pub fn arbitration_alert(case_id: i64, title: &str, lines: &[String]) -> Rendered {
+    let subject = format!("仲裁案件 #{case_id}：{title}");
+    let items: String = lines
+        .iter()
+        .map(|l| format!("<li style=\"white-space:pre-wrap\">{}</li>", escape(l)))
+        .collect();
+    let html = layout(
+        &escape(&subject),
+        &format!("<ul>{items}</ul><p>请登录论坛仲裁页面查看完整案情与证据。</p>"),
+    );
+    let text = format!(
+        "{subject}\n\n{}\n\n请登录论坛仲裁页面查看完整案情与证据。",
+        lines.join("\n")
+    );
+    (subject, html, text)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -114,6 +165,23 @@ mod tests {
         let (subject, html, text) = super::wallet_code("654321");
         assert!(subject.contains("654321") && html.contains("654321") && text.contains("654321"));
         assert!(subject.contains("开通交易") && text.contains("不是你本人"));
+    }
+
+    #[test]
+    fn arbitration_alert_escapes_user_text() {
+        let (subject, html, text) = super::arbitration_alert(
+            7,
+            "裁决已公示",
+            &["理由：<script>x</script> & 证据".to_owned()],
+        );
+        assert!(subject.contains("#7"));
+        assert!(
+            html.contains("&lt;script&gt;x&lt;/script&gt; &amp; 证据")
+                && !html.contains("<script>")
+        );
+        assert!(text.contains("<script>x</script>"));
+        let (subject, _, text) = super::ruling_passkey_code("112233");
+        assert!(subject.contains("112233") && text.contains("裁决"));
     }
 
     #[test]

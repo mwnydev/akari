@@ -1,0 +1,412 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 案件与它的订单（金额以十进制文本取出）。$1 案件 ID，$2 下单快照缺失时的 resolveTimeout 秒数。\nSELECT c.id, c.order_id, c.status, c.panel_size, c.evidence_until, c.final_ruling_id, c.published_at, c.appeal_until,\n  c.appeal_by, c.appeal_reason, c.appealed_at, c.halted_from, c.halted_by, c.halt_reason, c.ready_at, c.closed_at,\n  c.close_reason, c.created_at, c.updated_at,\n  o.buyer_id, o.seller_id, o.chain_id, o.contract, o.chain_order_id, o.mode, o.state AS order_state,\n  o.amount::text AS \"amount!\", o.bond::text AS \"bond?\", o.snapshot->>'net' AS \"net?\",\n  o.released_amount::text AS \"released_amount!\", ch.token_decimals, o.disputed_at,\n  coalesce((o.snapshot->>'resolve_timeout')::int, $2) AS \"resolve_timeout_secs!\",\n  o.ruling_to_buyer_bps AS executed_to_buyer_bps, o.ruling_bond_to_buyer_bps AS executed_bond_to_buyer_bps\nFROM arbitration_cases c\nJOIN escrow_orders o ON o.id = c.order_id\nJOIN chains ch ON ch.chain_id = o.chain_id\nWHERE c.id = $1\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "order_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "order_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "panel_size",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "panel_size"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "evidence_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "evidence_until"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "final_ruling_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "final_ruling_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "published_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "published_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "appeal_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "appeal_until"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "appeal_by",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "appeal_by"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "appeal_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "appeal_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "appealed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "appealed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "halted_from",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "halted_from"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "halted_by",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "halted_by"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "halt_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "halt_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "ready_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "ready_at"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "closed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "closed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "close_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "close_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "buyer_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "buyer_id"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "seller_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "seller_id"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "chain_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "chain_id"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "contract",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "contract"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "chain_order_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "chain_order_id"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "mode",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "mode"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "order_state",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 26,
+        "name": "amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 27,
+        "name": "bond?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 28,
+        "name": "net?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 29,
+        "name": "released_amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 30,
+        "name": "token_decimals",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "chains",
+            "name": "token_decimals"
+          }
+        }
+      },
+      {
+        "ordinal": 31,
+        "name": "disputed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "disputed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 32,
+        "name": "resolve_timeout_secs!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 33,
+        "name": "executed_to_buyer_bps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "ruling_to_buyer_bps"
+          }
+        }
+      },
+      {
+        "ordinal": 34,
+        "name": "executed_bond_to_buyer_bps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "ruling_bond_to_buyer_bps"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null,
+      false,
+      true,
+      null,
+      true,
+      true
+    ]
+  },
+  "hash": "79128ea392578ddc5dc5fd5449c94a3ccd6a26dfeefd2505d237a2cb6fdbbc1f"
+}

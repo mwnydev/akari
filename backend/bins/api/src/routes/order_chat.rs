@@ -1,4 +1,4 @@
-//! 订单内即时通讯（plan 第 7 节）：买卖双方与仲裁员可读写，其他人 404；记录只追加、带哈希链，仲裁前可校验。
+//! 订单内即时通讯（plan 第 7 节）：买卖双方与该订单仲裁案件的仲裁员、站长可读写，其他人 404；记录只追加、带哈希链，仲裁前可校验。
 //!
 //! 系统消息（付款、发货、开始服务、和解提议、争议、放款……）由 forum-indexer 在订单状态变化的同一事务里写入。
 //! 新消息提交后经 Valkey 广播推给双方与订阅了该订单的仲裁员（`order_message` 事件）。
@@ -29,16 +29,16 @@ use crate::views::hex0x;
 
 const ORDER_CHAT_RATE: SlidingWindow =
     SlidingWindow::new("order-chat", 60, Duration::from_secs(60));
-/// 哈希链校验每批读取条数。
-const VERIFY_BATCH: i64 = 1000;
 
-/// 订单的买卖双方，或任一仲裁员；其他人当作订单不存在。
+/// 订单的买卖双方，或该订单仲裁案件的站长与在岗仲裁员；其他人当作订单不存在。
 pub async fn accessible(state: &AppState, order_id: i64, user_id: i64) -> ApiResult<Parties> {
     let not_found = || ApiError(ErrorCode::NotFound);
     let p = forum_db::orders::parties(&state.db, order_id)
         .await?
         .ok_or_else(not_found)?;
-    if p.is_party(user_id) || forum_db::staff::is_arbiter(&state.db, user_id).await? {
+    if p.is_party(user_id)
+        || forum_db::arbitration::can_review_order(&state.db, order_id, user_id).await?
+    {
         Ok(p)
     } else {
         Err(not_found())
@@ -188,6 +188,17 @@ pub struct ChainVerification {
     pub broken_at: Option<i64>,
 }
 
+impl ChainVerification {
+    pub fn of(check: &ChainCheck) -> Self {
+        Self {
+            ok: check.broken_at.is_none(),
+            count: check.count,
+            head_hash: hex0x(&check.head()),
+            broken_at: check.broken_at,
+        }
+    }
+}
+
 /// 重算订单聊天的哈希链（仲裁员裁决前校验，双方也可自查）。
 #[utoipa::path(
     get, path = "/api/v1/orders/{id}/messages/verify", tag = "orders", operation_id = "verify_order_messages",
@@ -201,24 +212,9 @@ pub async fn verify(
 ) -> ApiResult<Json<ChainVerification>> {
     let me = current_user_id(&session).await?;
     accessible(&state, id, me).await?;
-    let mut check = ChainCheck::default();
-    let mut after = 0;
-    loop {
-        let batch = db::after(&state.db, id, after, VERIFY_BATCH).await?;
-        for m in &batch {
-            check.push(m);
-        }
-        match batch.last() {
-            Some(m) if i64::try_from(batch.len()) == Ok(VERIFY_BATCH) => after = m.id,
-            _ => break,
-        }
-    }
-    Ok(Json(ChainVerification {
-        ok: check.broken_at.is_none(),
-        count: check.count,
-        head_hash: hex0x(&check.head()),
-        broken_at: check.broken_at,
-    }))
+    Ok(Json(ChainVerification::of(
+        &db::verify_chain(&state.db, id).await?,
+    )))
 }
 
 /// 建单前的私信谈判记录（仲裁证据）：生成该订单的报价所在会话、截至付款上链时的消息。

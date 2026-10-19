@@ -332,6 +332,312 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/arbitration/cases/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 案件详情与证据（当事人、本案仲裁员、站长；见模块说明的可见性规则）。 */
+    get: operations["get_case"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/cases/{id}/appeal": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 当事人申诉：裁决公示后 72 小时内、每个案件一次，由没参与过的仲裁员（或站长）复核，复核结果为最终裁决。 */
+    post: operations["appeal_case"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/cases/{id}/halt": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 站长在执行前叫停（公示后、Safe 执行前）。之后可恢复，或以站长终裁改判（重新公示）。 */
+    post: operations["halt_case"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/cases/{id}/resume": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 站长解除叫停，回到叫停前的状态。 */
+    post: operations["resume_case"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/cases/{id}/ruling/options": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 开始用裁决 Passkey 确认一份裁决：challenge 绑定这份裁决的全部内容。 */
+    post: operations["ruling_options"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/cases/{id}/rulings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 提交裁决：内容必须与 `ruling/options` 确认的完全一致，断言必须由本人的裁决 Passkey 签出，聊天哈希链必须完好。 */
+    post: operations["submit_ruling"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/cases/{id}/statements": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 当事人在举证期内提交陈述与证据（只追加，双方与仲裁员都能看到）。 */
+    post: operations["add_case_statement"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/execution": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 全部可执行裁决的 Safe 交易数据（站长与管理员，即仲裁 Safe 的签名人）。 */
+    get: operations["execution_batch"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/passkey/assert/finish": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 完成验证：会话获得 5 分钟「近期验证」标记（只用于再登记 Passkey）。 */
+    post: operations["ruling_assert_finish"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/passkey/assert/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 用已有的裁决 Passkey 做一次验证（再登记一个 Passkey 之前）。签署裁决另走 `ruling/options`。 */
+    post: operations["ruling_assert_start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/passkey/register/finish": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 完成登记。成功即视为刚完成一次裁决 Passkey 验证。 */
+    post: operations["ruling_register_finish"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/passkey/register/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 开始登记裁决 Passkey。 */
+    post: operations["ruling_register_start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/passkey/reverify/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 登记第一个裁决 Passkey 前的邮箱验证：向账号邮箱发一封写明「登记裁决 Passkey」的验证码。 */
+    post: operations["ruling_reverify_start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/passkey/reverify/verify": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 校验邮箱验证码；成功后 10 分钟内可登记第一个裁决 Passkey。 */
+    post: operations["ruling_reverify_verify"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/passkeys": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 我的裁决 Passkey。 */
+    get: operations["list_ruling_passkeys"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/public/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 裁决公示页数据（无需登录；只有已公示的案件，不含当事人与仲裁员的身份、地址）。 */
+    get: operations["public_ruling"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/queue": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 仲裁待办（站长与管理员）。 */
+    get: operations["arbitration_queue"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/arbitration/workload": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 各仲裁员的工作量与按时率（站长）。 */
+    get: operations["arbitration_workload"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/auth/email/start": {
     parameters: {
       query?: never;
@@ -876,8 +1182,25 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** 订单详情：买卖双方与仲裁员可见。 */
+    /** 订单详情：买卖双方与该订单仲裁案件的仲裁员、站长可见。 */
     get: operations["get_order"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/orders/{id}/case": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 订单的仲裁案件（订单页跳转用）；没有案件或无权查看都返回 404。 */
+    get: operations["order_case"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1549,6 +1872,12 @@ export interface components {
       /** Format: int64 */
       user_id: number;
     };
+    ArbitrationQueue: {
+      /** @description 我在岗的分配，按期限排序。 */
+      assignments: components["schemas"]["QueueEntry"][];
+      /** @description 站长：待终裁、待复核、已叫停、待执行与找不到人接案的（非站长为空）。 */
+      owner: components["schemas"]["OwnerQueueEntry"][];
+    };
     AssertFinish: {
       /** @description `navigator.credentials.get()` 的结果。 */
       credential: Record<string, unknown>;
@@ -1640,6 +1969,116 @@ export interface components {
     };
     /** @enum {string} */
     CardStatus: "pending" | "modified" | "rejected" | "cancelled" | "expired" | "paid";
+    /** @description 访问者能做的操作。 */
+    CaseActions: {
+      appeal: boolean;
+      halt: boolean;
+      resume: boolean;
+      rule?: components["schemas"]["RulingKind"] | null;
+      /** @description `buyer` / `seller` / `panel` / `appeal` / `owner`。 */
+      seat: string;
+      statement: boolean;
+    };
+    CaseAssignment: {
+      /** Format: int64 */
+      arbitrator_id: number;
+      /** Format: date-time */
+      assigned_at: string;
+      /** Format: date-time */
+      due_at: string;
+      /** @description `ruled`（已提交）或 `reassigned`（超时改派）；在岗为空。 */
+      ended_reason?: string | null;
+      /** @description `panel`（裁决）或 `appeal`（申诉复核）。 */
+      role: string;
+    };
+    /** @description 订单聊天全文与哈希链校验结果（仲裁员与站长）。 */
+    CaseChat: {
+      messages: components["schemas"]["OrderMessage"][];
+      verification: components["schemas"]["ChainVerification"];
+    };
+    CaseDetail: {
+      actions: components["schemas"]["CaseActions"];
+      /**
+       * Format: int64
+       * @description 申诉人（买家或卖家的用户 ID）与理由。
+       */
+      appeal_by?: number | null;
+      appeal_reason?: string | null;
+      /** Format: date-time */
+      appeal_until?: string | null;
+      /** @description 仲裁员与站长可见（盲审期间只有自己的）。 */
+      assignments: components["schemas"]["CaseAssignment"][];
+      buyer?: components["schemas"]["UserCardView"] | null;
+      chat?: components["schemas"]["CaseChat"] | null;
+      /** @description `executed`（Safe 已执行）/ `settled`（和解或超时兜底）/ `reverted`（争议被区块回滚撤销）。 */
+      close_reason?: string | null;
+      /** Format: date-time */
+      closed_at?: string | null;
+      /** Format: date-time */
+      evidence_until: string;
+      execution?: components["schemas"]["SafeExecution"] | null;
+      halt?: components["schemas"]["CaseHalt"] | null;
+      /** Format: int64 */
+      id: number;
+      order: components["schemas"]["OrderView"];
+      /**
+       * Format: int32
+       * @description 裁决人数（≥ 200 USDT 两人）。
+       */
+      panel_size: number;
+      /** Format: date-time */
+      published_at?: string | null;
+      /** @description 按可见性过滤后的裁决（见模块说明）。 */
+      rulings: components["schemas"]["CaseRuling"][];
+      seller?: components["schemas"]["UserCardView"] | null;
+      statements: components["schemas"]["CaseStatement"][];
+      /** @description `reviewing` / `owner_review` / `appeal_window` / `appealed` / `ready` / `halted`。 */
+      status: string;
+      timeout?: components["schemas"]["TimeoutAction"] | null;
+    };
+    CaseHalt: {
+      /** Format: int64 */
+      by: number;
+      reason?: string | null;
+    };
+    CaseRuling: {
+      /**
+       * Format: int64
+       * @description 作出裁决的人；只给仲裁员与站长看。
+       */
+      arbitrator_id?: number | null;
+      bond_to_buyer: string;
+      /** Format: int32 */
+      bond_to_buyer_bps: number;
+      /** Format: date-time */
+      created_at: string;
+      /** @description 是否当前生效（已公示）的裁决。 */
+      effective: boolean;
+      /** Format: int64 */
+      id: number;
+      kind: components["schemas"]["RulingKind"];
+      /** @description 争议本金判给买家 / 卖家的金额（最小单位，未计手续费、gas 与争议费的结算）。 */
+      principal_to_buyer: string;
+      principal_to_seller: string;
+      /** @description 公开理由。 */
+      reason: string;
+      /** Format: int32 */
+      to_buyer_bps: number;
+    };
+    CaseStatement: {
+      body: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int64 */
+      id: number;
+      /** @description 附带的图片（只含处理完成的）。 */
+      uploads: components["schemas"]["UploadView"][];
+      /**
+       * Format: int64
+       * @description 提交的当事人（买家或卖家的用户 ID）。
+       */
+      user_id: number;
+    };
     ChainVerification: {
       /**
        * Format: int64
@@ -1824,7 +2263,20 @@ export interface components {
       | "ACCESS_BANNED"
       | "SANCTION_TOO_LONG"
       | "ADMIN_REVERIFY_REQUIRED"
+      | "CASE_STATE_INVALID"
+      | "EVIDENCE_WINDOW_OPEN"
+      | "EVIDENCE_WINDOW_CLOSED"
+      | "CHAT_CHAIN_BROKEN"
+      | "RULING_MISMATCH"
       | "INTERNAL";
+    /** @description 一条链上待执行的全部裁决，合成一个 Safe 批量交易文件（每天合并一笔执行）。 */
+    ExecutionBatch: {
+      cases: components["schemas"]["SafeExecution"][];
+      /** Format: int64 */
+      chain_id: number;
+      safe?: string | null;
+      transaction_builder: Record<string, unknown>;
+    };
     ForumView: {
       /** @description 能否发交易帖。 */
       allow_trade: boolean;
@@ -2067,6 +2519,12 @@ export interface components {
       replaces?: number | null;
       /** @description 卖家对 `hashOffer(offer)` 的签名（`0x` 十六进制；智能账户为 ERC-1271 / ERC-6492 格式）。 */
       signature: string;
+    };
+    NewStatement: {
+      /** @description 1–2000 字。 */
+      body: string;
+      /** @description 自己上传且已处理完成的图片（`POST /api/v1/uploads`），最多 9 张。 */
+      upload_ids?: number[];
     };
     NewTopicRequest: {
       /** @description Tiptap `getHTML()` 的结果；服务端会重新过滤。 */
@@ -2323,6 +2781,11 @@ export interface components {
       /** Format: int64 */
       updated_block: number;
     };
+    OwnerQueueEntry: {
+      /** Format: int64 */
+      case_id: number;
+      status: string;
+    };
     Party: {
       address: string;
       /**
@@ -2450,6 +2913,38 @@ export interface components {
       proposer: string;
       to_buyer: string;
     };
+    PublicRuling: {
+      /** @description 订单金额（最小单位）与代币精度。 */
+      amount: string;
+      /** Format: date-time */
+      appeal_until?: string | null;
+      appealed: boolean;
+      /** Format: int64 */
+      case_id: number;
+      close_reason?: string | null;
+      /** @description `escrow` / `stream`。 */
+      mode: string;
+      /** Format: date-time */
+      published_at?: string | null;
+      /** @description 全部裁决与理由（不含任何人的身份；`effective` 为当前生效的那份）。 */
+      rulings: components["schemas"]["CaseRuling"][];
+      status: string;
+      /** Format: int32 */
+      token_decimals: number;
+    };
+    QueueEntry: {
+      /** Format: int64 */
+      case_id: number;
+      /** Format: date-time */
+      due_at: string;
+      /** Format: date-time */
+      evidence_until: string;
+      /** Format: int64 */
+      order_id: number;
+      /** @description `panel` / `appeal`。 */
+      role: string;
+      status: string;
+    };
     ReadMark: {
       /** Format: int64 */
       last_id: number;
@@ -2469,6 +2964,10 @@ export interface components {
        * @description 已读到的消息 ID（含）。
        */
       last_id: number;
+    };
+    ReasonRequest: {
+      /** @description 1–2000 字。 */
+      reason: string;
     };
     RegisterFinish: {
       /** @description `navigator.credentials.create()` 的结果（二进制字段 base64url 编码）。 */
@@ -2570,11 +3069,118 @@ export interface components {
      * @enum {string}
      */
     Role: "moderator" | "admin" | "owner";
+    RulingAssertFinish: {
+      /** @description `navigator.credentials.get()` 的结果。 */
+      credential: Record<string, unknown>;
+    };
+    RulingAssertionOptions: {
+      /** @description 原样传给 `navigator.credentials.get()`。 */
+      options: Record<string, unknown>;
+    };
+    /**
+     * @description 谁、在哪个阶段作出的裁决。
+     * @enum {string}
+     */
+    RulingKind: "panel" | "owner" | "appeal";
+    RulingOptions: {
+      /** @description `0x` + 64 位十六进制。 */
+      challenge: string;
+      /** @description 这次确认签署的内容（界面照此展示「你将判给买家 …」）。 */
+      intent: string;
+      /** @description 原样传给 `navigator.credentials.get()`；challenge = `sha256("akari-ruling\0" ‖ intent)`。 */
+      options: Record<string, unknown>;
+    };
+    RulingPasskeyView: {
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int64 */
+      id: number;
+      /** Format: date-time */
+      last_used_at?: string | null;
+    };
+    RulingPasskeys: {
+      passkeys: components["schemas"]["RulingPasskeyView"][];
+    };
+    RulingRegisterFinish: {
+      /** @description `navigator.credentials.create()` 的结果。 */
+      credential: Record<string, unknown>;
+    };
+    RulingRegistrationOptions: {
+      /** @description 原样传给 `navigator.credentials.create()`。 */
+      options: Record<string, unknown>;
+    };
+    RulingRequest: {
+      /**
+       * Format: int32
+       * @description 锁定的卖家保证金赔给买家的比例（0–10000）；订单没有保证金时必须为 0。
+       */
+      bond_to_buyer_bps: number;
+      /** @description `panel`（被分配的仲裁员）/ `owner`（站长终裁、叫停后改判）/ `appeal`（申诉复核）。 */
+      kind: components["schemas"]["RulingKind"];
+      /** @description 公开理由，1–2000 字。 */
+      reason: string;
+      /**
+       * Format: int32
+       * @description 争议本金判给买家的比例（0–10000），其余归卖家。
+       */
+      to_buyer_bps: number;
+    };
+    RulingSubmit: {
+      /** Format: int32 */
+      bond_to_buyer_bps: number;
+      /** @description `navigator.credentials.get()` 的结果（用 `ruling/options` 给的选项）。 */
+      credential: Record<string, unknown>;
+      kind: components["schemas"]["RulingKind"];
+      reason: string;
+      /** Format: int32 */
+      to_buyer_bps: number;
+    };
+    RulingSubmitted: {
+      /** @description `waiting`（等另一人）/ `disagreed`（转站长终裁）/ `published`（已公示，进入申诉期）/ `final`（可执行）。 */
+      outcome: string;
+      /** Format: int64 */
+      ruling_id: number;
+      status: string;
+    };
+    RulingVerified: {
+      /**
+       * Format: int64
+       * @description 近期验证有效至（Unix 秒）。
+       */
+      verified_until: number;
+    };
     RulingView: {
       /** Format: int32 */
       bond_to_buyer_bps?: number | null;
       /** Format: int32 */
       to_buyer_bps?: number | null;
+    };
+    /** @description 仲裁 Safe 要执行的交易：签名人在 Safe 官方界面导入 `transaction_builder` 后各自签名（3 人 2/3）。 */
+    SafeExecution: {
+      /** Format: int32 */
+      bond_to_buyer_bps: number;
+      /** Format: int64 */
+      case_id: number;
+      /** Format: int64 */
+      chain_id: number;
+      /** Format: int64 */
+      chain_order_id: number;
+      /** @description `resolve(orderId, toBuyerBps, bondToBuyerBps)` 的 calldata。 */
+      data: string;
+      /**
+       * Format: int32
+       * @description 0 = CALL。
+       */
+      operation: number;
+      /** @description 仲裁 Safe 地址（未配置时为空，签名人在界面里自己选 Safe）。 */
+      safe?: string | null;
+      /** @description 目标担保合约。 */
+      to: string;
+      /** Format: int32 */
+      to_buyer_bps: number;
+      /** @description Safe「Transaction Builder」可直接导入的 JSON 文件。 */
+      transaction_builder: Record<string, unknown>;
+      value: string;
     };
     /** @enum {string} */
     SanctionKind: "mute" | "auction_ban" | "ban" | "ip_ban" | "device_ban";
@@ -2705,6 +3311,10 @@ export interface components {
        */
       resend_in: number;
     };
+    StatementCreated: {
+      /** Format: int64 */
+      id: number;
+    };
     /** @description 分期订单的进度。 */
     StreamView: {
       /** @description 已领取的可解锁净本金（含领取 gas 与从已解锁部分扣的争议费）。 */
@@ -2735,6 +3345,19 @@ export interface components {
       /** Format: int64 */
       user_id: number;
       username?: string | null;
+    };
+    /**
+     * @description 争议超过 `resolveTimeout` 未裁决时任何人可调用的兜底结算（担保合约里争议中的订单不能再延长期限，
+     *     `extendDeadlines` 只对未进入争议的订单有效，所以这里没有延期操作）。
+     */
+    TimeoutAction: {
+      /** Format: date-time */
+      at: string;
+      /** @description 现在是否已可调用。 */
+      callable: boolean;
+      /** @description `resolveTimeout(orderId)` 的 calldata。 */
+      data: string;
+      to: string;
     };
     TopicFlags: {
       featured: boolean;
@@ -2997,6 +3620,28 @@ export interface components {
       id: number;
       label: string;
       status: components["schemas"]["WithdrawAddressStatus"];
+    };
+    Workload: {
+      /** @description 计酬只看工作量与按时率，不含任何裁决方向（ADR 0013 第 2 条）。 */
+      arbitrators: components["schemas"]["WorkloadEntry"][];
+      /** Format: int64 */
+      days: number;
+    };
+    WorkloadEntry: {
+      /** Format: int64 */
+      arbitrator_id: number;
+      /** Format: int64 */
+      assigned: number;
+      /** Format: int64 */
+      on_time: number;
+      /** Format: int64 */
+      open: number;
+      /** Format: int64 */
+      owner_rulings: number;
+      /** Format: int64 */
+      reassigned: number;
+      /** Format: int64 */
+      ruled: number;
     };
   };
   responses: never;
@@ -3925,6 +4570,903 @@ export interface operations {
         };
       };
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  get_case: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CaseDetail"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  appeal_case: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReasonRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  halt_case: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReasonRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  resume_case: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  ruling_options: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RulingRequest"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RulingOptions"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  submit_ruling: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RulingSubmit"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RulingSubmitted"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  add_case_statement: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["NewStatement"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["StatementCreated"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  execution_batch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionBatch"][];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  ruling_assert_finish: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RulingAssertFinish"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RulingVerified"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  ruling_assert_start: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RulingAssertionOptions"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  ruling_register_finish: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RulingRegisterFinish"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RulingPasskeyView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  ruling_register_start: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RulingRegistrationOptions"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  ruling_reverify_start: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReverifyStarted"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  ruling_reverify_verify: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReverifyRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  list_ruling_passkeys: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RulingPasskeys"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  public_ruling: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PublicRuling"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  arbitration_queue: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArbitrationQueue"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  arbitration_workload: {
+    parameters: {
+      query?: {
+        /** @description 统计最近多少天分配的案件（1–366，默认 30）。 */
+        days?: number | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Workload"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -5481,6 +7023,43 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["OrderView"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  order_case: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CaseDetail"];
         };
       };
       401: {

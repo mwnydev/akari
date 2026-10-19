@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.user_id AS \"user_id!\" FROM (\n             SELECT DISTINCT user_id FROM staff_roles WHERE arbitrator_eligible(user_id)\n           ) e\n           WHERE NOT arbitrator_recused($1, e.user_id)\n             AND NOT ($2 AND EXISTS (SELECT 1 FROM staff_roles s WHERE s.user_id = e.user_id AND s.role = $4))\n             AND NOT EXISTS (SELECT 1 FROM arbitration_assignments a WHERE a.case_id = $1 AND a.arbitrator_id = e.user_id)\n             AND NOT EXISTS (SELECT 1 FROM arbitration_rulings r WHERE r.case_id = $1 AND r.arbitrator_id = e.user_id)\n           ORDER BY gen_random_uuid()\n           LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "staff_roles",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bool",
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "33bbcca7cfbcda6dbc148f0822321cb3931919cb804d89667616a0088c263759"
+}

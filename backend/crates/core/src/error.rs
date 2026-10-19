@@ -124,6 +124,16 @@ pub enum ErrorCode {
     SanctionTooLong,
     #[error("admin passkey re-verification required")]
     AdminReverifyRequired,
+    #[error("action not allowed in the current case state")]
+    CaseStateInvalid,
+    #[error("evidence period still open")]
+    EvidenceWindowOpen,
+    #[error("evidence period closed")]
+    EvidenceWindowClosed,
+    #[error("order chat hash chain broken")]
+    ChatChainBroken,
+    #[error("ruling differs from the signed one")]
+    RulingMismatch,
     #[error("internal error")]
     Internal,
 }
@@ -194,6 +204,13 @@ impl ErrorCode {
             Self::AccessBanned => "当前网络或设备已被禁止登录",
             Self::SanctionTooLong => "处罚时长超出你的权限范围",
             Self::AdminReverifyRequired => "请先用后台 Passkey 再次验证",
+            Self::CaseStateInvalid => "案件当前阶段不能进行这项操作",
+            Self::EvidenceWindowOpen => "举证期还没结束，结束后才能裁决",
+            Self::EvidenceWindowClosed => "举证期已结束，不能再提交陈述或证据",
+            Self::ChatChainBroken => {
+                "订单聊天记录校验失败（可能被改动），暂停裁决并已记录，请联系站长"
+            }
+            Self::RulingMismatch => "提交的裁决与 Passkey 确认的内容不一致，请重新确认",
             Self::Internal => "服务暂时不可用，请稍后再试",
         }
     }

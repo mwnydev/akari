@@ -1,5 +1,6 @@
 //! 把链上数据写进数据库：执行校对计划、写入 WebSocket 即时日志、升级确认级别，并在订单变化时写发件箱、
-//! 同步生成订单的报价卡片（成交次数用完即已付款），并把状态变化写进订单聊天与私信（见 [`crate::chat`]）；
+//! 同步生成订单的报价卡片（成交次数用完即已付款），并把状态变化写进订单聊天与私信（见 [`crate::chat`]），
+//! 随争议开关仲裁案件（`forum_db::arbitration::sync_order`）；
 //! 终态最终确认后给买卖双方发免费代付提币次数、计入双方信誉与交易经验。
 //!
 //! 所有写入都由一个任务串行执行（见 [`crate::run`]），并且同一条链只允许一个 indexer 进程（会话级咨询锁）。
@@ -447,6 +448,10 @@ impl Engine {
             // 先写卡片「已付款」再关联谈判记录，证据截止到付款那一刻（含这张卡片）。
             chat::record_offer_fills(tx, &fills).await?;
             chat::record_order(tx, row.id, prev.as_ref(), &now, *cause).await?;
+            // 进入争议即建仲裁案件，离开争议（执行、和解、超时兜底、被回滚）即关闭，回滚回到争议时重新打开。
+            if let Some(s) = forum_db::arbitration::sync_order(tx, row.id).await? {
+                tracing::info!(order = row.id, change = ?s, "arbitration case synced");
+            }
             // 终态且最终确认：买卖双方各得 1 次免费代付提币（每单每人一次，重放不重复）。
             if view
                 .as_ref()

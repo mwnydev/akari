@@ -4,11 +4,13 @@
 //! 再读链头、算哈希、插入：同一订单的消息严格串行，ID 顺序即链顺序。
 
 pub use forum_core::chat::OrderMessage;
-use forum_core::chat::{self, GENESIS};
+use forum_core::chat::{self, ChainCheck, GENESIS};
 use sqlx::{PgExecutor, Postgres, Transaction};
 
 /// 每页条数。
 pub const PAGE: i64 = 50;
+/// 哈希链校验每批读取条数。
+const VERIFY_BATCH: i64 = 1000;
 
 pub const KIND_TEXT: &str = "text";
 pub const KIND_SYSTEM: &str = "system";
@@ -98,6 +100,25 @@ pub async fn after(
     )
     .fetch_all(db)
     .await
+}
+
+/// 按 ID 顺序分批读出整条链并重算哈希（plan 第 7 节：裁决前校验）。
+pub async fn verify_chain(
+    db: impl PgExecutor<'_> + Copy,
+    order_id: i64,
+) -> Result<ChainCheck, sqlx::Error> {
+    let mut check = ChainCheck::default();
+    let mut cursor = 0;
+    loop {
+        let batch = after(db, order_id, cursor, VERIFY_BATCH).await?;
+        for m in &batch {
+            check.push(m);
+        }
+        match batch.last() {
+            Some(m) if i64::try_from(batch.len()) == Ok(VERIFY_BATCH) => cursor = m.id,
+            _ => return Ok(check),
+        }
+    }
 }
 
 pub async fn by_id(db: impl PgExecutor<'_>, id: i64) -> Result<Option<OrderMessage>, sqlx::Error> {

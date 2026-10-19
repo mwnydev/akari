@@ -3,6 +3,7 @@
 //! 部署 MockUSDT、EscrowConfig、Escrow、StreamEscrow（用 `crates/chain/abi` 里的字节码），走一遍 createAndFund →
 //! markDelivered → release，检查订单表、事件表、发件箱与报价卡片；再用 `evm_snapshot` / `evm_revert` 制造区块回滚，
 //! 检查撤销与重放；然后走一遍分期订单 createAndFund → start → claim → dispute；最后多出块，检查升级到 finalized。
+//! 另一个用例检查仲裁案件随争议的回滚与重放开关，以及按后端生成的 `resolve` calldata 执行后关闭。
 //! 主节点故意配置成不可达，同时验证主备切换。
 //!
 //! 需要 `DATABASE_URL`（sqlx::test 为每个用例建临时库）。找不到 anvil（`ANVIL_BIN`、`~/.foundry/bin/anvil`
@@ -23,6 +24,7 @@ use forum_chain::bindings::{Escrow, EscrowConfig, MockUSDT, StreamEscrow};
 use forum_chain::config::{
     ChainConfig, ConfirmationPolicy, Contracts, Endpoint, IndexerPolicy, RpcConfig, Token,
 };
+use forum_chain::order::Market;
 use forum_chain::reorg::{BlockTag, ChainSource};
 use forum_db::PgPool;
 use serde_json::Value;
@@ -57,6 +59,8 @@ struct World {
     stream: Address,
     buyer: Address,
     seller: PrivateKeySigner,
+    /// 合约的 `arbiter`（生产为仲裁 Safe）。
+    arbiter: Address,
     start_block: u64,
 }
 
@@ -143,6 +147,7 @@ impl World {
             stream,
             buyer,
             seller,
+            arbiter: ops,
             start_block,
         }
     }
@@ -215,6 +220,20 @@ impl World {
             .escrow()
             .markDelivered(U256::from(id))
             .from(self.seller.address())
+            .send()
+            .await
+            .unwrap()
+            .get_receipt()
+            .await
+            .unwrap();
+        assert!(r.status());
+    }
+
+    async fn dispute(&self, id: u64) {
+        let r = self
+            .escrow()
+            .dispute(U256::from(id))
+            .from(self.buyer)
             .send()
             .await
             .unwrap()
@@ -925,4 +944,86 @@ async fn rpc_fails_over_to_backup() {
     assert_eq!(src.active(), 1, "switched to the backup endpoint");
     let logs = src.logs(w.start_block, latest.number).await.unwrap();
     assert!(logs.iter().any(|l| l.contract == w.config));
+}
+
+/// 仲裁案件跟随链上争议：争议被区块回滚 → 关闭（reverted）；重新打包 → 同一案件重新打开；
+/// arbiter 按后端生成的 `resolve` calldata 执行 → 关闭（executed），订单按裁决结算。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn arbitration_case_follows_dispute_reorg_and_resolve(pool: PgPool) {
+    let Some(bin) = anvil_bin() else {
+        eprintln!("skipped: anvil not found (install Foundry or set ANVIL_BIN)");
+        return;
+    };
+    let anvil = Anvil::spawn(&bin).unwrap();
+    let w = World::deploy(&anvil).await;
+    let indexer = Running::start(&pool, w.config(&anvil, 200));
+    w.create_and_fund(50 * U, 1).await;
+    w.mark_delivered(1).await;
+    let order_id = eventually("order funded", || async {
+        order(&pool, 1).await.filter(|o| o.state == 1).map(|o| o.id)
+    })
+    .await;
+    let case = |pool: PgPool| async move {
+        sqlx::query_as::<_, (i64, Option<String>)>(
+            "SELECT id, close_reason FROM arbitration_cases WHERE order_id = $1",
+        )
+        .bind(order_id)
+        .fetch_optional(&pool)
+        .await
+        .unwrap()
+    };
+
+    let snap: U256 = w.rpc("evm_snapshot", Value::Array(vec![])).await;
+    w.dispute(1).await;
+    let (case_id, _) = eventually("case opened", || async {
+        case(pool.clone()).await.filter(|(_, r)| r.is_none())
+    })
+    .await;
+    assert!(w.rpc::<bool>("evm_revert", serde_json::json!([snap])).await);
+    let _: Value = w.rpc("anvil_mine", serde_json::json!(["0x3"])).await;
+    eventually("case closed by the reorg", || async {
+        case(pool.clone())
+            .await
+            .filter(|(_, r)| r.as_deref() == Some("reverted"))
+    })
+    .await;
+    assert_eq!(order(&pool, 1).await.unwrap().state, 1);
+
+    w.dispute(1).await;
+    let (again, _) = eventually("case reopened", || async {
+        case(pool.clone()).await.filter(|(_, r)| r.is_none())
+    })
+    .await;
+    assert_eq!(again, case_id, "same case across the reorg");
+
+    let call = forum_chain::arbitration::resolve_call(Market::Escrow, w.escrow, 1, 7_500, 0);
+    let tx = alloy::rpc::types::TransactionRequest::default()
+        .from(w.arbiter)
+        .to(call.to)
+        .input(call.data.clone().into());
+    let receipt =
+        w.p.send_transaction(tx)
+            .await
+            .unwrap()
+            .get_receipt()
+            .await
+            .unwrap();
+    assert!(
+        receipt.status(),
+        "resolve calldata accepted by the contract"
+    );
+    eventually("case closed by execution", || async {
+        case(pool.clone())
+            .await
+            .filter(|(_, r)| r.as_deref() == Some("executed"))
+    })
+    .await;
+    let bps: Option<i32> =
+        sqlx::query_scalar("SELECT ruling_to_buyer_bps FROM escrow_orders WHERE id = $1")
+            .bind(order_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(bps, Some(7_500));
+    indexer.stop().await;
 }

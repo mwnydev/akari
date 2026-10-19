@@ -1,5 +1,6 @@
 //! sqlx 查询与迁移。所有 SQL 在编译期对照数据库检查（离线元数据在 `backend/.sqlx/`）。
 
+pub mod arbitration;
 pub mod audit;
 pub mod chain;
 pub mod credits;

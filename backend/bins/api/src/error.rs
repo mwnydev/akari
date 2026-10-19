@@ -84,7 +84,11 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::Conflict
         | ErrorCode::SponsorPending
         | ErrorCode::UsernameTaken
-        | ErrorCode::UsernameChangeTooSoon => StatusCode::CONFLICT,
+        | ErrorCode::UsernameChangeTooSoon
+        | ErrorCode::CaseStateInvalid
+        | ErrorCode::EvidenceWindowOpen
+        | ErrorCode::EvidenceWindowClosed
+        | ErrorCode::ChatChainBroken => StatusCode::CONFLICT,
         ErrorCode::SponsorUnavailable
         | ErrorCode::ChainUnavailable
         | ErrorCode::UploadsUnavailable => StatusCode::SERVICE_UNAVAILABLE,
@@ -119,7 +123,8 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::WithdrawAddressInvalid
         | ErrorCode::WithdrawAddressForbidden
         | ErrorCode::WithdrawAddressLimit
-        | ErrorCode::SanctionTooLong => StatusCode::BAD_REQUEST,
+        | ErrorCode::SanctionTooLong
+        | ErrorCode::RulingMismatch => StatusCode::BAD_REQUEST,
     }
 }
 

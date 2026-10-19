@@ -687,6 +687,694 @@
         }
       }
     },
+    "/api/v1/arbitration/cases/{id}": {
+      "get": {
+        "tags": ["arbitration"],
+        "summary": "案件详情与证据（当事人、本案仲裁员、站长；见模块说明的可见性规则）。",
+        "operationId": "get_case",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/CaseDetail" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/cases/{id}/appeal": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "当事人申诉：裁决公示后 72 小时内、每个案件一次，由没参与过的仲裁员（或站长）复核，复核结果为最终裁决。",
+        "operationId": "appeal_case",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ReasonRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/cases/{id}/halt": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "站长在执行前叫停（公示后、Safe 执行前）。之后可恢复，或以站长终裁改判（重新公示）。",
+        "operationId": "halt_case",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ReasonRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/cases/{id}/resume": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "站长解除叫停，回到叫停前的状态。",
+        "operationId": "resume_case",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/cases/{id}/ruling/options": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "开始用裁决 Passkey 确认一份裁决：challenge 绑定这份裁决的全部内容。",
+        "operationId": "ruling_options",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RulingRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/RulingOptions" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/cases/{id}/rulings": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "提交裁决：内容必须与 `ruling/options` 确认的完全一致，断言必须由本人的裁决 Passkey 签出，聊天哈希链必须完好。",
+        "operationId": "submit_ruling",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RulingSubmit" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/RulingSubmitted" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/cases/{id}/statements": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "当事人在举证期内提交陈述与证据（只追加，双方与仲裁员都能看到）。",
+        "operationId": "add_case_statement",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/NewStatement" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/StatementCreated" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/execution": {
+      "get": {
+        "tags": ["arbitration"],
+        "summary": "全部可执行裁决的 Safe 交易数据（站长与管理员，即仲裁 Safe 的签名人）。",
+        "operationId": "execution_batch",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ExecutionBatch" }
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/passkey/assert/finish": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "完成验证：会话获得 5 分钟「近期验证」标记（只用于再登记 Passkey）。",
+        "operationId": "ruling_assert_finish",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RulingAssertFinish" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/RulingVerified" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/passkey/assert/start": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "用已有的裁决 Passkey 做一次验证（再登记一个 Passkey 之前）。签署裁决另走 `ruling/options`。",
+        "operationId": "ruling_assert_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RulingAssertionOptions" }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/passkey/register/finish": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "完成登记。成功即视为刚完成一次裁决 Passkey 验证。",
+        "operationId": "ruling_register_finish",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RulingRegisterFinish" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/RulingPasskeyView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/passkey/register/start": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "开始登记裁决 Passkey。",
+        "operationId": "ruling_register_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RulingRegistrationOptions" }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/passkey/reverify/start": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "登记第一个裁决 Passkey 前的邮箱验证：向账号邮箱发一封写明「登记裁决 Passkey」的验证码。",
+        "operationId": "ruling_reverify_start",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ReverifyStarted" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/passkey/reverify/verify": {
+      "post": {
+        "tags": ["arbitration"],
+        "summary": "校验邮箱验证码；成功后 10 分钟内可登记第一个裁决 Passkey。",
+        "operationId": "ruling_reverify_verify",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ReverifyRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/passkeys": {
+      "get": {
+        "tags": ["arbitration"],
+        "summary": "我的裁决 Passkey。",
+        "operationId": "list_ruling_passkeys",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/RulingPasskeys" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/public/{id}": {
+      "get": {
+        "tags": ["arbitration"],
+        "summary": "裁决公示页数据（无需登录；只有已公示的案件，不含当事人与仲裁员的身份、地址）。",
+        "operationId": "public_ruling",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PublicRuling" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/queue": {
+      "get": {
+        "tags": ["arbitration"],
+        "summary": "仲裁待办（站长与管理员）。",
+        "operationId": "arbitration_queue",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ArbitrationQueue" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arbitration/workload": {
+      "get": {
+        "tags": ["arbitration"],
+        "summary": "各仲裁员的工作量与按时率（站长）。",
+        "operationId": "arbitration_workload",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "统计最近多少天分配的案件（1–366，默认 30）。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Workload" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/email/start": {
       "post": {
         "tags": ["auth"],
@@ -1917,7 +2605,7 @@
     "/api/v1/orders/{id}": {
       "get": {
         "tags": ["orders"],
-        "summary": "订单详情：买卖双方与仲裁员可见。",
+        "summary": "订单详情：买卖双方与该订单仲裁案件的仲裁员、站长可见。",
         "operationId": "get_order",
         "parameters": [
           {
@@ -1931,6 +2619,38 @@
           "200": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/OrderView" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders/{id}/case": {
+      "get": {
+        "tags": ["arbitration"],
+        "summary": "订单的仲裁案件（订单页跳转用）；没有案件或无权查看都返回 404。",
+        "operationId": "order_case",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/CaseDetail" } }
             }
           },
           "401": {
@@ -3396,6 +4116,22 @@
           "user_id": { "type": "integer", "format": "int64" }
         }
       },
+      "ArbitrationQueue": {
+        "type": "object",
+        "required": ["assignments", "owner"],
+        "properties": {
+          "assignments": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/QueueEntry" },
+            "description": "我在岗的分配，按期限排序。"
+          },
+          "owner": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/OwnerQueueEntry" },
+            "description": "站长：待终裁、待复核、已叫停、待执行与找不到人接案的（非站长为空）。"
+          }
+        }
+      },
       "AssertFinish": {
         "type": "object",
         "required": ["credential"],
@@ -3532,6 +4268,204 @@
       "CardStatus": {
         "type": "string",
         "enum": ["pending", "modified", "rejected", "cancelled", "expired", "paid"]
+      },
+      "CaseActions": {
+        "type": "object",
+        "description": "访问者能做的操作。",
+        "required": ["seat", "statement", "appeal", "halt", "resume"],
+        "properties": {
+          "appeal": { "type": "boolean" },
+          "halt": { "type": "boolean" },
+          "resume": { "type": "boolean" },
+          "rule": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RulingKind",
+                "description": "能提交的裁决（举证期未结束时也给出，提交时返回 `EVIDENCE_WINDOW_OPEN`）。"
+              },
+              { "type": "null" }
+            ]
+          },
+          "seat": {
+            "type": "string",
+            "description": "`buyer` / `seller` / `panel` / `appeal` / `owner`。"
+          },
+          "statement": { "type": "boolean" }
+        }
+      },
+      "CaseAssignment": {
+        "type": "object",
+        "required": ["arbitrator_id", "role", "assigned_at", "due_at"],
+        "properties": {
+          "arbitrator_id": { "type": "integer", "format": "int64" },
+          "assigned_at": { "type": "string", "format": "date-time" },
+          "due_at": { "type": "string", "format": "date-time" },
+          "ended_reason": {
+            "type": ["string", "null"],
+            "description": "`ruled`（已提交）或 `reassigned`（超时改派）；在岗为空。"
+          },
+          "role": { "type": "string", "description": "`panel`（裁决）或 `appeal`（申诉复核）。" }
+        }
+      },
+      "CaseChat": {
+        "type": "object",
+        "description": "订单聊天全文与哈希链校验结果（仲裁员与站长）。",
+        "required": ["messages", "verification"],
+        "properties": {
+          "messages": { "type": "array", "items": { "$ref": "#/components/schemas/OrderMessage" } },
+          "verification": { "$ref": "#/components/schemas/ChainVerification" }
+        }
+      },
+      "CaseDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "panel_size",
+          "evidence_until",
+          "order",
+          "statements",
+          "rulings",
+          "assignments",
+          "actions"
+        ],
+        "properties": {
+          "actions": { "$ref": "#/components/schemas/CaseActions" },
+          "appeal_by": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "申诉人（买家或卖家的用户 ID）与理由。"
+          },
+          "appeal_reason": { "type": ["string", "null"] },
+          "appeal_until": { "type": ["string", "null"], "format": "date-time" },
+          "assignments": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CaseAssignment" },
+            "description": "仲裁员与站长可见（盲审期间只有自己的）。"
+          },
+          "buyer": {
+            "oneOf": [{ "$ref": "#/components/schemas/UserCardView" }, { "type": "null" }]
+          },
+          "chat": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/CaseChat", "description": "仲裁员与站长可见。" },
+              { "type": "null" }
+            ]
+          },
+          "close_reason": {
+            "type": ["string", "null"],
+            "description": "`executed`（Safe 已执行）/ `settled`（和解或超时兜底）/ `reverted`（争议被区块回滚撤销）。"
+          },
+          "closed_at": { "type": ["string", "null"], "format": "date-time" },
+          "evidence_until": { "type": "string", "format": "date-time" },
+          "execution": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SafeExecution",
+                "description": "可执行（`ready`）时给仲裁员与站长。"
+              },
+              { "type": "null" }
+            ]
+          },
+          "halt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CaseHalt",
+                "description": "叫停人与理由（仲裁员与站长可见）。"
+              },
+              { "type": "null" }
+            ]
+          },
+          "id": { "type": "integer", "format": "int64" },
+          "order": { "$ref": "#/components/schemas/OrderView" },
+          "panel_size": {
+            "type": "integer",
+            "format": "int32",
+            "description": "裁决人数（≥ 200 USDT 两人）。"
+          },
+          "published_at": { "type": ["string", "null"], "format": "date-time" },
+          "rulings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CaseRuling" },
+            "description": "按可见性过滤后的裁决（见模块说明）。"
+          },
+          "seller": {
+            "oneOf": [{ "$ref": "#/components/schemas/UserCardView" }, { "type": "null" }]
+          },
+          "statements": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CaseStatement" }
+          },
+          "status": {
+            "type": "string",
+            "description": "`reviewing` / `owner_review` / `appeal_window` / `appealed` / `ready` / `halted`。"
+          },
+          "timeout": {
+            "oneOf": [{ "$ref": "#/components/schemas/TimeoutAction" }, { "type": "null" }]
+          }
+        }
+      },
+      "CaseHalt": {
+        "type": "object",
+        "required": ["by"],
+        "properties": {
+          "by": { "type": "integer", "format": "int64" },
+          "reason": { "type": ["string", "null"] }
+        }
+      },
+      "CaseRuling": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "to_buyer_bps",
+          "bond_to_buyer_bps",
+          "principal_to_buyer",
+          "principal_to_seller",
+          "bond_to_buyer",
+          "reason",
+          "effective",
+          "created_at"
+        ],
+        "properties": {
+          "arbitrator_id": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "作出裁决的人；只给仲裁员与站长看。"
+          },
+          "bond_to_buyer": { "type": "string" },
+          "bond_to_buyer_bps": { "type": "integer", "format": "int32" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "effective": { "type": "boolean", "description": "是否当前生效（已公示）的裁决。" },
+          "id": { "type": "integer", "format": "int64" },
+          "kind": { "$ref": "#/components/schemas/RulingKind" },
+          "principal_to_buyer": {
+            "type": "string",
+            "description": "争议本金判给买家 / 卖家的金额（最小单位，未计手续费、gas 与争议费的结算）。"
+          },
+          "principal_to_seller": { "type": "string" },
+          "reason": { "type": "string", "description": "公开理由。" },
+          "to_buyer_bps": { "type": "integer", "format": "int32" }
+        }
+      },
+      "CaseStatement": {
+        "type": "object",
+        "required": ["id", "user_id", "body", "uploads", "created_at"],
+        "properties": {
+          "body": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "id": { "type": "integer", "format": "int64" },
+          "uploads": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/UploadView" },
+            "description": "附带的图片（只含处理完成的）。"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "提交的当事人（买家或卖家的用户 ID）。"
+          }
+        }
       },
       "ChainVerification": {
         "type": "object",
@@ -3760,8 +4694,24 @@
           "ACCESS_BANNED",
           "SANCTION_TOO_LONG",
           "ADMIN_REVERIFY_REQUIRED",
+          "CASE_STATE_INVALID",
+          "EVIDENCE_WINDOW_OPEN",
+          "EVIDENCE_WINDOW_CLOSED",
+          "CHAT_CHAIN_BROKEN",
+          "RULING_MISMATCH",
           "INTERNAL"
         ]
+      },
+      "ExecutionBatch": {
+        "type": "object",
+        "description": "一条链上待执行的全部裁决，合成一个 Safe 批量交易文件（每天合并一笔执行）。",
+        "required": ["chain_id", "cases", "transaction_builder"],
+        "properties": {
+          "cases": { "type": "array", "items": { "$ref": "#/components/schemas/SafeExecution" } },
+          "chain_id": { "type": "integer", "format": "int64" },
+          "safe": { "type": ["string", "null"] },
+          "transaction_builder": { "type": "object" }
+        }
       },
       "ForumView": {
         "type": "object",
@@ -4117,6 +5067,18 @@
           }
         },
         "additionalProperties": false
+      },
+      "NewStatement": {
+        "type": "object",
+        "required": ["body"],
+        "properties": {
+          "body": { "type": "string", "description": "1–2000 字。" },
+          "upload_ids": {
+            "type": "array",
+            "items": { "type": "integer", "format": "int64" },
+            "description": "自己上传且已处理完成的图片（`POST /api/v1/uploads`），最多 9 张。"
+          }
+        }
       },
       "NewTopicRequest": {
         "type": "object",
@@ -4499,6 +5461,14 @@
           "updated_block": { "type": "integer", "format": "int64" }
         }
       },
+      "OwnerQueueEntry": {
+        "type": "object",
+        "required": ["case_id", "status"],
+        "properties": {
+          "case_id": { "type": "integer", "format": "int64" },
+          "status": { "type": "string" }
+        }
+      },
       "Party": {
         "type": "object",
         "required": ["address"],
@@ -4663,6 +5633,46 @@
           "to_buyer": { "type": "string" }
         }
       },
+      "PublicRuling": {
+        "type": "object",
+        "required": [
+          "case_id",
+          "status",
+          "mode",
+          "amount",
+          "token_decimals",
+          "appealed",
+          "rulings"
+        ],
+        "properties": {
+          "amount": { "type": "string", "description": "订单金额（最小单位）与代币精度。" },
+          "appeal_until": { "type": ["string", "null"], "format": "date-time" },
+          "appealed": { "type": "boolean" },
+          "case_id": { "type": "integer", "format": "int64" },
+          "close_reason": { "type": ["string", "null"] },
+          "mode": { "type": "string", "description": "`escrow` / `stream`。" },
+          "published_at": { "type": ["string", "null"], "format": "date-time" },
+          "rulings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CaseRuling" },
+            "description": "全部裁决与理由（不含任何人的身份；`effective` 为当前生效的那份）。"
+          },
+          "status": { "type": "string" },
+          "token_decimals": { "type": "integer", "format": "int32" }
+        }
+      },
+      "QueueEntry": {
+        "type": "object",
+        "required": ["case_id", "order_id", "status", "role", "due_at", "evidence_until"],
+        "properties": {
+          "case_id": { "type": "integer", "format": "int64" },
+          "due_at": { "type": "string", "format": "date-time" },
+          "evidence_until": { "type": "string", "format": "date-time" },
+          "order_id": { "type": "integer", "format": "int64" },
+          "role": { "type": "string", "description": "`panel` / `appeal`。" },
+          "status": { "type": "string" }
+        }
+      },
       "ReadMark": {
         "type": "object",
         "required": ["user_id", "last_id"],
@@ -4692,6 +5702,11 @@
             "description": "已读到的消息 ID（含）。"
           }
         }
+      },
+      "ReasonRequest": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": { "reason": { "type": "string", "description": "1–2000 字。" } }
       },
       "RegisterFinish": {
         "type": "object",
@@ -4834,11 +5849,190 @@
         "description": "`staff_roles.role` 的编号（与数据库一致，仲裁资格按 `role IN (1, 3)` 判断）。",
         "enum": ["moderator", "admin", "owner"]
       },
+      "RulingAssertFinish": {
+        "type": "object",
+        "required": ["credential"],
+        "properties": {
+          "credential": {
+            "type": "object",
+            "description": "`navigator.credentials.get()` 的结果。"
+          }
+        }
+      },
+      "RulingAssertionOptions": {
+        "type": "object",
+        "required": ["options"],
+        "properties": {
+          "options": { "type": "object", "description": "原样传给 `navigator.credentials.get()`。" }
+        }
+      },
+      "RulingKind": {
+        "type": "string",
+        "description": "谁、在哪个阶段作出的裁决。",
+        "enum": ["panel", "owner", "appeal"]
+      },
+      "RulingOptions": {
+        "type": "object",
+        "required": ["options", "intent", "challenge"],
+        "properties": {
+          "challenge": { "type": "string", "description": "`0x` + 64 位十六进制。" },
+          "intent": {
+            "type": "string",
+            "description": "这次确认签署的内容（界面照此展示「你将判给买家 …」）。"
+          },
+          "options": {
+            "type": "object",
+            "description": "原样传给 `navigator.credentials.get()`；challenge = `sha256(\"akari-ruling\\0\" ‖ intent)`。"
+          }
+        }
+      },
+      "RulingPasskeyView": {
+        "type": "object",
+        "required": ["id", "created_at"],
+        "properties": {
+          "created_at": { "type": "string", "format": "date-time" },
+          "id": { "type": "integer", "format": "int64" },
+          "last_used_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "RulingPasskeys": {
+        "type": "object",
+        "required": ["passkeys"],
+        "properties": {
+          "passkeys": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RulingPasskeyView" }
+          }
+        }
+      },
+      "RulingRegisterFinish": {
+        "type": "object",
+        "required": ["credential"],
+        "properties": {
+          "credential": {
+            "type": "object",
+            "description": "`navigator.credentials.create()` 的结果。"
+          }
+        }
+      },
+      "RulingRegistrationOptions": {
+        "type": "object",
+        "required": ["options"],
+        "properties": {
+          "options": {
+            "type": "object",
+            "description": "原样传给 `navigator.credentials.create()`。"
+          }
+        }
+      },
+      "RulingRequest": {
+        "type": "object",
+        "required": ["kind", "to_buyer_bps", "bond_to_buyer_bps", "reason"],
+        "properties": {
+          "bond_to_buyer_bps": {
+            "type": "integer",
+            "format": "int32",
+            "description": "锁定的卖家保证金赔给买家的比例（0–10000）；订单没有保证金时必须为 0。",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RulingKind",
+            "description": "`panel`（被分配的仲裁员）/ `owner`（站长终裁、叫停后改判）/ `appeal`（申诉复核）。"
+          },
+          "reason": { "type": "string", "description": "公开理由，1–2000 字。" },
+          "to_buyer_bps": {
+            "type": "integer",
+            "format": "int32",
+            "description": "争议本金判给买家的比例（0–10000），其余归卖家。",
+            "minimum": 0
+          }
+        }
+      },
+      "RulingSubmit": {
+        "type": "object",
+        "required": ["kind", "to_buyer_bps", "bond_to_buyer_bps", "reason", "credential"],
+        "properties": {
+          "bond_to_buyer_bps": { "type": "integer", "format": "int32", "minimum": 0 },
+          "credential": {
+            "type": "object",
+            "description": "`navigator.credentials.get()` 的结果（用 `ruling/options` 给的选项）。"
+          },
+          "kind": { "$ref": "#/components/schemas/RulingKind" },
+          "reason": { "type": "string" },
+          "to_buyer_bps": { "type": "integer", "format": "int32", "minimum": 0 }
+        }
+      },
+      "RulingSubmitted": {
+        "type": "object",
+        "required": ["ruling_id", "outcome", "status"],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "description": "`waiting`（等另一人）/ `disagreed`（转站长终裁）/ `published`（已公示，进入申诉期）/ `final`（可执行）。"
+          },
+          "ruling_id": { "type": "integer", "format": "int64" },
+          "status": { "type": "string" }
+        }
+      },
+      "RulingVerified": {
+        "type": "object",
+        "required": ["verified_until"],
+        "properties": {
+          "verified_until": {
+            "type": "integer",
+            "format": "int64",
+            "description": "近期验证有效至（Unix 秒）。"
+          }
+        }
+      },
       "RulingView": {
         "type": "object",
         "properties": {
           "bond_to_buyer_bps": { "type": ["integer", "null"], "format": "int32" },
           "to_buyer_bps": { "type": ["integer", "null"], "format": "int32" }
+        }
+      },
+      "SafeExecution": {
+        "type": "object",
+        "description": "仲裁 Safe 要执行的交易：签名人在 Safe 官方界面导入 `transaction_builder` 后各自签名（3 人 2/3）。",
+        "required": [
+          "case_id",
+          "chain_id",
+          "to",
+          "value",
+          "data",
+          "operation",
+          "chain_order_id",
+          "to_buyer_bps",
+          "bond_to_buyer_bps",
+          "transaction_builder"
+        ],
+        "properties": {
+          "bond_to_buyer_bps": { "type": "integer", "format": "int32" },
+          "case_id": { "type": "integer", "format": "int64" },
+          "chain_id": { "type": "integer", "format": "int64" },
+          "chain_order_id": { "type": "integer", "format": "int64" },
+          "data": {
+            "type": "string",
+            "description": "`resolve(orderId, toBuyerBps, bondToBuyerBps)` 的 calldata。"
+          },
+          "operation": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0 = CALL。",
+            "minimum": 0
+          },
+          "safe": {
+            "type": ["string", "null"],
+            "description": "仲裁 Safe 地址（未配置时为空，签名人在界面里自己选 Safe）。"
+          },
+          "to": { "type": "string", "description": "目标担保合约。" },
+          "to_buyer_bps": { "type": "integer", "format": "int32" },
+          "transaction_builder": {
+            "type": "object",
+            "description": "Safe「Transaction Builder」可直接导入的 JSON 文件。"
+          },
+          "value": { "type": "string" }
         }
       },
       "SanctionKind": {
@@ -5034,6 +6228,11 @@
           }
         }
       },
+      "StatementCreated": {
+        "type": "object",
+        "required": ["id"],
+        "properties": { "id": { "type": "integer", "format": "int64" } }
+      },
       "StreamView": {
         "type": "object",
         "description": "分期订单的进度。",
@@ -5073,6 +6272,17 @@
           "reason": { "type": "string", "description": "`anomaly`：异常检测自动暂停。" },
           "user_id": { "type": "integer", "format": "int64" },
           "username": { "type": ["string", "null"] }
+        }
+      },
+      "TimeoutAction": {
+        "type": "object",
+        "description": "争议超过 `resolveTimeout` 未裁决时任何人可调用的兜底结算（担保合约里争议中的订单不能再延长期限，\n`extendDeadlines` 只对未进入争议的订单有效，所以这里没有延期操作）。",
+        "required": ["at", "callable", "to", "data"],
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "callable": { "type": "boolean", "description": "现在是否已可调用。" },
+          "data": { "type": "string", "description": "`resolveTimeout(orderId)` 的 calldata。" },
+          "to": { "type": "string" }
         }
       },
       "TopicFlags": {
@@ -5459,6 +6669,39 @@
           "id": { "type": "integer", "format": "int64" },
           "label": { "type": "string" },
           "status": { "$ref": "#/components/schemas/WithdrawAddressStatus" }
+        }
+      },
+      "Workload": {
+        "type": "object",
+        "required": ["days", "arbitrators"],
+        "properties": {
+          "arbitrators": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/WorkloadEntry" },
+            "description": "计酬只看工作量与按时率，不含任何裁决方向（ADR 0013 第 2 条）。"
+          },
+          "days": { "type": "integer", "format": "int64" }
+        }
+      },
+      "WorkloadEntry": {
+        "type": "object",
+        "required": [
+          "arbitrator_id",
+          "assigned",
+          "ruled",
+          "on_time",
+          "reassigned",
+          "open",
+          "owner_rulings"
+        ],
+        "properties": {
+          "arbitrator_id": { "type": "integer", "format": "int64" },
+          "assigned": { "type": "integer", "format": "int64" },
+          "on_time": { "type": "integer", "format": "int64" },
+          "open": { "type": "integer", "format": "int64" },
+          "owner_rulings": { "type": "integer", "format": "int64" },
+          "reassigned": { "type": "integer", "format": "int64" },
+          "ruled": { "type": "integer", "format": "int64" }
         }
       }
     }

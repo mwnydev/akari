@@ -7,6 +7,7 @@ use forum_db::PgPool;
 use forum_kv::{ForumCache, Pool};
 
 use crate::admin::AdminState;
+use crate::arbitration::ArbitrationState;
 use crate::realtime::Hub;
 use crate::wallet::WalletState;
 
@@ -28,6 +29,8 @@ pub struct AppState {
     pub wallet: Arc<WalletState>,
     /// 站长后台：后台 Passkey 与后台来源（ADR 0012、0013）。
     pub admin: Arc<AdminState>,
+    /// 论坛裁决 Passkey 与仲裁 Safe（ADR 0013）。
+    pub arbitration: Arc<ArbitrationState>,
     /// WebSocket 连接表与实时推送（plan 第 7 节）。
     pub hub: Arc<Hub>,
     /// 图片存储（plan 第 12 节）；未配置时图片上传不可用，帖子里也不允许任何图片。

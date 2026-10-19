@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE arbitration_assignments SET ended_at = $2, ended_reason = 'reassigned' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "01b670c89234fd7b098f351678365797fc6ee59477d4b8222c46251621d95e8f"
+}

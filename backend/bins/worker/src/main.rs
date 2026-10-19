@@ -1,5 +1,5 @@
 //! forum-worker：后台任务：发件箱投递（邮件、站内通知、实时推送）、浏览数回写、报价卡片过期、通知分区维护、
-//! 发帖经验、每日信誉校对、图片转换；之后接入 apalis 队列（超时处理、发薪）。
+//! 发帖经验、每日信誉校对、图片转换、仲裁分配与期限；之后接入 apalis 队列（超时处理、发薪）。
 
 use std::time::Duration;
 
@@ -82,6 +82,14 @@ async fn main() -> anyhow::Result<()> {
         shutdown.clone(),
         |db, cache| async move { forum_worker::stats::audit_trade_stats(&db, &cache).await },
     ));
+    let arbitration_cfg = forum_worker::arbitration::Config::from_env()?;
+    let arbitration = tokio::spawn(periodic(
+        "arbitration",
+        forum_worker::arbitration::INTERVAL,
+        (db.clone(), cache.clone()),
+        shutdown.clone(),
+        move |db, _| async move { forum_worker::arbitration::run_once(&db, arbitration_cfg).await },
+    ));
     let views = tokio::spawn(view_flusher(db.clone(), cache, shutdown.clone()));
     let offers = tokio::spawn(offer_expirer(db.clone(), shutdown.clone()));
     let partitions = tokio::spawn(partition_keeper(db.clone(), shutdown.clone()));
@@ -107,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
         ("partition keeper", partitions),
         ("post exp", exp),
         ("trade stats audit", stats),
+        ("arbitration", arbitration),
     ]
     .into_iter()
     .chain(images.map(|t| ("image worker", t)))

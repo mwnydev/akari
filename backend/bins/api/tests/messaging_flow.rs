@@ -332,16 +332,14 @@ async fn order_chat_hash_chain_and_access(db: PgPool) {
     let order = seed_order(&db, a, b).await;
     let path = format!("/api/v1/orders/{order}/messages");
 
-    // 旁人 404；仲裁员可读可发
+    // 旁人 404；该订单仲裁案件的仲裁员可读可发
     assert_eq!(
         call(&app, "GET", &path, None, &cc).await.status,
         StatusCode::NOT_FOUND
     );
     let r = call(&app, "POST", &path, Some(json!({"body": "x"})), &cc).await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
-    forum_db::staff::grant(&db, c, forum_db::staff::ROLE_ADMIN, None, None)
-        .await
-        .unwrap();
+    common::assign_arbitrator(&db, order, c).await;
 
     let mut ids = Vec::new();
     for (cookies, body) in [
@@ -819,9 +817,7 @@ async fn order_chat_push_reaches_parties_and_subscribed_arbiters(db: PgPool) {
     let (c, cc) = user(&r1, &db).await;
     let (_, cs) = user(&r1, &db).await;
     let order = seed_order(&db, a, b).await;
-    forum_db::staff::grant(&db, c, forum_db::staff::ROLE_ADMIN, None, None)
-        .await
-        .unwrap();
+    common::assign_arbitrator(&db, order, c).await;
 
     let mut wb = ws(addr1, &cb, ORIGIN).await.unwrap();
     expect(&mut wb, "ready").await;

@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO arbitration_rulings (case_id, arbitrator_id, assignment_id, kind, to_buyer_bps, bond_to_buyer_bps,\n                                          principal_to_buyer, principal_to_seller, bond_to_buyer, reason, chat_head,\n                                          chat_count, signed_intent, challenge, passkey_id, assertion)\n         VALUES ($1, $2, $3, $4, $5, $6, $7::text::numeric, $8::text::numeric, $9::text::numeric, $10, $11, $12, $13,\n                 $14, $15, $16)\n         RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_rulings",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Int4",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bytea",
+        "Int8",
+        "Text",
+        "Bytea",
+        "Int8",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "de635833272b2c22d72a95a1732db6cb9224e8756c493a922b45988cd60cfaa8"
+}

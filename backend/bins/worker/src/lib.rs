@@ -1,9 +1,10 @@
 //! 发件箱投递（邮件、站内通知与实时推送、管理员群 Telegram 告警）、浏览数回写、报价卡片过期、通知分区维护、
-//! 发帖经验、每日信誉校对、图片转换。
+//! 发帖经验、每日信誉校对、图片转换、仲裁分配与期限。
 //!
 //! 现在是最小实现：轮询 `outbox`，`FOR UPDATE SKIP LOCKED` 锁一批、投递、标记，失败按指数退避重试。
 //! 发薪、超时处理等关键任务按 plan 第 2 节接入 apalis（PostgreSQL 队列）时，发件箱改为向 apalis 入队，这里只保留转发。
 
+pub mod arbitration;
 pub mod exp;
 pub mod images;
 pub mod stats;
@@ -215,6 +216,11 @@ fn render_email(msg: &outbox::Message) -> Result<Email, RenderError> {
             let p: LoginCode = serde_json::from_value(msg.payload.clone())?;
             (p.to, templates::admin_code(&p.code))
         }
+        "email.ruling_passkey_code" => {
+            let p: LoginCode = serde_json::from_value(msg.payload.clone())?;
+            (p.to, templates::ruling_passkey_code(&p.code))
+        }
+        forum_db::arbitration::EMAIL_ALERT => arbitration::alert_email(&msg.payload)?,
         "email.new_device" => {
             let p: NewDevice = serde_json::from_value(msg.payload.clone())?;
             (p.to, templates::new_device(&p.at))

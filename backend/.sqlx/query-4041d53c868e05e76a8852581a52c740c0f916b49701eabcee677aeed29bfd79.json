@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE arbitration_cases SET stalled_alerted_at = now() WHERE id = $1 AND stalled_alerted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4041d53c868e05e76a8852581a52c740c0f916b49701eabcee677aeed29bfd79"
+}

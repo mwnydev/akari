@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE arbitration_cases SET status = 'halted', halted_from = status, halted_by = $2, halt_reason = $3,\n                updated_at = now()\n         WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8b6feb4ef621332bb21eb468deec12f9e6da7c40e77e2d92ab1a20bbecd96f40"
+}

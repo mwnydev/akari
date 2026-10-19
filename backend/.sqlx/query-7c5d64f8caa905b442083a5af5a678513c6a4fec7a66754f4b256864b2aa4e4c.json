@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.id FROM arbitration_cases c JOIN escrow_orders o ON o.id = c.order_id\n           WHERE c.closed_at IS NULL AND (\n             (c.status = 'appeal_window' AND c.appeal_until <= $1)\n             OR c.status IN ('reviewing', 'appealed')\n             OR (c.timeout_alerted_at IS NULL\n                 AND o.disputed_at + make_interval(secs => coalesce((o.snapshot->>'resolve_timeout')::int, $2) - $3)\n                     <= $1)\n           )\n           ORDER BY c.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "arbitration_cases",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7c5d64f8caa905b442083a5af5a678513c6a4fec7a66754f4b256864b2aa4e4c"
+}

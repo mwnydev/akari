@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT (EXISTS (SELECT 1 FROM arbitration_assignments WHERE case_id = $1 AND arbitrator_id = $2)\n                OR EXISTS (SELECT 1 FROM arbitration_rulings WHERE case_id = $1 AND arbitrator_id = $2)) AS \"ok!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ok!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d2e0af5bd53c487498b14410dd95f845d27b1324da4151e1a96315552a749436"
+}

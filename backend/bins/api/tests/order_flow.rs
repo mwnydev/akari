@@ -224,10 +224,8 @@ async fn order_detail_for_parties_and_arbiters_only(db: PgPool) {
     assert_eq!(r.status, StatusCode::NOT_FOUND);
     let r = call(&app, "GET", "/api/v1/orders/999999", None, &ca).await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
-    // 仲裁员可以
-    forum_db::staff::grant(&db, c, forum_db::staff::ROLE_ADMIN, None, None)
-        .await
-        .unwrap();
+    // 该订单仲裁案件的仲裁员可以
+    common::assign_arbitrator(&db, order_id, c).await;
     let r = call(&app, "GET", &path, None, &cc).await;
     assert_eq!(r.status, StatusCode::OK);
 

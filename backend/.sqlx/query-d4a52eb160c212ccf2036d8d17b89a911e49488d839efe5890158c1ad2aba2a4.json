@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT v->>'url' AS \"url!\"\n           FROM arbitration_statements s\n           CROSS JOIN LATERAL unnest(s.upload_ids) WITH ORDINALITY AS u(id, n)\n           JOIN uploads up ON up.id = u.id AND up.user_id = s.user_id AND up.status = 'done'\n           CROSS JOIN LATERAL jsonb_array_elements(up.variants) AS v\n           WHERE s.case_id = $1 AND v ? 'url'\n           ORDER BY s.id, u.n, (v->>'width')::int",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "url!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d4a52eb160c212ccf2036d8d17b89a911e49488d839efe5890158c1ad2aba2a4"
+}

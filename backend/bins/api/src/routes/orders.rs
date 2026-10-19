@@ -1,6 +1,6 @@
 //! 订单（plan 第 7、8 节「我的订单」）：数据全部来自 forum-indexer 写入的 escrow_orders，这里只读。
 //!
-//! 只有买卖双方和仲裁员能看订单，其他人一律 404（不暴露订单是否存在）。金额为 USDT 最小单位的十进制字符串，
+//! 只有买卖双方和该订单仲裁案件的仲裁员、站长能看订单，其他人一律 404（不暴露订单是否存在）。金额为 USDT 最小单位的十进制字符串，
 //! 时间为 RFC 3339；`level` 是订单全部事件中最低的确认级别（latest / safe / finalized）。
 
 use axum::Json;
@@ -215,7 +215,7 @@ pub struct OrderView {
 }
 
 impl OrderView {
-    fn of(r: OrderRow) -> ApiResult<Self> {
+    pub(crate) fn of(r: OrderRow) -> ApiResult<Self> {
         let market = Market::from_mode(r.mode).map_err(ApiError::internal)?;
         let state = u8::try_from(r.state)
             .map_err(ApiError::internal)
@@ -350,7 +350,7 @@ pub async fn list(
     }))
 }
 
-/// 订单详情：买卖双方与仲裁员可见。
+/// 订单详情：买卖双方与该订单仲裁案件的仲裁员、站长可见。
 #[utoipa::path(
     get, path = "/api/v1/orders/{id}", tag = "orders", operation_id = "get_order",
     params(("id" = i64, Path)),
@@ -367,7 +367,7 @@ pub async fn get(
         .pop()
         .ok_or(ApiError(ErrorCode::NotFound))?;
     let party = row.buyer_id == Some(user_id) || row.seller_id == Some(user_id);
-    if !party && !forum_db::staff::is_arbiter(&state.db, user_id).await? {
+    if !party && !forum_db::arbitration::can_review_order(&state.db, id, user_id).await? {
         return Err(ApiError(ErrorCode::NotFound));
     }
     Ok(Json(OrderView::of(row)?))

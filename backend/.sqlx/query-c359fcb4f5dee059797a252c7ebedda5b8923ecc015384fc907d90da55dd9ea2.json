@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE arbitration_cases SET closed_at = NULL, close_reason = NULL, updated_at = now() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c359fcb4f5dee059797a252c7ebedda5b8923ecc015384fc907d90da55dd9ea2"
+}

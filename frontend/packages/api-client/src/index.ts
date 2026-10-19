@@ -80,6 +80,11 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   ACCESS_BANNED: "当前网络或设备已被禁止登录",
   SANCTION_TOO_LONG: "处罚时长超出你的权限范围",
   ADMIN_REVERIFY_REQUIRED: "请先用后台 Passkey 再次验证",
+  CASE_STATE_INVALID: "案件当前阶段不能进行这项操作",
+  EVIDENCE_WINDOW_OPEN: "举证期还没结束，结束后才能裁决",
+  EVIDENCE_WINDOW_CLOSED: "举证期已结束，不能再提交陈述或证据",
+  CHAT_CHAIN_BROKEN: "订单聊天记录校验失败（可能被改动），暂停裁决并已记录，请联系站长",
+  RULING_MISMATCH: "提交的裁决与 Passkey 确认的内容不一致，请重新确认",
   INTERNAL: "服务暂时不可用，请稍后再试",
 };
 

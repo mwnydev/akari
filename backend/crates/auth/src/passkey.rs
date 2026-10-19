@@ -1,6 +1,9 @@
-//! 钱包与站长后台 Passkey（plan 第 5 节、ADR 0012）。钱包：webauthn-rs 封装、只接受 ES256（P-256），并取出链上验证器需要的公钥坐标。
+//! 钱包、站长后台与论坛裁决 Passkey（plan 第 5 节、ADR 0012）。钱包：webauthn-rs 封装、只接受 ES256（P-256），并取出链上验证器需要的公钥坐标。
 //!
 //! RP ID 是钱包中心域名、允许的来源只有钱包子域名（关联来源），论坛主站无法请求这个 Passkey。
+//!
+//! 论坛裁决 Passkey（ADR 0012、0013）是另一组凭证：RP ID 为论坛主域名、只用于签署裁决，断言的 challenge 由
+//! [`bind_challenge`] 换成裁决内容的哈希。两组凭证的 Webauthn 实例、用户句柄与数据库 `purpose` 都分开。
 
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
@@ -8,7 +11,8 @@ use sha2::Sha256;
 use crate::code::WeakSecret;
 use webauthn_rs::prelude::{
     COSEAlgorithm, COSEKeyType, CreationChallengeResponse, CredentialID, ECDSACurve, Passkey,
-    PasskeyRegistration, Url, Uuid, Webauthn, WebauthnBuilder, WebauthnError,
+    PasskeyAuthentication, PasskeyRegistration, RequestChallengeResponse, Url, Uuid, Webauthn,
+    WebauthnBuilder, WebauthnError,
 };
 use webauthn_rs_proto::ResidentKeyRequirement;
 
@@ -29,15 +33,21 @@ pub fn wallet_webauthn(
     b.build()
 }
 
-/// 构造站长后台 Webauthn 实例（ADR 0012）：RP ID 是后台中心域名，只认后台页面这一个来源。
-pub fn admin_webauthn(rp_id: &str, rp_name: &str, origin: &Url) -> Result<Webauthn, WebauthnError> {
+/// 只接受一个页面来源的 Webauthn 实例：站长后台（RP ID 为后台中心域名，ADR 0012）与论坛裁决
+/// （RP ID 为论坛主域名，生产 `akari.cc`）。
+pub fn single_origin_webauthn(
+    rp_id: &str,
+    rp_name: &str,
+    origin: &Url,
+) -> Result<Webauthn, WebauthnError> {
     WebauthnBuilder::new(rp_id, origin)?
         .rp_name(rp_name)
         .build()
 }
 
 /// WebAuthn 用户句柄：由用户 ID 经 HMAC 派生的 UUID。不含个人信息、不可猜，也不用另存一列；
-/// 同一用户的所有钱包 Passkey 句柄相同；后台 Passkey 用另一个派生标签，两者的句柄互不相同。
+/// 同一用户同一用途的所有 Passkey 句柄相同。钱包、后台与裁决用不同的派生标签：开发环境 RP ID 都是 `localhost`，
+/// 句柄相同时认证器会用新凭证覆盖旧凭证。
 #[derive(Clone)]
 pub struct UserHandles(Hmac<Sha256>);
 
@@ -50,6 +60,11 @@ impl UserHandles {
     /// 站长后台 Passkey 的句柄。
     pub fn admin(secret: &[u8]) -> Result<Self, WeakSecret> {
         Self::labeled(secret, b"admin-webauthn-user")
+    }
+
+    /// 论坛裁决 Passkey 的句柄。
+    pub fn ruling(secret: &[u8]) -> Result<Self, WeakSecret> {
+        Self::labeled(secret, b"ruling-webauthn-user")
     }
 
     fn labeled(secret: &[u8], label: &[u8]) -> Result<Self, WeakSecret> {
@@ -103,6 +118,31 @@ pub fn start_registration(
     Ok((ccr, state))
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("cannot bind the assertion challenge: {0}")]
+pub struct BindError(String);
+
+/// 把一次断言的 challenge 换成调用方给定的字节（裁决内容的哈希）：同时改浏览器拿到的选项与服务端保存的状态，
+/// 认证器签名的 clientDataJSON 因而包含这个 challenge，`finish_passkey_authentication` 也只认它。
+/// 依赖 webauthn-rs 0.5 状态序列化（`danger-allow-state-serialisation`）里 `ast.challenge` 的字段名；
+/// 找不到时报错（不会退回随机 challenge）。
+pub fn bind_challenge(
+    options: &mut RequestChallengeResponse,
+    state: &PasskeyAuthentication,
+    challenge: &[u8],
+) -> Result<PasskeyAuthentication, BindError> {
+    let err = |e: &dyn std::fmt::Display| BindError(e.to_string());
+    let mut v = serde_json::to_value(state).map_err(|e| err(&e))?;
+    let slot = v
+        .get_mut("ast")
+        .and_then(|a| a.get_mut("challenge"))
+        .filter(|c| c.is_string())
+        .ok_or_else(|| BindError("state has no ast.challenge".into()))?;
+    options.public_key.challenge = challenge.to_vec().into();
+    *slot = serde_json::to_value(&options.public_key.challenge).map_err(|e| err(&e))?;
+    serde_json::from_value(v).map_err(|e| err(&e))
+}
+
 /// 链上验证器需要的 P-256 公钥。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct P256Key {
@@ -152,6 +192,11 @@ mod tests {
         assert!(UserHandles::new(&[1; 31]).is_err());
         assert_eq!(a.get_version_num(), 8);
         assert_ne!(a, UserHandles::admin(&[1; 32]).unwrap().of(1));
+        assert_ne!(a, UserHandles::ruling(&[1; 32]).unwrap().of(1));
+        assert_ne!(
+            UserHandles::admin(&[1; 32]).unwrap().of(1),
+            UserHandles::ruling(&[1; 32]).unwrap().of(1)
+        );
     }
 
     #[test]
@@ -164,6 +209,34 @@ mod tests {
         assert_eq!(c.len(), 77);
         assert_eq!(&c[10..42], &[1; 32]);
         assert_eq!(&c[45..], &[2; 32]);
+    }
+
+    #[test]
+    fn bound_challenge_is_what_the_authenticator_signs() {
+        use webauthn_authenticator_rs::WebauthnAuthenticator;
+        use webauthn_authenticator_rs::softpasskey::SoftPasskey;
+
+        let origin = Url::parse("https://forum.example").unwrap();
+        let w = single_origin_webauthn("forum.example", "x", &origin).unwrap();
+        let mut auth = WebauthnAuthenticator::new(SoftPasskey::new(true));
+        let (ccr, reg) = w
+            .start_passkey_registration(Uuid::nil(), "a", "a", None)
+            .unwrap();
+        let cred = auth.do_registration(origin.clone(), ccr).unwrap();
+        let passkey = w.finish_passkey_registration(&cred, &reg).unwrap();
+
+        let (mut options, state) = w
+            .start_passkey_authentication(std::slice::from_ref(&passkey))
+            .unwrap();
+        let bound = bind_challenge(&mut options, &state, &[7; 32]).unwrap();
+        assert_eq!(options.public_key.challenge.as_ref(), &[7; 32]);
+        let assertion = auth.do_authentication(origin, options).unwrap();
+        // 原来的随机 challenge 状态、绑定到另一份内容的状态都不认这份断言，只有绑定到同一内容的状态认
+        assert!(w.finish_passkey_authentication(&assertion, &state).is_err());
+        let (mut other, s2) = w.start_passkey_authentication(&[passkey]).unwrap();
+        let other = bind_challenge(&mut other, &s2, &[8; 32]).unwrap();
+        assert!(w.finish_passkey_authentication(&assertion, &other).is_err());
+        assert!(w.finish_passkey_authentication(&assertion, &bound).is_ok());
     }
 
     #[test]

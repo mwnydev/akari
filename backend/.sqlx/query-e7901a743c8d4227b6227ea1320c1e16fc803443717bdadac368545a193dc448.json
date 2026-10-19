@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH a AS (\n             SELECT a.arbitrator_id,\n                    count(*) AS assigned,\n                    count(*) FILTER (WHERE a.ended_reason = 'ruled') AS ruled,\n                    count(*) FILTER (WHERE a.ended_reason = 'ruled' AND a.ended_at <= a.due_at) AS on_time,\n                    count(*) FILTER (WHERE a.ended_reason = 'reassigned') AS reassigned,\n                    count(*) FILTER (WHERE a.ended_at IS NULL AND c.closed_at IS NULL) AS open\n             FROM arbitration_assignments a JOIN arbitration_cases c ON c.id = a.case_id\n             WHERE a.assigned_at >= $1\n             GROUP BY a.arbitrator_id\n           ), o AS (\n             SELECT arbitrator_id, count(*) AS owner_rulings FROM arbitration_rulings\n             WHERE assignment_id IS NULL AND created_at >= $1\n             GROUP BY arbitrator_id\n           )\n           SELECT coalesce(a.arbitrator_id, o.arbitrator_id) AS \"arbitrator_id!\",\n                  coalesce(a.assigned, 0) AS \"assigned!\", coalesce(a.ruled, 0) AS \"ruled!\",\n                  coalesce(a.on_time, 0) AS \"on_time!\", coalesce(a.reassigned, 0) AS \"reassigned!\",\n                  coalesce(a.open, 0) AS \"open!\", coalesce(o.owner_rulings, 0) AS \"owner_rulings!\"\n           FROM a FULL JOIN o ON o.arbitrator_id = a.arbitrator_id\n           ORDER BY 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "arbitrator_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "assigned!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "ruled!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "on_time!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "reassigned!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "open!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "owner_rulings!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "e7901a743c8d4227b6227ea1320c1e16fc803443717bdadac368545a193dc448"
+}

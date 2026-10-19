@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE arbitration_cases SET timeout_alerted_at = $2 WHERE id = $1 AND timeout_alerted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3a7cf3cd017586d03a898917682a664feb8da54a6eeed06c8452a9c65baf82a8"
+}

@@ -14,10 +14,11 @@ use axum::body::{Body, to_bytes};
 use axum::extract::connect_info::MockConnectInfo;
 use axum::http::{Request, StatusCode, header};
 use axum_extra::extract::cookie::Key;
+use forum_api::arbitration::ArbitrationState;
 use forum_api::wallet::{AddressVerifier, WalletState};
 use forum_api::{AppState, app};
 use forum_auth::passkey::webauthn::{CreationChallengeResponse, RequestChallengeResponse, Url};
-use forum_auth::passkey::{UserHandles, admin_webauthn, wallet_webauthn};
+use forum_auth::passkey::{UserHandles, single_origin_webauthn, wallet_webauthn};
 use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha};
 use forum_chain::config::WalletInitVersion;
 use forum_chain::kernel::PasskeyPublicKey;
@@ -32,6 +33,8 @@ pub const ORIGIN: &str = "https://forum.test";
 pub const SECRET: [u8; 64] = [9; 64];
 pub const WALLET_ORIGIN: &str = "https://wallet.test";
 pub const ADMIN_ORIGIN: &str = "https://admin.test";
+/// 论坛裁决 Passkey 的 RP ID 与来源（论坛主域名，与钱包不同）。
+pub const RULING_RP_ID: &str = "forum.test";
 pub const CHAIN_ID: u64 = 421_614;
 pub const ESCROW: &str = "0x4444444444444444444444444444444444444444";
 pub const USDT: &str = "0x3333333333333333333333333333333333333333";
@@ -56,7 +59,7 @@ impl AddressVerifier for FakeVerifier {
 pub fn admin_state() -> forum_api::admin::AdminState {
     let origin = Url::parse(ADMIN_ORIGIN).unwrap();
     forum_api::admin::AdminState {
-        webauthn: admin_webauthn("admin.test", "Akari", &origin).unwrap(),
+        webauthn: single_origin_webauthn("admin.test", "Akari", &origin).unwrap(),
         origin: ADMIN_ORIGIN.to_owned(),
         handles: UserHandles::admin(&SECRET).unwrap(),
     }
@@ -80,6 +83,17 @@ pub fn wallet_state() -> WalletState {
         verifier: Arc::new(FakeVerifier),
         sponsor: None,
         rpc: None,
+    }
+}
+
+pub fn arbitration_state() -> ArbitrationState {
+    ArbitrationState {
+        webauthn: single_origin_webauthn(RULING_RP_ID, "Akari", &Url::parse(ORIGIN).unwrap())
+            .unwrap(),
+        origin: ORIGIN.to_owned(),
+        handles: UserHandles::ruling(&SECRET).unwrap(),
+        brand: "Akari".to_owned(),
+        safe: Some(alloy::primitives::Address::repeat_byte(0x5a)),
     }
 }
 
@@ -123,6 +137,7 @@ pub fn state_with(db: PgPool, wallet: WalletState, ns: &str) -> Option<AppState>
         internal_hosts: Arc::from(vec!["forum.test".to_owned()]),
         wallet: Arc::new(wallet),
         admin: Arc::new(admin_state()),
+        arbitration: Arc::new(arbitration_state()),
         hub: forum_api::realtime::Hub::new(forum_kv::Realtime::new(kv, ns), url),
         media: media(),
     })
@@ -417,6 +432,33 @@ pub async fn enable_trading(
     .await;
     assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
     auth
+}
+
+/// 让 `user_id`（授予管理员角色）成为订单 `order_id` 仲裁案件的在岗仲裁员：订单置为争议中、像 indexer 一样建案件、
+/// 直接分配（分配规则本身见 forum-db 的 arbitration 测试）。
+pub async fn assign_arbitrator(db: &PgPool, order_id: i64, user_id: i64) {
+    sqlx::query("UPDATE escrow_orders SET state = 2, disputed_at = now() WHERE id = $1")
+        .bind(order_id)
+        .execute(db)
+        .await
+        .unwrap();
+    let mut tx = db.begin().await.unwrap();
+    forum_db::arbitration::sync_order(&mut tx, order_id)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    forum_db::staff::grant(db, user_id, forum_db::staff::ROLE_ADMIN, None, None)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO arbitration_assignments (case_id, arbitrator_id, role, due_at)
+         SELECT id, $2, 'panel', now() + interval '48 hours' FROM arbitration_cases WHERE order_id = $1",
+    )
+    .bind(order_id)
+    .bind(user_id)
+    .execute(db)
+    .await
+    .unwrap();
 }
 
 /// 清掉登录验证码的 60 秒重发间隔，让同一用户在测试里马上再登录一次（模拟另一台设备）。
