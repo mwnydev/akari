@@ -41,6 +41,20 @@ struct Party {
     cookies: Vec<String>,
 }
 
+/// 卖家与对方的私信会话。
+async fn conversation(app: &Router, seller: &Party, peer: i64) -> i64 {
+    let r = call(
+        app,
+        "POST",
+        "/api/v1/conversations",
+        Some(json!({"user_id": peer})),
+        &seller.cookies,
+    )
+    .await;
+    assert!(r.status.is_success(), "{:?}", r.body);
+    r.body["id"].as_i64().unwrap()
+}
+
 /// 已开通交易、已解除新用户限制的用户；会话带 5 分钟近期 Passkey 验证。
 async fn trader(app: &Router, db: &PgPool, address: &str) -> Party {
     let (id, cookies) = user(app, db).await;
@@ -419,8 +433,10 @@ async fn public_offer_hash_and_validation(db: PgPool) {
 async fn offer_needs_recent_passkey(db: PgPool) {
     let Some(app) = build(db.clone()) else { return };
     let seller = trader(&app, &db, SELLER).await;
-    trader(&app, &db, BUYER).await;
-    let body = json!({"conversation_id": 9, "offer": offer(ZERO_HASH, BUYER), "signature": "0x12"});
+    let buyer = trader(&app, &db, BUYER).await;
+    let conv = conversation(&app, &seller, buyer.id).await;
+    let body =
+        json!({"conversation_id": conv, "offer": offer(ZERO_HASH, BUYER), "signature": "0x12"});
     // 另一台设备上的新会话：只凭邮箱登录发不出担保报价
     let email: String = sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
         .bind(seller.id)
@@ -443,8 +459,8 @@ async fn conversation_cards_modify_reject_cancel(db: PgPool) {
     let Some(app) = build(db.clone()) else { return };
     let seller = trader(&app, &db, SELLER).await;
     let buyer = trader(&app, &db, BUYER).await;
-    let (_, stranger) = user(&app, &db).await;
-    let conv = 77;
+    let (stranger_id, stranger) = user(&app, &db).await;
+    let conv = conversation(&app, &seller, buyer.id).await;
     let body = |o: Value, replaces: Option<i64>| json!({"conversation_id": conv, "replaces": replaces, "offer": o, "signature": "0xabcd"});
 
     // 私信报价必须指定买家且只能成交 1 次；买家必须已开通交易
@@ -606,4 +622,64 @@ async fn conversation_cards_modify_reject_cancel(db: PgPool) {
         .map(|c| c["status"].as_str().unwrap())
         .collect();
     assert_eq!(statuses, ["cancelled", "rejected", "modified"]);
+
+    // 每次状态变化都在会话里留一张卡片消息，并通知对方
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/v1/conversations/{conv}/messages"),
+        None,
+        &buyer.cookies,
+    )
+    .await;
+    let cards: Vec<(String, i64, i64)> = r.body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            assert_eq!(m["kind"], "offer");
+            (
+                m["body"].as_str().unwrap().to_owned(),
+                m["offer_id"].as_i64().unwrap(),
+                m["sender_id"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    let (s, b) = (seller.id, buyer.id);
+    assert_eq!(
+        cards,
+        [
+            ("created".into(), first, s),
+            ("modified".into(), second, s),
+            ("rejected".into(), second, b),
+            ("created".into(), id3, s),
+            ("cancelled".into(), id3, s),
+        ]
+    );
+    let notified: Vec<i64> = sqlx::query_scalar(
+        "SELECT (payload->>'to')::bigint FROM outbox WHERE kind = 'notify.offer' ORDER BY id",
+    )
+    .fetch_all(&db)
+    .await
+    .unwrap();
+    assert_eq!(notified, [b, b, s, b, b]);
+
+    // 报价只能发在卖家与指定买家两人的会话里
+    let other = conversation(&app, &seller, stranger_id).await;
+    let mut o = offer(ZERO_HASH, BUYER);
+    o["nonce"] = json!("9");
+    let r = post_offer(
+        &app,
+        &seller.cookies,
+        json!({"conversation_id": other, "offer": o, "signature": "0xabcd"}),
+    )
+    .await;
+    assert_eq!(r.body["code"], "INVALID_PARAMETER");
+    let r = post_offer(
+        &app,
+        &seller.cookies,
+        json!({"conversation_id": 999_999, "offer": o, "signature": "0xabcd"}),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
 }

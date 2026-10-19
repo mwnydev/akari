@@ -5,6 +5,8 @@
 
 use serde_json::Value;
 use sqlx::PgExecutor;
+
+use crate::trade::OfferStatus;
 use time::OffsetDateTime;
 
 /// 同一条链只允许一个 indexer 写入：在一条专用连接上取会话级咨询锁，连接关闭即释放。
@@ -439,22 +441,32 @@ pub async fn clear_order(
     .await
 }
 
-/// 订单行变化后同步生成它的报价卡片（见 `queries/offer_fills_sync.sql`）。返回卡片状态是否改变。
+/// 状态随链上成交改变的报价卡片。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OfferFill {
+    pub id: i64,
+    pub conversation_id: Option<i64>,
+    pub seller_id: i64,
+    pub buyer_id: Option<i64>,
+    pub status: OfferStatus,
+}
+
+/// 订单行变化后同步生成它的报价卡片（见 `queries/offer_fills_sync.sql`）。返回状态改变的卡片。
 pub async fn sync_offer_fills(
     db: impl PgExecutor<'_>,
     chain_id: i64,
     contract: &[u8],
     offer_hash: &[u8],
-) -> Result<bool, sqlx::Error> {
-    let done = sqlx::query_file!(
+) -> Result<Vec<OfferFill>, sqlx::Error> {
+    sqlx::query_file_as!(
+        OfferFill,
         "queries/offer_fills_sync.sql",
         chain_id,
         contract,
         offer_hash
     )
-    .execute(db)
-    .await?;
-    Ok(done.rows_affected() > 0)
+    .fetch_all(db)
+    .await
 }
 
 /// 把 `upto` 及之前、级别低于 `level` 的事件升级为 `level`，返回受影响的订单。
@@ -478,4 +490,36 @@ pub async fn promote(
     .fetch_all(db)
     .await?;
     Ok(rows.into_iter().map(|r| (r.contract, r.order_id)).collect())
+}
+
+/// 订单聊天系统消息要比较的字段（indexer 在改写订单行之前读取旧值）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChatBrief {
+    pub state: i16,
+    pub buyer: Vec<u8>,
+    pub instant: bool,
+    pub confirm_deadline: Option<OffsetDateTime>,
+    pub started_at: Option<OffsetDateTime>,
+    pub proposer: Option<Vec<u8>>,
+    pub proposal_to_buyer: Option<String>,
+    pub disputed_by: Option<Vec<u8>>,
+}
+
+pub async fn chat_brief(
+    db: impl PgExecutor<'_>,
+    chain_id: i64,
+    contract: &[u8],
+    chain_order_id: i64,
+) -> Result<Option<ChatBrief>, sqlx::Error> {
+    sqlx::query_as!(
+        ChatBrief,
+        r#"SELECT state, buyer, instant, confirm_deadline, started_at, proposer,
+                  proposal_to_buyer::text AS "proposal_to_buyer?", disputed_by
+           FROM escrow_orders WHERE chain_id = $1 AND contract = $2 AND chain_order_id = $3"#,
+        chain_id,
+        contract,
+        chain_order_id
+    )
+    .fetch_optional(db)
+    .await
 }

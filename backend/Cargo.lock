@@ -1200,6 +1200,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "31b698c5f9a010f6573133b09e0de5408834d0c82f8d7475a89fc1867a71cd90"
 dependencies = [
  "axum-core",
+ "base64 0.22.1",
  "bytes",
  "form_urlencoded",
  "futures-util",
@@ -1218,8 +1219,10 @@ dependencies = [
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
+ "sha1 0.10.7",
  "sync_wrapper",
  "tokio",
+ "tokio-tungstenite",
  "tower",
  "tower-layer",
  "tower-service",
@@ -2385,6 +2388,7 @@ dependencies = [
  "forum-db",
  "forum-kv",
  "forum-runtime",
+ "futures-util",
  "hex",
  "rand 0.10.3",
  "redis",
@@ -2396,6 +2400,7 @@ dependencies = [
  "thiserror 2.0.21",
  "time",
  "tokio",
+ "tokio-tungstenite",
  "tower",
  "tower-http 0.7.1",
  "tower-sessions",
@@ -2452,7 +2457,9 @@ dependencies = [
  "alloy-primitives",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror 2.0.21",
+ "time",
  "utoipa",
 ]
 
@@ -2460,6 +2467,7 @@ dependencies = [
 name = "forum-db"
 version = "0.1.0"
 dependencies = [
+ "forum-core",
  "serde_json",
  "sqlx",
  "time",
@@ -2473,6 +2481,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "forum-chain",
+ "forum-core",
  "forum-db",
  "forum-runtime",
  "serde",
@@ -2491,7 +2500,9 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "deadpool-redis",
+ "futures-util",
  "redis",
+ "serde",
  "serde_json",
  "thiserror 2.0.21",
  "time",
@@ -2551,6 +2562,7 @@ name = "forum-worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "forum-core",
  "forum-db",
  "forum-kv",
  "forum-mail",

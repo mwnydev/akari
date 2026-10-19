@@ -469,11 +469,28 @@ async fn seed_forum(pool: &PgPool, w: &World) -> (i64, i64) {
         .call()
         .await
         .unwrap();
+    // 私信里谈好的报价：会话里先有一条消息，付款后订单关联这段谈判记录。
+    let (conversation, _) = forum_db::messages::get_or_create(pool, ids[0], ids[1])
+        .await
+        .unwrap();
+    forum_db::messages::insert(
+        pool,
+        forum_db::messages::NewMessage {
+            conversation_id: conversation.id,
+            sender_id: Some(ids[0]),
+            kind: "text",
+            body: "50 USDT 可以吗",
+            offer_id: None,
+            warn: false,
+        },
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO offers (conversation_id, seller_id, buyer_id, chain_id, verifying_contract, seller, buyer, token,
            amount, fee_payer, max_fee_bps, max_base_gas, max_min_fee, bond, late_slash_bps, instant, ship_window,
            confirm_window, listing_hash, expiry, max_fills, nonce, signature, offer_hash, expires_at)
-         VALUES (1, $1, $2, 31337, $3, $4, $5, $6, 50000000, 2, 100, 100000, 1000000, 0, 0, false, 86400, 86400,
+         VALUES ($9, $1, $2, 31337, $3, $4, $5, $6, 50000000, 2, 100, 100000, 1000000, 0, 0, false, 86400, 86400,
            $7, 4000000000, 1, 1, '\\x01', $8, now() + interval '1 day')",
     )
     .bind(ids[1])
@@ -484,6 +501,7 @@ async fn seed_forum(pool: &PgPool, w: &World) -> (i64, i64) {
     .bind(w.usdt.as_slice())
     .bind(B256::repeat_byte(7).as_slice())
     .bind(offer_hash.as_slice())
+    .bind(conversation.id)
     .execute(pool)
     .await
     .unwrap();
@@ -588,6 +606,45 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
     assert!(
         order_credits(&pool).await.is_empty(),
         "released but not finalized: no withdrawal credit yet"
+    );
+    // 私信里写入「已付款」卡片，订单关联截至这张卡片的谈判记录；订单聊天按状态变化写入系统消息，哈希链完好。
+    let (card, offer_event): (i64, String) =
+        sqlx::query_as("SELECT id, body FROM messages WHERE kind = 'offer'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(offer_event, "paid");
+    let evidence: i64 =
+        sqlx::query_scalar("SELECT last_message_id FROM order_negotiations WHERE order_id = $1")
+            .bind(o1.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(evidence, card);
+    let chat = forum_db::order_chat::after(&pool, o1.id, 0, 100)
+        .await
+        .unwrap();
+    let bodies: Vec<&str> = chat.iter().map(|m| m.body.as_str()).collect();
+    assert_eq!(
+        bodies,
+        [
+            "买家已付款，资金已托管，等待卖家发货",
+            "卖家已标记发货，确认期开始",
+            "货款已放给卖家，订单完成"
+        ]
+    );
+    assert!(
+        chat.iter()
+            .all(|m| m.kind == "system" && m.sender_id.is_none())
+    );
+    assert_eq!(forum_core::chat::verify(&chat).broken_at, None);
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) FROM outbox WHERE kind = 'push.order_message'"
+        )
+        .await,
+        3
     );
     indexer.stop().await;
 
@@ -726,6 +783,29 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
     })
     .await;
     assert_eq!(disputed_at, i64::try_from(at).unwrap());
+    let stream_id: i64 = sqlx::query_scalar("SELECT id FROM escrow_orders WHERE mode = 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let chat = forum_db::order_chat::after(&pool, stream_id, 0, 100)
+        .await
+        .unwrap();
+    let bodies: Vec<&str> = chat.iter().map(|m| m.body.as_str()).collect();
+    assert_eq!(
+        bodies,
+        [
+            "买家已付款，资金已托管，等待卖家发货",
+            "卖家已开始服务，按周期解锁",
+            "买家发起争议，进入举证期"
+        ]
+    );
+    // 回滚：订单 2 的聊天先记下分叉上的付款，再记撤销与主链上的重新付款，链照样完整。
+    let chat = forum_db::order_chat::after(&pool, o2.id, 0, 100)
+        .await
+        .unwrap();
+    assert!(chat.len() >= 2, "{chat:?}");
+    assert!(chat.iter().any(|m| m.body.contains("回滚")));
+    assert_eq!(forum_core::chat::verify(&chat).broken_at, None);
 
     // ── 阶段 3：再出 100 块，全部事件与订单升级为 finalized，并各发一条确认通知。
     let _: Value = w.rpc("anvil_mine", serde_json::json!(["0x64"])).await;

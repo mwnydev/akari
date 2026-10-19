@@ -1,5 +1,6 @@
 //! 把链上数据写进数据库：执行校对计划、写入 WebSocket 即时日志、升级确认级别，并在订单变化时写发件箱、
-//! 同步生成订单的报价卡片（成交次数用完即已付款）、终态最终确认后给买卖双方发免费代付提币次数。
+//! 同步生成订单的报价卡片（成交次数用完即已付款），并把状态变化写进订单聊天与私信（见 [`crate::chat`]）；
+//! 终态最终确认后给买卖双方发免费代付提币次数。
 //!
 //! 所有写入都由一个任务串行执行（见 [`crate::run`]），并且同一条链只允许一个 indexer 进程（会话级咨询锁）。
 //! 因此读库、调 RPC、再开事务写库之间不会有别的写入者插进来。
@@ -18,6 +19,8 @@ use forum_db::credits;
 use forum_db::{PgPool, Postgres, Transaction, outbox};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
+
+use crate::chat;
 
 /// 发件箱消息类型：订单状态（含确认级别）每次变化一条。
 pub const ORDER_UPDATED: &str = "order.updated";
@@ -391,12 +394,37 @@ impl Engine {
                 })
                 .collect::<Result<Vec<_>, IndexerError>>()?;
             let view = order::fold(market, db_u64(*order_id)?, &logs)?;
-            let result = match &view {
-                Some(v) => db::upsert_order(&mut **tx, &self.row(contract, v)?).await?,
-                None => db::clear_order(&mut **tx, self.chain_id, contract, *order_id).await?,
+            let prev = db::chat_brief(&mut **tx, self.chain_id, contract, *order_id).await?;
+            let (result, now) = match &view {
+                Some(v) => {
+                    let row = self.row(contract, v)?;
+                    let now = db::ChatBrief {
+                        state: row.state,
+                        buyer: row.buyer.clone(),
+                        instant: row.instant,
+                        confirm_deadline: row.confirm_deadline,
+                        started_at: row.started_at,
+                        proposer: row.proposer.clone(),
+                        proposal_to_buyer: row.proposal_to_buyer.clone(),
+                        disputed_by: row.disputed_by.clone(),
+                    };
+                    (db::upsert_order(&mut **tx, &row).await?, now)
+                }
+                None => (
+                    db::clear_order(&mut **tx, self.chain_id, contract, *order_id).await?,
+                    db::ChatBrief {
+                        state: 0,
+                        ..prev.clone().unwrap_or_default()
+                    },
+                ),
             };
             let Some(row) = result else { continue };
             changed += 1;
+            let fills =
+                db::sync_offer_fills(&mut **tx, self.chain_id, contract, &row.offer_hash).await?;
+            // 先写卡片「已付款」再关联谈判记录，证据截止到付款那一刻（含这张卡片）。
+            chat::record_offer_fills(tx, &fills).await?;
+            chat::record_order(tx, row.id, prev.as_ref(), &now, *cause).await?;
             // 终态且最终确认：买卖双方各得 1 次免费代付提币（每单每人一次，重放不重复）。
             if view
                 .as_ref()
@@ -404,7 +432,6 @@ impl Engine {
             {
                 credits::award_order(&mut **tx, row.id).await?;
             }
-            db::sync_offer_fills(&mut **tx, self.chain_id, contract, &row.offer_hash).await?;
             let payload = json!({
                 "id": row.id,
                 "chain_id": self.chain_id,

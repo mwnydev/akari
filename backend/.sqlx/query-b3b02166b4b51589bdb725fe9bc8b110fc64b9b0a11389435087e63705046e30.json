@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT last_read_id FROM notification_reads WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_read_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "notification_reads",
+            "name": "last_read_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b3b02166b4b51589bdb725fe9bc8b110fc64b9b0a11389435087e63705046e30"
+}

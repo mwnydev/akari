@@ -70,11 +70,14 @@ async fn seed_orders(db: &PgPool, a: i64, b: i64, count: i32, offer_hash: &[u8])
 }
 
 async fn insert_offer(db: &PgPool, seller: i64, buyer: i64, offer_hash: &[u8]) -> i64 {
+    let (conversation, _) = forum_db::messages::get_or_create(db, seller, buyer)
+        .await
+        .unwrap();
     sqlx::query_scalar(
         "INSERT INTO offers (conversation_id, seller_id, buyer_id, chain_id, verifying_contract, seller, buyer, token,
            amount, fee_payer, max_fee_bps, max_base_gas, max_min_fee, bond, late_slash_bps, instant, ship_window,
            confirm_window, listing_hash, expiry, max_fills, nonce, signature, offer_hash, status, expires_at)
-         VALUES (1, $1, $2, $3, $4, decode(repeat('c1', 20), 'hex'), decode(repeat('b1', 20), 'hex'),
+         VALUES ($6, $1, $2, $3, $4, decode(repeat('c1', 20), 'hex'), decode(repeat('b1', 20), 'hex'),
            decode(repeat('33', 20), 'hex'), 5000000, 0, 100, 100000, 1000000, 0, 0, false, 86400, 86400,
            decode(repeat('ab', 32), 'hex'), 1800000000, 1, 1, '\\x01', $5, 'paid', now() + interval '1 day')
          RETURNING id",
@@ -84,6 +87,7 @@ async fn insert_offer(db: &PgPool, seller: i64, buyer: i64, offer_hash: &[u8]) -
     .bind(i64::try_from(CHAIN_ID).unwrap())
     .bind(ESCROW.as_slice())
     .bind(offer_hash)
+    .bind(conversation.id)
     .fetch_one(db)
     .await
     .unwrap()

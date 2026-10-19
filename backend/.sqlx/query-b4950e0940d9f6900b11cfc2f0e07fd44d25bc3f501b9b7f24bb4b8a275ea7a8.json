@@ -1,0 +1,109 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT state, buyer, instant, confirm_deadline, started_at, proposer,\n                  proposal_to_buyer::text AS \"proposal_to_buyer?\", disputed_by\n           FROM escrow_orders WHERE chain_id = $1 AND contract = $2 AND chain_order_id = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "buyer",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "buyer"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "instant",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "instant"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "confirm_deadline",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "confirm_deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "proposer",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "proposer"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "proposal_to_buyer?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "disputed_by",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "escrow_orders",
+            "name": "disputed_by"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      true
+    ]
+  },
+  "hash": "b4950e0940d9f6900b11cfc2f0e07fd44d25bc3f501b9b7f24bb4b8a275ea7a8"
+}

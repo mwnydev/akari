@@ -65,6 +65,9 @@ pub struct OrderRow {
     pub offer_id: Option<i64>,
     pub listing_id: Option<i64>,
     pub listing_topic_id: Option<i64>,
+    /// 私信报价生成的订单：谈判会话与付款上链时的最后一条消息（仲裁证据）。
+    pub negotiation_conversation_id: Option<i64>,
+    pub negotiation_last_message_id: Option<i64>,
 }
 
 /// 我作为买家或卖家的订单，`before` 之前（不含）的一页 ID，新的在前。
@@ -112,5 +115,63 @@ pub async fn id_by_offer(
         user_id
     )
     .fetch_optional(db)
+    .await
+}
+
+/// `Escrow.State` 里进行中的两种状态。
+pub const STATE_FUNDED: i16 = 1;
+pub const STATE_DISPUTED: i16 = 2;
+
+/// 订单的参与方（聊天与推送的权限判断）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Parties {
+    pub id: i64,
+    pub buyer_id: Option<i64>,
+    pub seller_id: Option<i64>,
+    pub state: i16,
+}
+
+impl Parties {
+    pub fn is_party(&self, user_id: i64) -> bool {
+        self.buyer_id == Some(user_id) || self.seller_id == Some(user_id)
+    }
+
+    /// 本站用户的买卖双方。
+    pub fn users(&self) -> Vec<i64> {
+        self.buyer_id.into_iter().chain(self.seller_id).collect()
+    }
+
+    /// 进行中（已付款或争议中）。
+    pub fn open(&self) -> bool {
+        matches!(self.state, STATE_FUNDED | STATE_DISPUTED)
+    }
+}
+
+pub async fn parties(db: impl PgExecutor<'_>, id: i64) -> Result<Option<Parties>, sqlx::Error> {
+    sqlx::query_as!(
+        Parties,
+        "SELECT id, buyer_id, seller_id, state FROM escrow_orders WHERE id = $1",
+        id
+    )
+    .fetch_optional(db)
+    .await
+}
+
+/// `ids` 里与 `viewer` 有进行中订单的人（隐身用户对交易对手仍显示真实在线状态）。
+pub async fn open_counterparties(
+    db: impl PgExecutor<'_>,
+    viewer: i64,
+    ids: &[i64],
+) -> Result<Vec<i64>, sqlx::Error> {
+    sqlx::query_scalar!(
+        r#"SELECT seller_id AS "id!" FROM escrow_orders
+           WHERE buyer_id = $1 AND seller_id = ANY($2::bigint[]) AND state IN (1, 2)
+           UNION
+           SELECT buyer_id FROM escrow_orders
+           WHERE seller_id = $1 AND buyer_id = ANY($2::bigint[]) AND state IN (1, 2)"#,
+        viewer,
+        ids
+    )
+    .fetch_all(db)
     .await
 }

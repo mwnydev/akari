@@ -28,6 +28,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+forum-core.workspace = true
 alloy = { workspace = true, features = ["signer-local"] }
 forum-chain = { workspace = true, features = ["anvil"] }
 serde.workspace = true

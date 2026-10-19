@@ -1,4 +1,5 @@
-//! forum-worker：后台任务：发件箱投递、浏览数回写、报价卡片过期；之后接入 apalis 队列（通知、超时处理、发薪）与图片转换。
+//! forum-worker：后台任务：发件箱投递（邮件、站内通知、实时推送）、浏览数回写、报价卡片过期、通知分区维护；
+//! 之后接入 apalis 队列（超时处理、发薪）与图片转换。
 
 use std::time::Duration;
 
@@ -26,7 +27,9 @@ async fn main() -> anyhow::Result<()> {
     let shutdown = forum_runtime::shutdown_token();
 
     let db = forum_db::connect(&env("DATABASE_URL")?, 10).await?;
-    let cache = forum_kv::ForumCache::new(forum_kv::pool(&env("VALKEY_URL")?)?, "");
+    let kv = forum_kv::pool(&env("VALKEY_URL")?)?;
+    let cache = forum_kv::ForumCache::new(kv.clone(), "");
+    let realtime = forum_kv::Realtime::new(kv, "");
     let from = env("MAIL_FROM")?;
     // 主备通道可在配置里一键互换（plan 第 9 节）：MAIL_PRIMARY=resend MAIL_BACKUP=smtp。
     let primary = build_mailer(
@@ -42,8 +45,9 @@ async fn main() -> anyhow::Result<()> {
 
     let views = tokio::spawn(view_flusher(db.clone(), cache, shutdown.clone()));
     let offers = tokio::spawn(offer_expirer(db.clone(), shutdown.clone()));
+    let partitions = tokio::spawn(partition_keeper(db.clone(), shutdown.clone()));
     loop {
-        match forum_worker::drain_once(&db, &mailer).await {
+        match forum_worker::drain_once(&db, &mailer, Some(&realtime)).await {
             // 本批满了说明还有积压，立刻继续。
             Ok(n) if n >= forum_worker::BATCH => continue,
             Ok(_) => {}
@@ -59,6 +63,9 @@ async fn main() -> anyhow::Result<()> {
     }
     if let Err(e) = offers.await {
         tracing::error!(error = %e, "offer expirer panicked");
+    }
+    if let Err(e) = partitions.await {
+        tracing::error!(error = %e, "partition keeper panicked");
     }
     tracing::info!("forum-worker stopped");
     Ok(())
@@ -97,6 +104,24 @@ async fn offer_expirer(db: forum_db::PgPool, shutdown: tokio_util::sync::Cancell
             Ok(0) => {}
             Ok(n) => tracing::info!(count = n, "offers expired"),
             Err(e) => tracing::error!(error = %e, "offer expiry failed"),
+        }
+    }
+}
+
+/// 启动时与之后每天维护一次通知分区。
+async fn partition_keeper(db: forum_db::PgPool, shutdown: tokio_util::sync::CancellationToken) {
+    let mut tick = tokio::time::interval(forum_worker::PARTITION_INTERVAL);
+    loop {
+        tokio::select! {
+            () = shutdown.cancelled() => break,
+            _ = tick.tick() => {}
+        }
+        match forum_db::notifications::maintain_partitions(&db).await {
+            Ok((created, dropped)) if created.is_empty() && dropped.is_empty() => {}
+            Ok((created, dropped)) => {
+                tracing::info!(?created, ?dropped, "notification partitions maintained")
+            }
+            Err(e) => tracing::error!(error = %e, "notification partition maintenance failed"),
         }
     }
 }

@@ -27,6 +27,7 @@ use utoipa::ToSchema;
 
 use super::forums::{NewTopicRequest, prepare_topic};
 use super::me::current_user_id;
+use super::messages;
 use crate::access::Viewer;
 use crate::error::{ApiError, ApiResult, ErrorBody};
 use crate::state::AppState;
@@ -42,6 +43,11 @@ const DEFAULT_PRIVATE_TTL: u64 = 86_400;
 /// 签名最大字节数：ERC-6492 包装（工厂地址 + initCode + 内层签名）也远小于此。
 const MAX_SIGNATURE_BYTES: usize = 4096;
 const MAX_REASON_CHARS: usize = 200;
+/// 会话里报价卡片消息的事件（`messages.body`）；`paid` / `payment_reverted` 由 forum-indexer 写入。
+const CARD_CREATED: &str = "created";
+const CARD_MODIFIED: &str = "modified";
+const CARD_REJECTED: &str = "rejected";
+const CARD_CANCELLED: &str = "cancelled";
 
 fn fee_payer_of(code: u8) -> ApiResult<FeePayer> {
     Ok(match code {
@@ -562,6 +568,17 @@ pub async fn create_offer(
         }
     };
 
+    // 私信报价：会话必须正好是卖家与指定买家两人的。
+    if let Some(conversation_id) = req.conversation_id {
+        let c = forum_db::messages::conversation(&state.db, conversation_id)
+            .await?
+            .filter(|c| c.is_member(user_id))
+            .ok_or(ApiError(ErrorCode::NotFound))?;
+        if buyer_id != Some(c.peer(user_id)) {
+            return Err(ApiError(ErrorCode::InvalidParameter));
+        }
+    }
+
     let offer_hash = o.hash(&domain);
     let (amount, max_base_gas, max_min_fee, bond, nonce) = (
         o.amount.to_string(),
@@ -621,7 +638,16 @@ pub async fn create_offer(
     let row = db::offer(&mut *tx, id)
         .await?
         .ok_or_else(|| ApiError::internal("offer vanished after insert"))?;
+    let event = if req.replaces.is_some() {
+        CARD_MODIFIED
+    } else {
+        CARD_CREATED
+    };
+    let card = messages::offer_card(&mut tx, &row, event, user_id).await?;
     tx.commit().await?;
+    if let Some((c, msg)) = card {
+        messages::push(&state, &c, &msg).await;
+    }
     Ok((StatusCode::CREATED, Json(OfferView::of(&row)?)))
 }
 
@@ -722,9 +748,15 @@ pub async fn reject_offer(
     if reason.is_some_and(|r| r.chars().count() > MAX_REASON_CHARS) {
         return Err(ApiError(ErrorCode::InvalidParameter));
     }
-    transition(&state, &session, id, OfferStatus::Rejected, reason, |row| {
-        row.buyer_id == Some(user_id)
-    })
+    transition(
+        &state,
+        &session,
+        id,
+        user_id,
+        OfferStatus::Rejected,
+        reason,
+        |row| row.buyer_id == Some(user_id),
+    )
     .await
 }
 
@@ -745,17 +777,24 @@ pub async fn cancel_offer(
     Path(id): Path<i64>,
 ) -> ApiResult<Json<OfferView>> {
     let user_id = current_user_id(&session).await?;
-    transition(&state, &session, id, OfferStatus::Cancelled, None, |row| {
-        row.seller_id == user_id
-    })
+    transition(
+        &state,
+        &session,
+        id,
+        user_id,
+        OfferStatus::Cancelled,
+        None,
+        |row| row.seller_id == user_id,
+    )
     .await
 }
 
-/// 关闭一张待确认卡片：`allowed` 判断当前用户能否这样做。
+/// 关闭一张待确认卡片（拒绝或取消）：`allowed` 判断当前用户 `actor` 能否这样做。私信报价同时在会话里写一张卡片消息。
 async fn transition(
     state: &AppState,
     session: &Session,
     id: i64,
+    actor: i64,
     to: OfferStatus,
     reason: Option<&str>,
     allowed: impl FnOnce(&OfferRow) -> bool,
@@ -764,12 +803,23 @@ async fn transition(
     if !allowed(&row) {
         return Err(ApiError(ErrorCode::Forbidden));
     }
-    if !db::close_offer(&state.db, id, to, reason).await? {
+    let mut tx = state.db.begin().await?;
+    if !db::close_offer(&mut *tx, id, to, reason).await? {
         return Err(ApiError(ErrorCode::OfferUnavailable));
     }
-    let row = db::offer(&state.db, id)
+    let row = db::offer(&mut *tx, id)
         .await?
         .ok_or(ApiError(ErrorCode::NotFound))?;
+    let event = if to == OfferStatus::Rejected {
+        CARD_REJECTED
+    } else {
+        CARD_CANCELLED
+    };
+    let card = messages::offer_card(&mut tx, &row, event, actor).await?;
+    tx.commit().await?;
+    if let Some((c, msg)) = card {
+        messages::push(state, &c, &msg).await;
+    }
     Ok(Json(OfferView::of(&row)?))
 }
 

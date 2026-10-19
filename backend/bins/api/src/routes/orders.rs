@@ -136,6 +136,13 @@ pub struct OrderSource {
     pub auction_id: Option<String>,
 }
 
+/// 私信报价生成的订单：谈判会话与付款上链时的最后一条消息（`GET /api/v1/orders/{id}/negotiation` 读取）。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct NegotiationRef {
+    pub conversation_id: i64,
+    pub last_message_id: i64,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct OrderView {
     pub id: i64,
@@ -161,6 +168,8 @@ pub struct OrderView {
     pub ruling: Option<RulingView>,
     pub settlement: Option<SettlementView>,
     pub source: OrderSource,
+    /// 建单前的私信谈判记录（仲裁证据）。
+    pub negotiation: Option<NegotiationRef>,
     pub created_block: i64,
     pub updated_block: i64,
     #[schema(value_type = String, format = DateTime)]
@@ -255,6 +264,13 @@ impl OrderView {
                 listing_topic_id: r.listing_topic_id,
                 auction_id: r.auction_id,
             },
+            negotiation: r
+                .negotiation_conversation_id
+                .zip(r.negotiation_last_message_id)
+                .map(|(conversation_id, last_message_id)| NegotiationRef {
+                    conversation_id,
+                    last_message_id,
+                }),
             created_block: r.created_block,
             updated_block: r.updated_block,
             created_at: r.created_at,

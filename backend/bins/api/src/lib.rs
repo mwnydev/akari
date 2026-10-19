@@ -1,10 +1,11 @@
-//! forum-api：论坛 HTTP API 与 WebSocket。
+//! forum-api：论坛 HTTP API 与 WebSocket（`GET /api/v1/ws`，协议见 [`routes::ws`]）。
 
 pub mod access;
 pub mod config;
 pub mod error;
 pub mod middleware;
 pub mod posting;
+pub mod realtime;
 pub mod routes;
 pub mod state;
 pub mod views;
@@ -82,6 +83,20 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::orders::list))
         .routes(routes!(routes::orders::get))
         .routes(routes!(routes::orders::by_offer))
+        .routes(routes!(routes::order_chat::list, routes::order_chat::send))
+        .routes(routes!(routes::order_chat::read))
+        .routes(routes!(routes::order_chat::verify))
+        .routes(routes!(routes::order_chat::negotiation))
+        .routes(routes!(routes::messages::list, routes::messages::open))
+        .routes(routes!(routes::messages::get))
+        .routes(routes!(routes::messages::messages, routes::messages::send))
+        .routes(routes!(routes::messages::read))
+        .routes(routes!(routes::messages::block, routes::messages::unblock))
+        .routes(routes!(routes::presence::presence))
+        .routes(routes!(routes::notifications::list))
+        .routes(routes!(routes::notifications::read))
+        .routes(routes!(routes::notifications::unread))
+        .routes(routes!(routes::ws::connect))
         .split_for_parts()
 }
 

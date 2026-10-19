@@ -21,6 +21,7 @@ forum-content = { path = "crates/content" }
 
 tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "signal", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 axum = "=0.8.9"
 tower-http = { version = "=0.7.1", features = ["trace", "timeout", "compression-gzip", "cors"] }
 serde = { version = "=1.0.229", features = ["derive"] }

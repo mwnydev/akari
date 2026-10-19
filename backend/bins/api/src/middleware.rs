@@ -4,7 +4,7 @@ use std::net::{IpAddr, SocketAddr};
 
 use axum::extract::{ConnectInfo, FromRequestParts, Request, State};
 use axum::http::request::Parts;
-use axum::http::{Method, header};
+use axum::http::{HeaderMap, Method, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use forum_core::ErrorCode;
@@ -12,24 +12,25 @@ use forum_core::ErrorCode;
 use crate::error::ApiError;
 use crate::state::AppState;
 
+/// `Origin` 在白名单内（论坛页面与钱包页面来源）；缺失为否。
+pub fn origin_allowed(state: &AppState, headers: &HeaderMap) -> bool {
+    headers
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|o| {
+            state
+                .allowed_origins
+                .iter()
+                .chain(&state.wallet.origins)
+                .any(|a| a == o)
+        })
+}
+
 /// 非安全方法必须带白名单内的 `Origin`（含钱包页面来源）；缺失也拒绝。
 pub async fn require_origin(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let safe = matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
-    if !safe {
-        let ok = req
-            .headers()
-            .get(header::ORIGIN)
-            .and_then(|v| v.to_str().ok())
-            .is_some_and(|o| {
-                state
-                    .allowed_origins
-                    .iter()
-                    .chain(&state.wallet.origins)
-                    .any(|a| a == o)
-            });
-        if !ok {
-            return ApiError(ErrorCode::OriginRejected).into_response();
-        }
+    if !safe && !origin_allowed(&state, req.headers()) {
+        return ApiError(ErrorCode::OriginRejected).into_response();
     }
     next.run(req).await
 }

@@ -4,6 +4,7 @@
 //! 处理区块回滚，每隔几轮按 RPC 的 safe / finalized 标记升级确认级别。订单每次变化写一条
 //! `order.updated` 发件箱消息，由 worker 投递。
 
+pub mod chat;
 pub mod engine;
 pub mod rpc;
 pub mod ws;

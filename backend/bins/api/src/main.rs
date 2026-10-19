@@ -5,11 +5,13 @@ use std::sync::Arc;
 
 use axum_extra::extract::cookie::Key;
 use forum_api::config::Config;
+use forum_api::realtime::Hub;
 use forum_api::routes::aa::SponsorProxy;
 use forum_api::wallet::{AddressVerifier, ChainAddressVerifier, NoChainVerifier, WalletState};
 use forum_api::{AppState, app};
 use forum_auth::passkey::{UserHandles, wallet_webauthn, webauthn::Url};
 use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha, Turnstile};
+use forum_kv::Realtime;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -77,7 +79,10 @@ async fn main() -> anyhow::Result<()> {
         cache: forum_kv::ForumCache::new(kv.clone(), ""),
         internal_hosts: Arc::from(cfg.internal_hosts.clone()),
         wallet: Arc::new(wallet),
+        hub: Hub::new(Realtime::new(kv.clone(), ""), cfg.valkey_url.clone()),
     };
+    // 两个实例都订阅同一个广播频道；订阅断线自动重连。
+    state.hub.spawn();
 
     let addr: SocketAddr = cfg.listen.parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;

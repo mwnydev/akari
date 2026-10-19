@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT seller_id AS \"id!\" FROM escrow_orders\n           WHERE buyer_id = $1 AND seller_id = ANY($2::bigint[]) AND state IN (1, 2)\n           UNION\n           SELECT buyer_id FROM escrow_orders\n           WHERE seller_id = $1 AND buyer_id = ANY($2::bigint[]) AND state IN (1, 2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e134e635c212c03475e40adb247121e0e7411c918d0ecb315b20adfc4c9b9dc0"
+}

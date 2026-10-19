@@ -9,7 +9,9 @@ publish.workspace = true
 [dependencies]
 async-trait.workspace = true
 deadpool-redis.workspace = true
+futures-util.workspace = true
 redis.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 time.workspace = true

@@ -96,6 +96,8 @@ pub enum ErrorCode {
     WithdrawCreditRequired,
     #[error("chain read unavailable")]
     ChainUnavailable,
+    #[error("blocked")]
+    UserBlocked,
     #[error("internal error")]
     Internal,
 }
@@ -150,6 +152,7 @@ impl ErrorCode {
                 "免费代付提币次数已用完：完成一笔担保交易后可再获得 1 次；也可在「紧急取回」页自付 ETH 提取"
             }
             Self::ChainUnavailable => "暂时无法读取链上数据，请稍后再试",
+            Self::UserBlocked => "你已屏蔽对方或被对方屏蔽，无法发送私信",
             Self::Internal => "服务暂时不可用，请稍后再试",
         }
     }

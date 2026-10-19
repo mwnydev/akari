@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE conversations SET\n             low_read_id = CASE WHEN user_low = $2 THEN least($3, last_message_id) ELSE low_read_id END,\n             high_read_id = CASE WHEN user_high = $2 THEN least($3, last_message_id) ELSE high_read_id END\n           WHERE id = $1 AND (user_low = $2 OR user_high = $2) AND last_message_id IS NOT NULL\n             AND least($3, last_message_id) > CASE WHEN user_low = $2 THEN low_read_id ELSE high_read_id END\n           RETURNING CASE WHEN user_low = $2 THEN low_read_id ELSE high_read_id END AS \"read_id!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "read_id!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2f5f92b5034822213f7fb6b26dac36f2e99b7ffb5fd5754144858f89e6261527"
+}

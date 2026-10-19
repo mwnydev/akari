@@ -17,7 +17,7 @@ path = "src/main.rs"
 alloy.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
-axum.workspace = true
+axum = { workspace = true, features = ["ws"] }
 axum-extra.workspace = true
 forum-auth.workspace = true
 forum-chain.workspace = true
@@ -26,6 +26,7 @@ forum-core = { workspace = true, features = ["openapi"] }
 forum-db.workspace = true
 forum-kv.workspace = true
 forum-runtime.workspace = true
+futures-util = { workspace = true, features = ["sink"] }
 hex.workspace = true
 rand.workspace = true
 reqwest.workspace = true
@@ -35,7 +36,7 @@ sha2.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 time.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
 tower.workspace = true
 tower-http.workspace = true
 tower-sessions.workspace = true
@@ -44,6 +45,7 @@ utoipa.workspace = true
 utoipa-axum.workspace = true
 
 [dev-dependencies]
+tokio-tungstenite = "0.29"
 forum-chain = { workspace = true, features = ["anvil"] }
 webauthn-authenticator-rs.workspace = true
 redis.workspace = true

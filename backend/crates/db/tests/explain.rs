@@ -22,6 +22,9 @@ const BIG_TABLES: &[&str] = &[
     "outbox",
     "offers",
     "escrow_orders",
+    "conversations",
+    "messages",
+    "order_messages",
 ];
 
 #[derive(Debug, Default)]
@@ -61,10 +64,18 @@ async fn explain(db: &PgPool, q: Query<'_, Postgres, PgArguments>) -> (PlanInfo,
 /// 断言：大表无顺序扫描，并且用到了 `expect_index`。
 async fn check(db: &PgPool, name: &str, q: Query<'_, Postgres, PgArguments>, expect_index: &str) {
     let (info, plan) = explain(db, q).await;
+    // 有数据的通知月分区同样不能顺序扫描（未来月份的空分区扫一下没有代价）。
+    let partitions: Vec<String> = sqlx::query_scalar(
+        "SELECT c.relname::text FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid
+         WHERE i.inhparent = 'notifications'::regclass AND c.reltuples > 0",
+    )
+    .fetch_all(db)
+    .await
+    .unwrap();
     let bad: Vec<&String> = info
         .seq_scans
         .iter()
-        .filter(|r| BIG_TABLES.contains(&r.as_str()))
+        .filter(|r| BIG_TABLES.contains(&r.as_str()) || partitions.contains(r))
         .collect();
     assert!(bad.is_empty(), "{name}: seq scan on {bad:?}\n{plan:#}");
     assert!(
@@ -95,6 +106,15 @@ async fn seed(db: &PgPool) {
         INSERT INTO post_sources (post_id, source) SELECT id, '{}'::jsonb FROM posts;
         INSERT INTO post_edits (post_id, editor_id, html, source)
         SELECT 1 + g % 5000, 1, '<p>old</p>', '{}'::jsonb FROM generate_series(1, 20000) g;
+        -- 2000 个私信会话（用户 1–400 各与 5 个人），20 万条消息；会话的最后一条与已读位置按消息回填
+        INSERT INTO conversations (user_low, user_high)
+        SELECT 1 + (g - 1) % 400, 401 + ((g - 1) / 400) * 100 + (g - 1) % 100 FROM generate_series(1, 2000) g;
+        INSERT INTO messages (conversation_id, sender_id, kind, body)
+        SELECT c.id, CASE WHEN g % 2 = 0 THEN c.user_low ELSE c.user_high END, 'text', 'message ' || g
+        FROM generate_series(1, 200000) g JOIN conversations c ON c.id = 1 + g % 2000;
+        UPDATE conversations c SET last_message_id = m.last, low_read_id = m.last - 500, high_read_id = m.last
+        FROM (SELECT conversation_id, max(id) AS last FROM messages GROUP BY conversation_id) m
+        WHERE m.conversation_id = c.id;
         -- 2 万张报价卡片：一半挂在 200 个交易帖下、一半在 2000 个私信会话里；5% 待确认
         INSERT INTO trade_listings (topic_id, seller_id, chain_id, price, terms, content_hash)
         SELECT g, g, 421614, 5000000, '{}'::jsonb, decode(repeat('ab', 32), 'hex') FROM generate_series(1, 200) g;
@@ -120,6 +140,15 @@ async fn seed(db: &PgPool) {
                decode(repeat('c1', 20), 'hex'), 1 + g % 1000, 1 + (g + 7) % 1000, decode(repeat('33', 20), 'hex'),
                5000000, false, sha256(int4send(g)), decode(repeat('ab', 32), 'hex'), 1 + g % 5, 'finalized', g, g
         FROM generate_series(1, 20000) g;
+        -- 订单聊天：每单 3 条（哈希只需满足长度与唯一约束）
+        INSERT INTO order_messages (order_id, sender_id, kind, body, prev_hash, hash, created_at)
+        SELECT 1 + g % 20000, NULL, 'system', 'm' || g, sha256(int8send(g)), sha256(int8send(-g)), now()
+        FROM generate_series(1, 60000) g;
+        -- 通知：再建两个月前的分区，20 万条分给 1000 个用户、分布在最近 60 天
+        SELECT notifications_maintain(now() - interval '2 months');
+        INSERT INTO notifications (user_id, kind, payload, created_at)
+        SELECT 1 + g % 1000, 'reply', '{}'::jsonb, now() - ((g % 60) || ' days')::interval
+        FROM generate_series(1, 200000) g;
         ANALYZE;
         ",
     )
@@ -372,6 +401,96 @@ async fn hot_queries_use_indexes(db: PgPool) {
         )
         .await;
     }
+
+    let sql = q!("conversations_list.sql");
+    for index in [
+        "conversations_low_list",
+        "conversations_high_list",
+        "messages_pkey",
+        "messages_conversation",
+    ] {
+        check(
+            &db,
+            "conversations_list",
+            sqlx::query(sql).bind(7_i64).bind(i64::MAX).bind(20_i64),
+            index,
+        )
+        .await;
+    }
+
+    let sql = q!("messages_before.sql");
+    check(
+        &db,
+        "messages_before",
+        sqlx::query(sql).bind(77_i64).bind(i64::MAX).bind(51_i64),
+        "messages_conversation",
+    )
+    .await;
+    let sql = q!("messages_after.sql");
+    check(
+        &db,
+        "messages_after",
+        sqlx::query(sql).bind(77_i64).bind(1000_i64).bind(51_i64),
+        "messages_conversation",
+    )
+    .await;
+
+    let sql = q!("order_messages_before.sql");
+    check(
+        &db,
+        "order_messages_before",
+        sqlx::query(sql).bind(77_i64).bind(i64::MAX).bind(51_i64),
+        "order_messages_order",
+    )
+    .await;
+    let sql = q!("order_messages_after.sql");
+    check(
+        &db,
+        "order_messages_after",
+        sqlx::query(sql).bind(77_i64).bind(0_i64).bind(1000_i64),
+        "order_messages_order",
+    )
+    .await;
+
+    // 每个分区上的 (user_id, id DESC) 索引；本月分区的索引名
+    let notif_index: String = sqlx::query_scalar(
+        "SELECT 'notifications_' || to_char(now() AT TIME ZONE 'UTC', 'YYYYMM') || '_user_id_id_idx'",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    let sql = q!("notifications_before.sql");
+    check(
+        &db,
+        "notifications_before",
+        sqlx::query(sql)
+            .bind(7_i64)
+            .bind(i64::MAX)
+            .bind(20_i64)
+            .bind(0_i64),
+        &notif_index,
+    )
+    .await;
+    let sql = q!("notifications_after.sql");
+    check(
+        &db,
+        "notifications_after",
+        sqlx::query(sql)
+            .bind(7_i64)
+            .bind(100_000_i64)
+            .bind(20_i64)
+            .bind(0_i64),
+        &notif_index,
+    )
+    .await;
+    let sql = q!("notifications_unread.sql");
+    check(
+        &db,
+        "notifications_unread",
+        sqlx::query(sql).bind(7_i64).bind(150_000_i64).bind(100_i64),
+        &notif_index,
+    )
+    .await;
 
     let sql = q!("post_edit_save.sql");
     check(

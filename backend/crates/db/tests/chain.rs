@@ -233,13 +233,21 @@ async fn offer_paid_follows_order_fills(pool: PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
+    let buyer: i64 =
+        sqlx::query_scalar("INSERT INTO users (email) VALUES ('b@example.com') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let (conversation, _) = forum_db::messages::get_or_create(&pool, seller, buyer)
+        .await
+        .unwrap();
     let offer_hash = [7u8; 32];
     // 可成交 2 次的报价。
     let twice: i64 = sqlx::query_scalar(
             "INSERT INTO offers (conversation_id, seller_id, chain_id, verifying_contract, seller, buyer, token,
                amount, fee_payer, max_fee_bps, max_base_gas, max_min_fee, bond, late_slash_bps, instant, ship_window,
                confirm_window, listing_hash, expiry, max_fills, nonce, signature, offer_hash, expires_at)
-             VALUES (1, $1, $2, $3, $4, $4, $4, 5000000, 0, 100, 100000, 1000000, 0, 0, false, 86400, 86400,
+             VALUES ($7, $1, $2, $3, $4, $4, $4, 5000000, 0, 100, 100000, 1000000, 0, 0, false, 86400, 86400,
                $5, 1800000000, 2, 1, '\\x01', $6, now() + interval '1 day')
          RETURNING id",
     )
@@ -249,6 +257,7 @@ async fn offer_paid_follows_order_fills(pool: PgPool) {
     .bind([0u8; 20].as_slice())
     .bind([2u8; 32].as_slice())
     .bind(offer_hash.as_slice())
+    .bind(conversation.id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -282,18 +291,30 @@ async fn offer_paid_follows_order_fills(pool: PgPool) {
 
     chain::upsert_order(&pool, &order(1)).await.unwrap();
     assert!(
-        !sync().await.unwrap(),
+        sync().await.unwrap().is_empty(),
         "one of two fills used: still pending"
     );
     assert_eq!(status(twice).await, "pending");
     chain::upsert_order(&pool, &order(2)).await.unwrap();
-    assert!(sync().await.unwrap());
+    let changed = sync().await.unwrap();
+    assert_eq!(changed.len(), 1);
+    assert_eq!(
+        (changed[0].id, changed[0].conversation_id, changed[0].status),
+        (
+            twice,
+            Some(conversation.id),
+            forum_db::trade::OfferStatus::Paid
+        )
+    );
     assert_eq!(status(twice).await, "paid");
-    assert!(!sync().await.unwrap(), "already paid: no rewrite");
+    assert!(sync().await.unwrap().is_empty(), "already paid: no rewrite");
 
     // 回滚撤销第 2 单：恢复为待确认。
     chain::clear_order(&pool, CHAIN, &ESCROW, 2).await.unwrap();
-    assert!(sync().await.unwrap());
+    assert_eq!(
+        sync().await.unwrap()[0].status,
+        forum_db::trade::OfferStatus::Pending
+    );
     assert_eq!(status(twice).await, "pending");
 
     // 另一份合约上同哈希的订单不算。
@@ -302,6 +323,6 @@ async fn offer_paid_follows_order_fills(pool: PgPool) {
         ..order(2)
     };
     chain::upsert_order(&pool, &other).await.unwrap();
-    assert!(!sync().await.unwrap());
+    assert!(sync().await.unwrap().is_empty());
     assert_eq!(status(twice).await, "pending");
 }

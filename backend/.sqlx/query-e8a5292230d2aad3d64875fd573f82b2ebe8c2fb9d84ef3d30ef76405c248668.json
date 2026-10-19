@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH head AS (\n             SELECT least($2, coalesce(max(id), 0)) AS id FROM notifications\n             WHERE user_id = $1 AND created_at > now() - interval '180 days'\n           ), up AS (\n             INSERT INTO notification_reads AS r (user_id, last_read_id)\n             SELECT $1, head.id FROM head\n             ON CONFLICT (user_id) DO UPDATE SET last_read_id = EXCLUDED.last_read_id, updated_at = now()\n               WHERE r.last_read_id < EXCLUDED.last_read_id\n             RETURNING last_read_id\n           )\n           SELECT coalesce((SELECT last_read_id FROM up),\n                           (SELECT last_read_id FROM notification_reads WHERE user_id = $1), 0) AS \"mark!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mark!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e8a5292230d2aad3d64875fd573f82b2ebe8c2fb9d84ef3d30ef76405c248668"
+}

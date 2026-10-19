@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, user_low, user_high, low_read_id, high_read_id, last_message_id, created_at\n         FROM conversations WHERE user_low = $1 AND user_high = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_low",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "user_low"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "user_high",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "user_high"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "low_read_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "low_read_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "high_read_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "high_read_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "last_message_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "last_message_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "conversations",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "ef4f63a6dedf44b8f16c696453896d9afd2ebeeb39102a7fa9fa647b01651d17"
+}

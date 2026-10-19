@@ -6,6 +6,7 @@ use forum_auth::{AnyCaptcha, CodeStore};
 use forum_db::PgPool;
 use forum_kv::{ForumCache, Pool};
 
+use crate::realtime::Hub;
 use crate::wallet::WalletState;
 
 #[derive(Clone)]
@@ -24,6 +25,8 @@ pub struct AppState {
     pub internal_hosts: Arc<[String]>,
     /// 钱包 Passkey、钱包地址与报价（plan 第 5–7 节）。
     pub wallet: Arc<WalletState>,
+    /// WebSocket 连接表与实时推送（plan 第 7 节）。
+    pub hub: Arc<Hub>,
 }
 
 impl FromRef<AppState> for Key {

@@ -34,9 +34,23 @@ fn withdraw_address_added_is_emailed_with_its_activation_time() {
     );
     assert_eq!(email.idempotency_key, "outbox-7");
 
+    // 站内提醒成为 `system` 通知，`event` 标明来源。
     let notice = Message {
         kind: "notify.withdraw_address_added".into(),
+        payload: json!({
+            "to": 3,
+            "withdraw_address_id": 5,
+            "address": "0x1111111111111111111111111111111111111111",
+            "active_at": "2026-10-20T08:00:00Z",
+        }),
         ..msg
     };
-    assert!(matches!(render(&notice).unwrap(), Delivery::InSite));
+    let Delivery::InSite(site) = render(&notice).unwrap() else {
+        panic!("expected an in-site notice");
+    };
+    assert_eq!(site.notifications.len(), 1);
+    let n = &site.notifications[0];
+    assert_eq!((n.user_id, n.kind, n.actor_id), (3, "system", None));
+    assert_eq!(n.payload["event"], "withdraw_address_added");
+    assert_eq!(n.payload["withdraw_address_id"], 5);
 }

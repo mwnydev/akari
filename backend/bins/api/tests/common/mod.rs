@@ -84,12 +84,17 @@ pub fn build(db: PgPool) -> Option<Router> {
 
 /// 同 [`build`]，但指定钱包状态（例如换成真实的链上地址校验，或接上假的 forum-sponsor）。
 pub fn build_with(db: PgPool, wallet: WalletState) -> Option<Router> {
+    state_with(db, wallet, &format!("test{}:", nanos())).map(router_of)
+}
+
+/// 应用状态；`ns` 是 Valkey 键与推送频道前缀，同一个 `ns` 的两个状态相当于同一部署里的两个 forum-api 实例。
+pub fn state_with(db: PgPool, wallet: WalletState, ns: &str) -> Option<AppState> {
     let Ok(url) = std::env::var("VALKEY_URL") else {
         eprintln!("VALKEY_URL not set, skipping valkey-backed test");
         return None;
     };
     let kv = forum_kv::pool(&url).unwrap();
-    let state = AppState {
+    Some(AppState {
         db,
         kv: kv.clone(),
         codes: CodeStore::new(kv.clone(), &SECRET).unwrap(),
@@ -97,12 +102,32 @@ pub fn build_with(db: PgPool, wallet: WalletState) -> Option<Router> {
         device_key: Key::from(&SECRET),
         allowed_origins: Arc::from(vec![ORIGIN.to_owned()]),
         cookie_secure: true,
-        cache: forum_kv::ForumCache::new(kv, format!("test{}:", nanos())),
+        cache: forum_kv::ForumCache::new(kv.clone(), ns),
         internal_hosts: Arc::from(vec!["forum.test".to_owned()]),
         wallet: Arc::new(wallet),
-    };
-    // 每个用例用不同的假 IP，避免 IP 限流互相影响
-    Some(app(state, &SECRET).layer(MockConnectInfo(SocketAddr::from((rand_ip(), 40000)))))
+        hub: forum_api::realtime::Hub::new(forum_kv::Realtime::new(kv, ns), url),
+    })
+}
+
+/// 进程内调用用的路由（假客户端 IP，每个用例不同，避免 IP 限流互相影响）。
+pub fn router_of(state: AppState) -> Router {
+    app(state, &SECRET).layer(MockConnectInfo(SocketAddr::from((rand_ip(), 40000))))
+}
+
+/// 新的 Valkey 前缀。
+pub fn namespace() -> String {
+    format!("test{}:", nanos())
+}
+
+/// 在本机端口上启动一个实例（含推送订阅），返回地址。
+pub async fn serve(state: AppState) -> SocketAddr {
+    state.hub.spawn();
+    state.hub.ready().await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let app = app(state, &SECRET).into_make_service_with_connect_info::<SocketAddr>();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    addr
 }
 
 pub fn rand_ip() -> [u8; 4] {

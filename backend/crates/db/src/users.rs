@@ -94,3 +94,36 @@ pub async fn cards(db: impl PgExecutor<'_>, ids: &[i64]) -> Result<Vec<Card>, sq
         .fetch_all(db)
         .await
 }
+
+/// 在线状态需要的资料：是否公开在线状态、最近活跃时间。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Visibility {
+    pub id: i64,
+    pub show_online: bool,
+    pub last_seen_at: Option<OffsetDateTime>,
+}
+
+pub async fn visibility(
+    db: impl PgExecutor<'_>,
+    ids: &[i64],
+) -> Result<Vec<Visibility>, sqlx::Error> {
+    sqlx::query_as!(
+        Visibility,
+        "SELECT id, show_online, last_seen_at FROM users WHERE id = ANY($1::bigint[])",
+        ids
+    )
+    .fetch_all(db)
+    .await
+}
+
+/// 记录最近活跃时间，一分钟内最多写一次。
+pub async fn touch_last_seen(db: impl PgExecutor<'_>, id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE users SET last_seen_at = now()
+         WHERE id = $1 AND (last_seen_at IS NULL OR last_seen_at < now() - interval '1 minute')",
+        id
+    )
+    .execute(db)
+    .await?;
+    Ok(())
+}

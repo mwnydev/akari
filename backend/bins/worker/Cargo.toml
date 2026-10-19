@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+forum-core.workspace = true
 forum-db.workspace = true
 forum-kv.workspace = true
 forum-mail.workspace = true
@@ -30,6 +31,7 @@ tracing.workspace = true
 [dev-dependencies]
 serde_json.workspace = true
 time.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
 
 [lints]
 workspace = true

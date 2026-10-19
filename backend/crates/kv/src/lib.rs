@@ -1,15 +1,17 @@
-//! Valkey：连接池、跨进程滑动窗口限流、会话存储、论坛缓存。
+//! Valkey：连接池、跨进程滑动窗口限流、会话存储、论坛缓存、实时推送（Pub/Sub 与在线状态）。
 //!
 //! Valkey 只放可丢的数据（会话、验证码、限流计数、缓存），关键任务放 PostgreSQL（plan 第 2 节）。
 
 pub mod ephemeral;
 pub mod forum_cache;
 pub mod ratelimit;
+pub mod realtime;
 pub mod session_store;
 
 pub use deadpool_redis::{Connection, Pool};
 pub use forum_cache::{BoardPage, ForumCache};
 pub use ratelimit::SlidingWindow;
+pub use realtime::Realtime;
 pub use session_store::ValkeySessionStore;
 
 #[derive(Debug, thiserror::Error)]
@@ -20,6 +22,8 @@ pub enum KvError {
     Redis(#[from] redis::RedisError),
     #[error("valkey config: {0}")]
     Config(#[from] deadpool_redis::CreatePoolError),
+    #[error("encode: {0}")]
+    Encode(serde_json::Error),
 }
 
 /// 建连接池；`url` 形如 `redis://127.0.0.1:6379` 或 `unix:///run/valkey/valkey.sock`。

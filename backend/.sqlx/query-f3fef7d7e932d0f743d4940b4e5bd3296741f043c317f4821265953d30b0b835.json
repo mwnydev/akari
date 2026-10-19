@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH head AS (\n             SELECT least($3, max(id)) AS id FROM order_messages WHERE order_id = $1\n           )\n           INSERT INTO order_message_reads AS r (order_id, user_id, last_read_id)\n           SELECT $1, $2, head.id FROM head WHERE head.id IS NOT NULL\n           ON CONFLICT (order_id, user_id) DO UPDATE SET last_read_id = EXCLUDED.last_read_id, updated_at = now()\n             WHERE r.last_read_id < EXCLUDED.last_read_id\n           RETURNING last_read_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_read_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "order_message_reads",
+            "name": "last_read_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f3fef7d7e932d0f743d4940b4e5bd3296741f043c317f4821265953d30b0b835"
+}
