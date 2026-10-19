@@ -1,3 +1,7 @@
 packages:
   - apps/*
   - packages/*
+
+# esbuild（@wagmi/cli 依赖）的 postinstall 只做二进制自检；平台二进制由 @esbuild/* 可选依赖提供，不需要运行。
+allowBuilds:
+  esbuild: false

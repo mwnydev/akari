@@ -11,7 +11,8 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "format:check": "prettier --check .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "e2e:aa": "pnpm --filter @akari/wallet e2e:aa"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

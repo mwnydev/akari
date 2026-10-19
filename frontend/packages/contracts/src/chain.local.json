@@ -1,0 +1,24 @@
+{
+  "//": "由 deploy/dev/aa.sh 生成，勿手改。本地 anvil（fork Arbitrum Sepolia，链 ID 改为 31337）。",
+  "chainId": 31337,
+  "name": "Akari 本地链（Arbitrum Sepolia fork）",
+  "rpcUrl": "http://127.0.0.1:8545",
+  "bundlerUrl": "http://127.0.0.1:4337",
+  "entryPoint": "0x0000000071727De22E5E9d8BAf0edAc6f37da032",
+  "kernel": {
+    "version": "0.3.3",
+    "implementation": "0xd6CEDDe84be40893d153Be9d467CD6aD37875b28",
+    "factory": "0x2577507b78c2008Ff367261CB6285d44ba5eF2E9",
+    "metaFactory": "0xd703aaE79538628d27099B8c4f621bE4CCd142d5"
+  },
+  "webAuthnValidator": "0x7ab16Ff354AcB328452F1D445b3Ddee9a91e9e69",
+  "erc6492Verifier": "0x00007bd799e4A591FeA53f8A8a3E9f931626Ba7e",
+  "contracts": {
+    "MockUSDT": "0x8c313D0eC280837325fA5aB05AC04Be31F46AbBC",
+    "EscrowConfig": "0x5b8A58E060327C720Db5FCb1a2BB7C217B292c89",
+    "Escrow": "0xFb3ca740dac6A93a5110a0F8d9cc584ACE80940C",
+    "FixedFeePaymaster": "0x6022875397e11A32BbAEB91d80258CBF4AA6F4A8"
+  },
+  "paymasterSigner": "0x9A53c3ACF864004F00BdE6E48Bd8A50D6470e8A8",
+  "deployer": "0xEE56770A46E04f6323AA23dC22f5935a45d933aE"
+}

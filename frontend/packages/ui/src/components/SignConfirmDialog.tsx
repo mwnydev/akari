@@ -25,6 +25,8 @@ export interface SignConfirmDialogProps {
   toLabel: string;
   rows?: ConfirmRow[];
   note?: ReactNode;
+  /** 网络名，默认 Arbitrum One；开发 / 测试网必须传真实网络名 */
+  network?: string | undefined;
   /** 调起 Passkey 签名；抛错时显示人话错误 */
   onConfirm: () => Promise<void>;
 }
@@ -42,6 +44,7 @@ export function SignConfirmDialog({
   toLabel,
   rows = [],
   note,
+  network,
   onConfirm,
 }: SignConfirmDialogProps) {
   const [phase, setPhase] = useState<"idle" | "signing" | "error">("idle");
@@ -75,7 +78,7 @@ export function SignConfirmDialog({
             <div className="flex items-center justify-between gap-3">
               <dt className="text-fg-muted">网络</dt>
               <dd>
-                <NetworkBadge />
+                <NetworkBadge label={network} />
               </dd>
             </div>
             <div className="flex items-center justify-between gap-3">

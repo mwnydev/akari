@@ -8,6 +8,14 @@
   },
   "scripts": {
     "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json"
-  }
+    "typecheck": "tsc -p tsconfig.json",
+    "generate": "wagmi generate"
+  },
+  "devDependencies": {
+    "@wagmi/cli": "2.10.0"
+  },
+  "dependencies": {
+    "viem": "2.57.7"
+  },
+  "sideEffects": false
 }

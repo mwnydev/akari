@@ -4,3 +4,4 @@ out
 dist
 .turbo
 pnpm-lock.yaml
+packages/contracts/src/generated.ts

@@ -35,6 +35,47 @@ services:
   mailpit:
     image: axllent/mailpit:v1.31.6
     ports: ["127.0.0.1:1025:1025", "127.0.0.1:8025:8025"]
+  # ── 本地 AA 开发链（profile `aa`，用法见 README-aa.md；由 aa.sh 编排，不随默认 `up` 启动）──
+  # 两个服务都用宿主机网络：容器里能直接用宿主机上的 HTTP(S)_PROXY（127.0.0.1:*）去 fork 公共 RPC，
+  # 浏览器、forge、Playwright 都按 127.0.0.1 访问。端口只监听 127.0.0.1。
+  anvil:
+    profiles: [aa]
+    image: ghcr.io/foundry-rs/foundry:v1.8.3@sha256:2e4287278639262de76db72477301d5d3212fa1b1cce710d7d148750a46ce9e7
+    network_mode: host
+    environment:
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: 127.0.0.1,localhost
+      PORT: ${AA_ANVIL_PORT:-8545}
+      FORK_URL: ${AA_FORK_URL:-https://sepolia-rollup.arbitrum.io/rpc}
+      FORK_BLOCK: ${AA_FORK_BLOCK:-}
+    # 链 ID 改成 31337：本地签的报价和代付签名不可能拿到真实 Sepolia 上重放。
+    # Osaka 带 EIP-7951 secp256r1 预编译（地址 0x100，与 Arbitrum 的 RIP-7212 相同），Passkey 验签走预编译。
+    command:
+      - >-
+        exec anvil --host 127.0.0.1 --port $$PORT --fork-url $$FORK_URL --chain-id 31337
+        $${FORK_BLOCK:+--fork-block-number $$FORK_BLOCK} --hardfork osaka --block-time 1
+    healthcheck:
+      test: ["CMD", "cast", "chain-id", "--rpc-url", "http://127.0.0.1:${AA_ANVIL_PORT:-8545}"]
+      interval: 2s
+      retries: 60
+  alto:
+    profiles: [aa]
+    image: ghcr.io/pimlicolabs/alto:v1.2.8@sha256:f2661042aadefc6a4fc9c5826a14404f574c7ef2de76bdf83fe6a0829137b3c5
+    network_mode: host
+    depends_on:
+      anvil: { condition: service_healthy }
+    # 执行者 / 工具账户是 aa.sh 里由固定字符串派生的「仅开发」私钥，aa.sh 先给它们打 ETH 再启动本服务。
+    command:
+      - --entrypoints=0x0000000071727De22E5E9d8BAf0edAc6f37da032
+      - --rpc-url=http://127.0.0.1:${AA_ANVIL_PORT:-8545}
+      - --port=${AA_BUNDLER_PORT:-4337}
+      - --executor-private-keys=0x4b59fffb20b6a428033e838e647ab25b873c59287ad1778ee9faea5c91304df4 # gitleaks:allow 本地 Anvil 专用，由公开字符串派生，无真实价值
+      - --utility-private-key=0xa94dbb4a79378cae9fcf3f94dcbc052d91bc563a60dc0df5f13b7af91e1568de # gitleaks:allow 本地 Anvil 专用
+      - --safe-mode=false
+      - --enable-cors=true
+      - --block-time=1000
+      - --log-level=info
 volumes:
   pgdata:
   valkeydata:

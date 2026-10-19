@@ -4,6 +4,8 @@ const links = [
   { href: "/", label: "钱包" },
   { href: "/orders/1001", label: "订单" },
   { href: "/checkout", label: "下单" },
+  { href: "/offer", label: "报价" },
+  { href: "/setup", label: "开通" },
 ];
 
 export function WalletNav({ active }: { active?: string }) {
