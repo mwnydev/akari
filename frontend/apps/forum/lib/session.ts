@@ -1,24 +1,15 @@
 import "server-only";
-import { createApi, type Me } from "@akari/api-client";
-import { cookies } from "next/headers";
-import { API_ORIGIN, SESSION_COOKIE } from "./config";
+import { ApiError, type Me } from "@akari/api-client";
+import { cache } from "react";
+import { hasSession, load, serverApi } from "./api";
 
 /**
  * 当前登录用户；游客或会话失效返回 null。
  * 签名不对的 Cookie 已被 proxy.ts 剥掉，这里看到的 sid 一定是我们签发的（是否过期由后端判断）。
+ * API 不可用时也按游客渲染，页面照常可读。
  */
-export async function getMe(): Promise<Me | null> {
-  const sid = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!sid) return null;
-  const api = createApi({ baseUrl: API_ORIGIN });
-  try {
-    const { data } = await api.GET("/api/v1/me", {
-      headers: { cookie: `${SESSION_COOKIE}=${sid}` },
-      cache: "no-store",
-    });
-    return data ?? null;
-  } catch {
-    // API 不可用时按游客渲染，页面照常可读
-    return null;
-  }
-}
+export const getMe = cache(async (): Promise<Me | null> => {
+  if (!(await hasSession())) return null;
+  const me = await load((await serverApi()).GET("/api/v1/me"));
+  return me instanceof ApiError ? null : me;
+});

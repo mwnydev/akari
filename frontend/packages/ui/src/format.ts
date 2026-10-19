@@ -23,3 +23,13 @@ function parseSmallest(s: string): bigint {
   if (!/^-?\d+$/.test(s)) throw new Error(`invalid USDT amount: ${s}`);
   return BigInt(s);
 }
+
+/**
+ * 解析用户输入的 USDT 金额（如 "45"、"0.5"、"12.345678"）为最小单位；只用字符串与 bigint，不经过浮点。
+ * 格式不对（负数、超过 6 位小数、千分位）返回 null。
+ */
+export function parseUsdt(input: string): bigint | null {
+  const m = /^(\d{1,12})(?:\.(\d{0,6}))?$/.exec(input.trim());
+  if (!m) return null;
+  return BigInt(m[1] ?? "0") * SCALE + BigInt((m[2] ?? "").padEnd(USDT_DECIMALS, "0"));
+}

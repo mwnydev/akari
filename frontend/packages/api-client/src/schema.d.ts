@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+  "/api/v1/aa/rpc": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 单个 JSON-RPC 请求（不支持批量）；返回 forum-sponsor 的 JSON-RPC 响应。 */
+    post: operations["rpc"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/auth/email/start": {
     parameters: {
       query?: never;
@@ -55,6 +72,78 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/conversations/{id}/offers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 私信会话里的报价卡片（只有买卖双方能看到；新的在前，最多 50 张）。 */
+    get: operations["conversation_offers"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/forums": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 访问者能看到的全部板块（平铺，前端按 `parent_id` 组树）。 */
+    get: operations["list"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/forums/{slug}/listings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 发交易帖：主题（kind = 交易）+ 交易条款同一事务写入。需要已开通交易（本链有钱包）。 */
+    post: operations["create_listing"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/forums/{slug}/topics": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * 板块主题列表（plan 第 8 节）：置顶帖单独缓存、只在第 1 页；普通帖前 200 页取自 Valkey 有序集合再按主键批量取，
+     *     更深用 `(last_post_at, id)` 游标走部分索引。
+     */
+    get: operations["board"];
+    put?: never;
+    /** 发主题。发帖免审核（plan 第 4 节），新用户 24 小时内限频、不能发外链。 */
+    post: operations["create_topic"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/healthz": {
     parameters: {
       query?: never;
@@ -64,6 +153,40 @@ export interface paths {
     };
     /** 存活检查。 */
     get: operations["healthz"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/listings/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 交易帖详情（价格、条款、内容哈希）。 */
+    get: operations["get_listing"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/listings/{id}/offers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 交易帖下的报价卡片（新的在前，最多 50 张）。 */
+    get: operations["listing_offers"];
     put?: never;
     post?: never;
     delete?: never;
@@ -89,10 +212,515 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/offers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 卖家提交签好的报价卡片（需 5 分钟内的钱包 Passkey 验证：plan「私信发起担保」是敏感操作）。 */
+    post: operations["create_offer"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/offers/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["get_offer"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/offers/{id}/accept": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 买家接受卡片：返回付款需要的数据。状态不变——买家付款上链即确认，indexer 看到建单事件后标为已付款。 */
+    post: operations["accept_offer"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/offers/{id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * 卖家在对方确认前取消卡片。只作废站内卡片（forum-sponsor 不再代付）；签名在有效期内仍可被链上接受，
+     *     要立即在链上作废需另调 `cancelOffer(nonce)`（收代付费）。
+     */
+    post: operations["cancel_offer"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/offers/{id}/order": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * 报价卡片生成的订单（买家付款后从卡片跳到订单页）：只有该订单的买卖双方能查到；
+     *     可多次成交的公开报价返回当前用户参与的最新一单。
+     */
+    get: operations["by_offer"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/offers/{id}/reject": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 指定买家拒绝卡片。 */
+    post: operations["reject_offer"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/orders": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 我的订单：按角色分别走 `(buyer_id, id DESC)` / `(seller_id, id DESC)` 索引，新的在前，每页 20 条。 */
+    get: operations["list_orders"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/orders/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 订单详情：买卖双方与仲裁员可见。 */
+    get: operations["get_order"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/posts/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** 删除楼层：只改状态，楼层号保留（plan 第 4 节）。 */
+    delete: operations["delete"];
+    options?: never;
+    head?: never;
+    /** 编辑楼层。编辑前的版本存入编辑历史；管理人员编辑他人楼层写审计日志。 */
+    patch: operations["edit"];
+    trace?: never;
+  };
+  "/api/v1/posts/{id}/history": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 编辑历史（编辑前的各个版本），新的在前。 */
+    get: operations["history"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/posts/{id}/source": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 编辑器原稿：作者本人或管理人员重新编辑时加载。 */
+    get: operations["source"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/topics/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 主题某一页。按楼层区间取（`floor BETWEEN`），第 1 页与第 5000 页一样快。 */
+    get: operations["get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/topics/{id}/moderation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 主题管理。只有该板块的版主和全站管理人员可操作；每次操作写只增审计日志。 */
+    post: operations["moderate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/topics/{id}/posts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 回帖。楼层在一条多 CTE 语句里分配，HTML 在事务外过滤（plan 第 8 节）。 */
+    post: operations["reply"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/trade/params": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 报价签名域、链上范围与预填值。前端在签名前用它们校验，避免签出链上必然拒绝的报价。 */
+    get: operations["params"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/wallet": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 我的钱包 Passkey 与地址。 */
+    get: operations["overview"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/wallet/account": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * 登记智能账户地址，绑定到 5 分钟内刚验证过的那个 Passkey（通常是刚注册的那个）。每人每条链一个。
+     *     服务端按 `init_version` 的参数与该 Passkey 公钥推算地址，与提交的不一致时拒绝。
+     */
+    post: operations["create_account"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/wallet/passkey/assert/finish": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 完成 Passkey 再验证：会话获得 5 分钟「近期验证」标记。 */
+    post: operations["assert_finish"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/wallet/passkey/assert/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 开始 Passkey 再验证（敏感操作前：私信发起担保、绑定 Passkey、登记钱包地址等）。 */
+    post: operations["assert_start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/wallet/passkey/register/finish": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 完成注册：保存凭证 ID、COSE 公钥与 P-256 坐标。成功即视为刚完成一次 Passkey 验证。 */
+    post: operations["register_finish"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/wallet/passkey/register/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 开始注册钱包 Passkey。第一个需要邮箱再验证；之后的需要近期 Passkey 验证。 */
+    post: operations["register_start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/wallet/reverify/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 开通交易前的邮箱再验证：向账号邮箱发一封「开通交易」验证码。 */
+    post: operations["reverify_start"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/wallet/reverify/verify": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 校验再验证码；成功后 10 分钟内可注册第一个钱包 Passkey。 */
+    post: operations["reverify_verify"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    AssertFinish: {
+      /** @description `navigator.credentials.get()` 的结果。 */
+      credential: Record<string, unknown>;
+    };
+    AssertionOptions: {
+      /** @description 原样传给 `navigator.credentials.get()`。 */
+      options: Record<string, unknown>;
+    };
+    BoardResponse: {
+      forum: components["schemas"]["ForumView"];
+      next_cursor?: string | null;
+      /**
+       * Format: int32
+       * @description 下一页页码（前 200 页）；之后改用 `next_cursor`。
+       */
+      next_page?: number | null;
+      /** @description 置顶帖，只在第 1 页返回。 */
+      pinned: components["schemas"]["TopicSummary"][];
+      topics: components["schemas"]["TopicSummary"][];
+      /** @description 列表里出现的作者与最后回复者。 */
+      users: components["schemas"]["UserCardView"][];
+    };
+    /** @enum {string} */
+    CardStatus: "pending" | "modified" | "rejected" | "cancelled" | "expired" | "paid";
+    CreatedListing: {
+      /** @description 报价里的 `listingHash`（`0x` + 64 位十六进制）。 */
+      content_hash: string;
+      /** Format: int64 */
+      listing_id: number;
+      /** Format: int64 */
+      post_id: number;
+      /** Format: int64 */
+      topic_id: number;
+    };
+    CreatedPost: {
+      /** Format: int32 */
+      floor: number;
+      /**
+       * Format: int32
+       * @description 新楼层所在页码。
+       */
+      page: number;
+      /** Format: int64 */
+      post_id: number;
+    };
+    CreatedTopic: {
+      /** Format: int64 */
+      post_id: number;
+      /** Format: int64 */
+      topic_id: number;
+    };
+    Deadlines: {
+      /**
+       * Format: date-time
+       * @description 一次性：买家确认期限（发货后才有）。
+       */
+      confirm?: string | null;
+      /**
+       * Format: date-time
+       * @description 一次性：发货期限（即时发货为空）。
+       */
+      ship?: string | null;
+      /**
+       * Format: date-time
+       * @description 分期：卖家开始服务的期限。
+       */
+      start?: string | null;
+    };
+    DisputeView: {
+      by: string;
+      /** Format: date-time */
+      disputed_at?: string | null;
+      /** @description 争议费从卖家保证金扣。 */
+      from_bond: boolean;
+    };
+    EditHistory: {
+      edits: components["schemas"]["EditView"][];
+      next_cursor?: string | null;
+    };
+    EditRequest: {
+      html: string;
+      source: Record<string, unknown>;
+      /** @description 只有 1 楼可以同时改标题。 */
+      title?: string | null;
+    };
+    EditView: {
+      /** Format: date-time */
+      edited_at: string;
+      /** Format: int64 */
+      editor_id: number;
+      /** @description 编辑前的 HTML。 */
+      html: string;
+      /** Format: int64 */
+      id: number;
+      /** @description 1 楼编辑时的旧标题。 */
+      title?: string | null;
+    };
+    Eip712Domain: {
+      /** Format: int64 */
+      chainId: number;
+      name: string;
+      /** @description 担保合约地址；未配置时为空，报价功能不可用。 */
+      verifyingContract?: string | null;
+      version: string;
+    };
     ErrorBody: {
       code: components["schemas"]["ErrorCode"];
       message: string;
@@ -111,15 +739,397 @@ export interface components {
       | "TOO_MANY_ATTEMPTS"
       | "UNAUTHORIZED"
       | "ORIGIN_REJECTED"
+      | "NOT_FOUND"
+      | "FORBIDDEN"
+      | "TOPIC_LOCKED"
+      | "CONTENT_EMPTY"
+      | "CONTENT_TOO_LONG"
+      | "INVALID_TITLE"
+      | "EXTERNAL_LINK_FORBIDDEN"
+      | "AMOUNT_OUT_OF_RANGE"
+      | "WINDOW_OUT_OF_RANGE"
+      | "BOND_INVALID"
+      | "FEE_LIMIT_INVALID"
+      | "OFFER_EXPIRY_INVALID"
+      | "OFFER_UNAVAILABLE"
+      | "CONFLICT"
+      | "USERNAME_REQUIRED"
+      | "REVERIFY_REQUIRED"
+      | "PASSKEY_REQUIRED"
+      | "PASSKEY_FAILED"
+      | "TOO_MANY_PASSKEYS"
+      | "WALLET_REQUIRED"
+      | "WALLET_ADDRESS_MISMATCH"
+      | "SPONSOR_NOT_ALLOWED"
+      | "SPONSOR_QUOTA_EXCEEDED"
+      | "SPONSOR_PENDING"
+      | "SPONSOR_SUSPENDED"
+      | "SIMULATION_FAILED"
+      | "SPONSOR_UNAVAILABLE"
       | "INTERNAL";
+    ForumView: {
+      description: string;
+      /** Format: int32 */
+      id: number;
+      name: string;
+      /** Format: int32 */
+      parent_id?: number | null;
+      /** Format: int32 */
+      position: number;
+      /** Format: int32 */
+      post_min_level: number;
+      /** Format: int32 */
+      reply_min_level: number;
+      slug: string;
+      /**
+       * Format: int32
+       * @description 可见 / 发帖 / 回复所需最低等级（游客为 0）。
+       */
+      view_min_level: number;
+    };
     Health: {
       status: string;
+    };
+    /** @description 交易帖条款（预填给报价；实际成交以卖家签名的报价为准）。 */
+    ListingTerms: {
+      /** @description 卖家保证金（最小单位，十进制字符串）；默认 "0"。 */
+      bond?: string;
+      /** Format: int32 */
+      confirm_window: number;
+      /**
+       * Format: int32
+       * @description 0 = 卖家、1 = 买家、2 = 各半。
+       */
+      fee_payer?: number;
+      instant?: boolean;
+      /** Format: int32 */
+      late_slash_bps?: number;
+      /** Format: int32 */
+      ship_window: number;
+    };
+    ListingView: {
+      /** Format: int64 */
+      chain_id: number;
+      content_hash: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int64 */
+      id: number;
+      price: string;
+      /** Format: int64 */
+      seller_id: number;
+      terms: components["schemas"]["ListingTerms"];
+      /** Format: int64 */
+      topic_id: number;
     };
     Me: {
       email: string;
       /** Format: int64 */
       id: number;
       username?: string | null;
+    };
+    /** @enum {string} */
+    ModerationAction:
+      "pin" | "unpin" | "feature" | "unfeature" | "lock" | "unlock" | "hide" | "unhide" | "move";
+    ModerationRequest: {
+      action: components["schemas"]["ModerationAction"];
+      /**
+       * Format: int32
+       * @description `move` 的目标板块。
+       */
+      forum_id?: number | null;
+      /** @description 预设理由或补充说明，写入审计日志（plan 第 9 节）。 */
+      reason: string;
+    };
+    ModerationResult: {
+      flags: components["schemas"]["TopicFlags"];
+      /** Format: int32 */
+      forum_id: number;
+    };
+    NewListingRequest: components["schemas"]["NewTopicRequest"] & {
+      /** @description 价格，USDT 最小单位（十进制字符串，如 "45000000" = 45 USDT）。 */
+      price: string;
+      terms: components["schemas"]["ListingTerms"];
+    };
+    NewOfferRequest: {
+      /**
+       * Format: int64
+       * @description 私信里的报价：必须指定买家、只能成交 1 次。
+       */
+      conversation_id?: number | null;
+      /**
+       * Format: int64
+       * @description 交易帖下的报价：`offer.listingHash` 必须等于该帖的 `content_hash`。
+       */
+      listing_id?: number | null;
+      offer: components["schemas"]["Offer"];
+      /**
+       * Format: int64
+       * @description 修改约定：被替换的待确认卡片（同一交易帖 / 会话、同一卖家），旧卡片变为「已修改」。
+       */
+      replaces?: number | null;
+      /** @description 卖家对 `hashOffer(offer)` 的签名（`0x` 十六进制；智能账户为 ERC-1271 / ERC-6492 格式）。 */
+      signature: string;
+    };
+    NewTopicRequest: {
+      /** @description Tiptap `getHTML()` 的结果；服务端会重新过滤。 */
+      html: string;
+      /** @description Tiptap `getJSON()` 原稿，重新编辑时加载。 */
+      source: Record<string, unknown>;
+      title: string;
+    };
+    NewWallet: {
+      /**
+       * @description 浏览器用 ZeroDev SDK（Kernel v3.3 + EntryPoint v0.7）按 `init_version` 的参数算出的 counterfactual 地址。
+       * @example 0x1111111111111111111111111111111111111111
+       */
+      address: string;
+      /** Format: int64 */
+      chain_id: number;
+      /**
+       * Format: int32
+       * @description 计算地址用的初始化参数版本（`GET /api/v1/trade/params` 的 `wallet_init_versions`）。
+       */
+      init_version: number;
+    };
+    /** @description 与 `Escrow.Offer` 字段一一对应、同序。JSON 字段名与 EIP-712 typed data 的 `message` 相同（驼峰）。 */
+    Offer: {
+      /**
+       * @description USDT 最小单位，十进制字符串。
+       * @example 45000000
+       */
+      amount: string;
+      bond: string;
+      /** @description 全 0 = 公开报价，任何人可付款。 */
+      buyer: string;
+      /** Format: int32 */
+      confirmWindow: number;
+      /**
+       * Format: int64
+       * @description Unix 秒。
+       */
+      expiry: number;
+      /**
+       * Format: int32
+       * @description 0 = 卖家、1 = 买家、2 = 各半（`FeeMath.Payer`）。
+       */
+      feePayer: number;
+      instant: boolean;
+      /** Format: int32 */
+      lateSlashBps: number;
+      listingHash: string;
+      maxBaseGas: string;
+      /** Format: int32 */
+      maxFeeBps: number;
+      /** Format: int32 */
+      maxFills: number;
+      maxMinFee: string;
+      nonce: string;
+      /** @example 0x1111111111111111111111111111111111111111 */
+      seller: string;
+      /** Format: int32 */
+      shipWindow: number;
+      token: string;
+    };
+    OfferView: {
+      /** Format: int64 */
+      buyer_id?: number | null;
+      /** Format: int64 */
+      chain_id: number;
+      /** Format: int64 */
+      conversation_id?: number | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      expires_at: string;
+      /** Format: int64 */
+      id: number;
+      /** Format: int64 */
+      listing_id?: number | null;
+      /** @description EIP-712 typed data 的 `message`。 */
+      offer: components["schemas"]["Offer"];
+      offer_hash: string;
+      reject_reason?: string | null;
+      /**
+       * Format: int64
+       * @description 被这张卡片替换的旧卡片（修改约定）。
+       */
+      replaces_id?: number | null;
+      /** Format: int64 */
+      seller_id: number;
+      signature: string;
+      status: components["schemas"]["CardStatus"];
+      verifying_contract: string;
+    };
+    /** @description 下单时固定的费用（下单区块 `getOrder` 快照；快照缺失时为空）。 */
+    OrderFees: {
+      bond?: string | null;
+      buyer_fee?: string | null;
+      buyer_gas?: string | null;
+      dispute_fee?: string | null;
+      seller_fee?: string | null;
+      seller_gas?: string | null;
+    };
+    OrderPage: {
+      /**
+       * Format: int64
+       * @description 还有下一页时为下一页的游标。
+       */
+      next_cursor?: number | null;
+      orders: components["schemas"]["OrderView"][];
+    };
+    /** @description 订单的来源：卖家签名的报价（站内卡片 `GET /api/v1/offers/{id}`）与交易帖内容哈希（下单时锁定的版本）。 */
+    OrderSource: {
+      /** @description 拍卖成交的订单。 */
+      auction_id?: string | null;
+      listing_hash: string;
+      /** Format: int64 */
+      listing_id?: number | null;
+      /** Format: int64 */
+      listing_topic_id?: number | null;
+      offer_hash: string;
+      /**
+       * Format: int64
+       * @description 站内报价卡片；拍卖成交或站外签出的报价没有。
+       */
+      offer_id?: number | null;
+    };
+    OrderView: {
+      amount: string;
+      buyer: components["schemas"]["Party"];
+      /** Format: int64 */
+      chain_id: number;
+      /** Format: int64 */
+      chain_order_id: number;
+      contract: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int64 */
+      created_block: number;
+      deadlines: components["schemas"]["Deadlines"];
+      dispute?: components["schemas"]["DisputeView"] | null;
+      fees: components["schemas"]["OrderFees"];
+      /** Format: int64 */
+      id: number;
+      instant: boolean;
+      /** @description 确认级别：`latest` / `safe` / `finalized`。 */
+      level: string;
+      /** @description `escrow`（一次性）或 `stream`（分期）。 */
+      mode: string;
+      proposal?: components["schemas"]["ProposalView"] | null;
+      ruling?: components["schemas"]["RulingView"] | null;
+      seller: components["schemas"]["Party"];
+      settlement?: components["schemas"]["SettlementView"] | null;
+      source: components["schemas"]["OrderSource"];
+      /** @description `funded` / `disputed` / `released` / `refunded` / `settled`；`none` = 下单交易已被区块回滚撤销。 */
+      state: string;
+      stream?: components["schemas"]["StreamView"] | null;
+      token: string;
+      /** Format: date-time */
+      updated_at: string;
+      /** Format: int64 */
+      updated_block: number;
+    };
+    Party: {
+      address: string;
+      /**
+       * Format: int64
+       * @description 钱包属于本站用户时。
+       */
+      user_id?: number | null;
+    };
+    PasskeyView: {
+      /** Format: date-time */
+      created_at: string;
+      /** @description base64url 凭证 ID。 */
+      credential_id: string;
+      /** Format: int64 */
+      id: number;
+      /** Format: date-time */
+      last_used_at?: string | null;
+      /** @description P-256 公钥 x 坐标（`0x` + 64 位十六进制），用于计算 Kernel 智能账户地址。 */
+      pubkey_x: string;
+      pubkey_y: string;
+    };
+    PaymentData: {
+      buyer_fee: string;
+      buyer_gas: string;
+      /**
+       * @description 按当前收费估算（最小单位）：买家需 `approve` 并转入的总额 = 金额 + 买家手续费 + 买家 gas 费。
+       *     以链上建单时的参数为准；免费活动期间实际更少。
+       */
+      buyer_pays: string;
+      /** @description 买家智能账户地址（付款必须从这个地址发起）。 */
+      buyer_wallet: string;
+      /** Format: int64 */
+      chain_id: number;
+      /** @description `createAndFund(offer, sellerSig)` 的合约地址与链。 */
+      escrow: string;
+      offer: components["schemas"]["Offer"];
+      offer_hash: string;
+      /** Format: int64 */
+      offer_id: number;
+      signature: string;
+    };
+    PostSource: {
+      source: Record<string, unknown>;
+    };
+    PostView: {
+      /** Format: int64 */
+      author_id: number;
+      /** Format: date-time */
+      created_at: string;
+      deleted: boolean;
+      /** Format: date-time */
+      edited_at?: string | null;
+      /** Format: int32 */
+      floor: number;
+      /** @description 已过滤的 HTML；已删除的楼层为空字符串。 */
+      html: string;
+      /** Format: int64 */
+      id: number;
+    };
+    ProposalView: {
+      /** Format: date-time */
+      expiry?: string | null;
+      proposer: string;
+      to_buyer: string;
+    };
+    RegisterFinish: {
+      /** @description `navigator.credentials.create()` 的结果（二进制字段 base64url 编码）。 */
+      credential: Record<string, unknown>;
+    };
+    RegistrationOptions: {
+      /** @description 原样传给 `navigator.credentials.create()`（`publicKey` 字段内为 base64url 编码，需先解码）。 */
+      options: Record<string, unknown>;
+    };
+    RejectRequest: {
+      /** @description 拒绝理由（可选，≤ 200 字）。 */
+      reason?: string | null;
+    };
+    ReplyRequest: {
+      html: string;
+      source: Record<string, unknown>;
+    };
+    ReverifyRequest: {
+      code: string;
+    };
+    ReverifyStarted: {
+      /** Format: int64 */
+      expires_in: number;
+      /** Format: int64 */
+      resend_in: number;
+    };
+    RulingView: {
+      /** Format: int32 */
+      bond_to_buyer_bps?: number | null;
+      /** Format: int32 */
+      to_buyer_bps?: number | null;
+    };
+    SettlementView: {
+      to_buyer?: string | null;
+      to_fee_recipient?: string | null;
+      to_seller?: string | null;
     };
     StartRequest: {
       /** @description Cloudflare Turnstile 令牌。 */
@@ -138,6 +1148,131 @@ export interface components {
        */
       resend_in: number;
     };
+    /** @description 分期订单的进度。 */
+    StreamView: {
+      /** @description 已领取的可解锁净本金（含领取 gas 与从已解锁部分扣的争议费）。 */
+      claimed: string;
+      /**
+       * Format: date-time
+       * @description 全部期数到期的时间（开始后才有）。
+       */
+      ends_at?: string | null;
+      /** Format: int32 */
+      interval_secs: number;
+      /** Format: int32 */
+      periods: number;
+      /** Format: date-time */
+      started_at?: string | null;
+    };
+    TopicFlags: {
+      featured: boolean;
+      hidden: boolean;
+      locked: boolean;
+      pinned: boolean;
+    };
+    TopicPage: components["schemas"]["TopicPageBody"] & {
+      can_moderate: boolean;
+      can_reply: boolean;
+      /** Format: int32 */
+      page: number;
+      /** Format: int32 */
+      total_pages: number;
+    };
+    /** @description 主题页里与访问者无关、可以缓存的部分。 */
+    TopicPageBody: {
+      forum: components["schemas"]["ForumView"];
+      posts: components["schemas"]["PostView"][];
+      topic: components["schemas"]["TopicSummary"];
+      users: components["schemas"]["UserCardView"][];
+    };
+    TopicSummary: {
+      /** Format: int64 */
+      author_id: number;
+      /** Format: date-time */
+      created_at: string;
+      flags: components["schemas"]["TopicFlags"];
+      /** Format: int32 */
+      forum_id: number;
+      /** Format: int64 */
+      id: number;
+      /**
+       * Format: int32
+       * @description 0=普通、1=交易、2=争议。
+       */
+      kind: number;
+      /** Format: int32 */
+      last_floor: number;
+      /** Format: date-time */
+      last_post_at: string;
+      /** Format: int64 */
+      last_poster_id?: number | null;
+      /**
+       * Format: int32
+       * @description 回复数（楼层数 − 1）。
+       */
+      replies: number;
+      title: string;
+      /** Format: int64 */
+      views: number;
+    };
+    TradeDefaults: {
+      /** Format: int32 */
+      confirm_window: number;
+      /**
+       * Format: int32
+       * @description 0 = 卖家承担（默认）。
+       */
+      fee_payer: number;
+      /** Format: int64 */
+      private_offer_ttl: number;
+      /** Format: int64 */
+      public_offer_ttl: number;
+      /** Format: int32 */
+      ship_window: number;
+    };
+    TradeParams: {
+      base_gas: string;
+      defaults: components["schemas"]["TradeDefaults"];
+      domain: components["schemas"]["Eip712Domain"];
+      /**
+       * Format: int32
+       * @description 当前收费：报价里的 `maxFeeBps` / `maxBaseGas` / `maxMinFee` 不能低于这些值。
+       */
+      fee_bps: number;
+      /** Format: int64 */
+      max_offer_ttl: number;
+      /** Format: int32 */
+      max_window: number;
+      min_fee: string;
+      /** Format: int64 */
+      min_offer_ttl: number;
+      /** @description 以下金额均为 USDT 最小单位（十进制字符串）。 */
+      min_order: string;
+      /** Format: int32 */
+      min_window: number;
+      order_cap: string;
+      /** @description 本链 USDT 地址（报价的 `token`）。 */
+      token?: string | null;
+      /** @description 钱包初始化参数各版本（ADR 0008），按版本号升序；新钱包用最后一个，已有钱包用自己登记的版本。 */
+      wallet_init_versions: components["schemas"]["WalletInitVersionView"][];
+    };
+    UserCardView: {
+      /** Format: int64 */
+      id: number;
+      /** Format: int32 */
+      level: number;
+      /** @description 还没设置用户名时为空，前端显示「用户 {id}」。 */
+      username?: string | null;
+    };
+    Verified: {
+      /** Format: int64 */
+      passkey_id: number;
+      /**
+       * Format: int64
+       * @description 近期验证有效至（Unix 秒）。
+       */
+      verified_until: number;
+    };
     VerifyRequest: {
       code: string;
       email: string;
@@ -146,6 +1281,45 @@ export interface components {
       /** @description 本次登录是否新注册。 */
       created: boolean;
       user: components["schemas"]["Me"];
+    };
+    /** @description 一个版本的 Kernel v3.3 账户初始化参数。地址为 `0x` 小写十六进制。 */
+    WalletInitVersionView: {
+      /** @description 十进制字符串。 */
+      approve_amount: string;
+      approve_token: string;
+      entry_point: string;
+      kernel_factory: string;
+      kernel_implementation: string;
+      kernel_meta_factory: string;
+      paymaster: string;
+      /** Format: int32 */
+      version: number;
+      webauthn_validator: string;
+    };
+    WalletOverview: {
+      /** @description 是否已开通交易（至少一个钱包 Passkey 和本链钱包地址）。 */
+      enabled: boolean;
+      passkeys: components["schemas"]["PasskeyView"][];
+      /**
+       * Format: int64
+       * @description 当前会话的 Passkey 近期验证截止时间（Unix 秒）。
+       */
+      verified_until?: number | null;
+      wallets: components["schemas"]["WalletView"][];
+    };
+    WalletView: {
+      address: string;
+      /** Format: int64 */
+      chain_id: number;
+      /** Format: date-time */
+      created_at: string;
+      /**
+       * Format: int32
+       * @description 初始化参数版本：推算地址、部署钱包都用这个版本，不用当前最新版本（ADR 0008）。
+       */
+      init_version: number;
+      /** Format: int64 */
+      passkey_id: number;
     };
   };
   responses: never;
@@ -156,6 +1330,70 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  rpc: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": Record<string, unknown>;
+      };
+    };
+    responses: {
+      /** @description JSON-RPC 2.0 响应（成功或 error） */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
   start: {
     parameters: {
       query?: never;
@@ -259,6 +1497,226 @@ export interface operations {
       };
     };
   };
+  conversation_offers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OfferView"][];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  list: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ForumView"][];
+        };
+      };
+    };
+  };
+  create_listing: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        slug: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["NewListingRequest"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CreatedListing"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  board: {
+    parameters: {
+      query?: {
+        /** @description 页码 1–200；与 `cursor` 二选一。 */
+        page?: number | null;
+        /** @description 第 200 页之后的游标（取自上一页的 `next_cursor`）。 */
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        slug: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BoardResponse"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  create_topic: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        slug: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["NewTopicRequest"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CreatedTopic"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
   healthz: {
     parameters: {
       query?: never;
@@ -274,6 +1732,64 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Health"];
+        };
+      };
+    };
+  };
+  get_listing: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ListingView"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  listing_offers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OfferView"][];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
         };
       };
     };
@@ -296,6 +1812,1132 @@ export interface operations {
         };
       };
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  create_offer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["NewOfferRequest"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OfferView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  get_offer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OfferView"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  accept_offer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PaymentData"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  cancel_offer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OfferView"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  by_offer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OrderView"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  reject_offer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RejectRequest"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OfferView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  list_orders: {
+    parameters: {
+      query: {
+        /** @description 我作为买家还是卖家的订单。 */
+        role: "buyer" | "seller";
+        /** @description 上一页的 `next_cursor`。 */
+        cursor?: number | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OrderPage"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  get_order: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OrderView"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  delete: {
+    parameters: {
+      query?: {
+        /** @description 管理人员删除他人楼层时必填，写入审计日志。 */
+        reason?: string | null;
+      };
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  edit: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EditRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  history: {
+    parameters: {
+      query?: {
+        /** @description 游标：上一页的 `next_cursor`。 */
+        cursor?: number | null;
+      };
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EditHistory"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  source: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PostSource"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  get: {
+    parameters: {
+      query?: {
+        /** @description 页码，从 1 开始；每页 20 楼。 */
+        page?: number | null;
+      };
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TopicPage"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  moderate: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ModerationRequest"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModerationResult"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  reply: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReplyRequest"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CreatedPost"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  params: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TradeParams"];
+        };
+      };
+    };
+  };
+  overview: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WalletOverview"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  create_account: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["NewWallet"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WalletView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  assert_finish: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AssertFinish"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Verified"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  assert_start: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AssertionOptions"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  register_finish: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RegisterFinish"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PasskeyView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  register_start: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RegistrationOptions"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  reverify_start: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ReverifyStarted"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  reverify_verify: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReverifyRequest"];
+      };
+    };
+    responses: {
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
         headers: {
           [name: string]: unknown;
         };

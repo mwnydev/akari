@@ -1,49 +1,41 @@
-import { Amount, Avatar, Badge } from "@akari/ui";
-import { Lock, MessageSquare } from "lucide-react";
-import type { Topic } from "../lib/mock";
+import type { Schemas } from "@akari/api-client";
+import { Avatar } from "@akari/ui";
+import { MessageSquare } from "lucide-react";
+import Link from "next/link";
+import { formatTime, userName, type UserCardView } from "../lib/display";
+import { TopicBadges } from "./TopicBadges";
 
-export function TopicRow({ t }: { t: Topic }) {
-  const href = t.trade ? `/trade/${t.id}` : `/t/${t.id}`;
+export function TopicRow({
+  topic,
+  user,
+}: {
+  topic: Schemas["TopicSummary"];
+  user: (id: number) => UserCardView;
+}) {
+  const author = userName(user(topic.author_id));
+  const lastPoster = topic.last_poster_id ? userName(user(topic.last_poster_id)) : author;
   return (
     <li className="flex gap-3 px-4 py-3">
-      <Avatar name={t.author} size={36} className="mt-0.5" />
+      <Avatar name={author} size={36} className="mt-0.5" />
       <div className="min-w-0 flex-1">
-        <a href={href} className="line-clamp-2 font-medium hover:text-accent">
-          {t.pinned ? (
-            <Badge tone="accent" className="mr-1.5 align-[2px]">
-              置顶
-            </Badge>
-          ) : null}
-          {t.digest ? (
-            <Badge tone="success" className="mr-1.5 align-[2px]">
-              精华
-            </Badge>
-          ) : null}
-          {t.trade ? (
-            <Badge tone="warning" className="mr-1.5 align-[2px]">
-              {t.trade.mode === "stream" ? "分期担保" : "担保"}
-            </Badge>
-          ) : null}
-          {t.title}
-          {t.locked ? (
-            <Lock size={14} className="ml-1 inline text-fg-muted" aria-label="已锁定" />
-          ) : null}
-        </a>
+        <Link href={`/t/${topic.id}`} className="line-clamp-2 font-medium hover:text-accent">
+          <TopicBadges topic={topic} />
+          {topic.title}
+        </Link>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-sm text-fg-muted">
-          <span>{t.author}</span>
+          <span>{author}</span>
           <span>
-            {t.lastPoster} 回复于 {t.lastAt}
+            {topic.replies > 0 ? `${lastPoster} 回复于 ` : "发布于 "}
+            <time dateTime={topic.last_post_at}>{formatTime(topic.last_post_at)}</time>
           </span>
-          {t.trade ? (
-            <span className="font-medium text-fg">
-              <Amount value={t.trade.price} />
-            </span>
-          ) : null}
         </p>
       </div>
-      <div className="amount flex shrink-0 items-start gap-1 pt-0.5 text-sm text-fg-muted">
+      <div
+        className="amount flex shrink-0 items-start gap-1 pt-0.5 text-sm text-fg-muted"
+        aria-label={`${topic.replies} 条回复`}
+      >
         <MessageSquare size={14} className="mt-1" aria-hidden />
-        {t.replies}
+        {topic.replies}
       </div>
     </li>
   );

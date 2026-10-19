@@ -3,13 +3,52 @@
   "info": {
     "title": "akari forum API",
     "description": "",
-    "license": {
-      "name": "UNLICENSED",
-      "identifier": "UNLICENSED"
-    },
+    "license": { "name": "UNLICENSED", "identifier": "UNLICENSED" },
     "version": "v1"
   },
   "paths": {
+    "/api/v1/aa/rpc": {
+      "post": {
+        "tags": ["wallet"],
+        "summary": "单个 JSON-RPC 请求（不支持批量）；返回 forum-sponsor 的 JSON-RPC 响应。",
+        "operationId": "rpc",
+        "requestBody": {
+          "content": { "application/json": { "schema": { "type": "object" } } },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "JSON-RPC 2.0 响应（成功或 error）",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/email/start": {
       "post": {
         "tags": ["auth"],
@@ -17,49 +56,29 @@
         "operationId": "start",
         "requestBody": {
           "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StartRequest"
-              }
-            }
+            "application/json": { "schema": { "$ref": "#/components/schemas/StartRequest" } }
           },
           "required": true
         },
         "responses": {
           "202": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StartResponse"
-                }
-              }
+              "application/json": { "schema": { "$ref": "#/components/schemas/StartResponse" } }
             }
           },
           "400": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
           },
           "403": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
           },
           "429": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
           }
         }
@@ -72,40 +91,24 @@
         "operationId": "verify",
         "requestBody": {
           "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/VerifyRequest"
-              }
-            }
+            "application/json": { "schema": { "$ref": "#/components/schemas/VerifyRequest" } }
           },
           "required": true
         },
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VerifyResponse"
-                }
-              }
+              "application/json": { "schema": { "$ref": "#/components/schemas/VerifyResponse" } }
             }
           },
           "400": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
           },
           "429": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
           }
         }
@@ -116,8 +119,186 @@
         "tags": ["auth"],
         "summary": "退出登录：删除服务端会话。",
         "operationId": "logout",
+        "responses": { "204": {} }
+      }
+    },
+    "/api/v1/conversations/{id}/offers": {
+      "get": {
+        "tags": ["trade"],
+        "summary": "私信会话里的报价卡片（只有买卖双方能看到；新的在前，最多 50 张）。",
+        "operationId": "conversation_offers",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
         "responses": {
-          "204": {}
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/OfferView" } }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forums": {
+      "get": {
+        "tags": ["forum"],
+        "summary": "访问者能看到的全部板块（平铺，前端按 `parent_id` 组树）。",
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ForumView" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forums/{slug}/listings": {
+      "post": {
+        "tags": ["trade"],
+        "summary": "发交易帖：主题（kind = 交易）+ 交易条款同一事务写入。需要已开通交易（本链有钱包）。",
+        "operationId": "create_listing",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/NewListingRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/CreatedListing" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forums/{slug}/topics": {
+      "get": {
+        "tags": ["forum"],
+        "summary": "板块主题列表（plan 第 8 节）：置顶帖单独缓存、只在第 1 页；普通帖前 200 页取自 Valkey 有序集合再按主键批量取，\n更深用 `(last_post_at, id)` 游标走部分索引。",
+        "operationId": "board",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "页码 1–200；与 `cursor` 二选一。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int32", "minimum": 0 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "第 200 页之后的游标（取自上一页的 `next_cursor`）。",
+            "required": false,
+            "schema": { "type": ["string", "null"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/BoardResponse" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["forum"],
+        "summary": "发主题。发帖免审核（plan 第 4 节），新用户 24 小时内限频、不能发外链。",
+        "operationId": "create_topic",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/NewTopicRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/CreatedTopic" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
         }
       }
     },
@@ -129,11 +310,63 @@
         "responses": {
           "200": {
             "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Health" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/listings/{id}": {
+      "get": {
+        "tags": ["trade"],
+        "summary": "交易帖详情（价格、条款、内容哈希）。",
+        "operationId": "get_listing",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ListingView" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/listings/{id}/offers": {
+      "get": {
+        "tags": ["trade"],
+        "summary": "交易帖下的报价卡片（新的在前，最多 50 张）。",
+        "operationId": "listing_offers",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Health"
-                }
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/OfferView" } }
               }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
           }
         }
@@ -146,21 +379,904 @@
         "operationId": "me",
         "responses": {
           "200": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Me" } } }
+          },
+          "401": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Me"
-                }
-              }
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/offers": {
+      "post": {
+        "tags": ["trade"],
+        "summary": "卖家提交签好的报价卡片（需 5 分钟内的钱包 Passkey 验证：plan「私信发起担保」是敏感操作）。",
+        "operationId": "create_offer",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/NewOfferRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OfferView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
           },
           "401": {
             "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/offers/{id}": {
+      "get": {
+        "tags": ["trade"],
+        "operationId": "get_offer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OfferView" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/offers/{id}/accept": {
+      "post": {
+        "tags": ["trade"],
+        "summary": "买家接受卡片：返回付款需要的数据。状态不变——买家付款上链即确认，indexer 看到建单事件后标为已付款。",
+        "operationId": "accept_offer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PaymentData" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/offers/{id}/cancel": {
+      "post": {
+        "tags": ["trade"],
+        "summary": "卖家在对方确认前取消卡片。只作废站内卡片（forum-sponsor 不再代付）；签名在有效期内仍可被链上接受，\n要立即在链上作废需另调 `cancelOffer(nonce)`（收代付费）。",
+        "operationId": "cancel_offer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OfferView" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/offers/{id}/order": {
+      "get": {
+        "tags": ["orders"],
+        "summary": "报价卡片生成的订单（买家付款后从卡片跳到订单页）：只有该订单的买卖双方能查到；\n可多次成交的公开报价返回当前用户参与的最新一单。",
+        "operationId": "by_offer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OrderView" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/offers/{id}/reject": {
+      "post": {
+        "tags": ["trade"],
+        "summary": "指定买家拒绝卡片。",
+        "operationId": "reject_offer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RejectRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OfferView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders": {
+      "get": {
+        "tags": ["orders"],
+        "summary": "我的订单：按角色分别走 `(buyer_id, id DESC)` / `(seller_id, id DESC)` 索引，新的在前，每页 20 条。",
+        "operationId": "list_orders",
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "description": "我作为买家还是卖家的订单。",
+            "required": true,
+            "schema": { "type": "string", "enum": ["buyer", "seller"] }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "上一页的 `next_cursor`。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OrderPage" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/orders/{id}": {
+      "get": {
+        "tags": ["orders"],
+        "summary": "订单详情：买卖双方与仲裁员可见。",
+        "operationId": "get_order",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OrderView" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/posts/{id}": {
+      "delete": {
+        "tags": ["forum"],
+        "summary": "删除楼层：只改状态，楼层号保留（plan 第 4 节）。",
+        "operationId": "delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "description": "管理人员删除他人楼层时必填，写入审计日志。",
+            "required": false,
+            "schema": { "type": ["string", "null"] }
+          }
+        ],
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["forum"],
+        "summary": "编辑楼层。编辑前的版本存入编辑历史；管理人员编辑他人楼层写审计日志。",
+        "operationId": "edit",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/EditRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/posts/{id}/history": {
+      "get": {
+        "tags": ["forum"],
+        "summary": "编辑历史（编辑前的各个版本），新的在前。",
+        "operationId": "history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "游标：上一页的 `next_cursor`。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/EditHistory" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/posts/{id}/source": {
+      "get": {
+        "tags": ["forum"],
+        "summary": "编辑器原稿：作者本人或管理人员重新编辑时加载。",
+        "operationId": "source",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PostSource" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/topics/{id}": {
+      "get": {
+        "tags": ["forum"],
+        "summary": "主题某一页。按楼层区间取（`floor BETWEEN`），第 1 页与第 5000 页一样快。",
+        "operationId": "get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "页码，从 1 开始；每页 20 楼。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int32" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/TopicPage" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/topics/{id}/moderation": {
+      "post": {
+        "tags": ["forum"],
+        "summary": "主题管理。只有该板块的版主和全站管理人员可操作；每次操作写只增审计日志。",
+        "operationId": "moderate",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ModerationRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ModerationResult" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/topics/{id}/posts": {
+      "post": {
+        "tags": ["forum"],
+        "summary": "回帖。楼层在一条多 CTE 语句里分配，HTML 在事务外过滤（plan 第 8 节）。",
+        "operationId": "reply",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ReplyRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/CreatedPost" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/params": {
+      "get": {
+        "tags": ["trade"],
+        "summary": "报价签名域、链上范围与预填值。前端在签名前用它们校验，避免签出链上必然拒绝的报价。",
+        "operationId": "params",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/TradeParams" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wallet": {
+      "get": {
+        "tags": ["wallet"],
+        "summary": "我的钱包 Passkey 与地址。",
+        "operationId": "overview",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/WalletOverview" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/account": {
+      "post": {
+        "tags": ["wallet"],
+        "summary": "登记智能账户地址，绑定到 5 分钟内刚验证过的那个 Passkey（通常是刚注册的那个）。每人每条链一个。\n服务端按 `init_version` 的参数与该 Passkey 公钥推算地址，与提交的不一致时拒绝。",
+        "operationId": "create_account",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/NewWallet" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/WalletView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/passkey/assert/finish": {
+      "post": {
+        "tags": ["wallet"],
+        "summary": "完成 Passkey 再验证：会话获得 5 分钟「近期验证」标记。",
+        "operationId": "assert_finish",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AssertFinish" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Verified" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/passkey/assert/start": {
+      "post": {
+        "tags": ["wallet"],
+        "summary": "开始 Passkey 再验证（敏感操作前：私信发起担保、绑定 Passkey、登记钱包地址等）。",
+        "operationId": "assert_start",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AssertionOptions" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/passkey/register/finish": {
+      "post": {
+        "tags": ["wallet"],
+        "summary": "完成注册：保存凭证 ID、COSE 公钥与 P-256 坐标。成功即视为刚完成一次 Passkey 验证。",
+        "operationId": "register_finish",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RegisterFinish" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PasskeyView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/passkey/register/start": {
+      "post": {
+        "tags": ["wallet"],
+        "summary": "开始注册钱包 Passkey。第一个需要邮箱再验证；之后的需要近期 Passkey 验证。",
+        "operationId": "register_start",
+        "responses": {
+          "200": {
+            "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
+                "schema": { "$ref": "#/components/schemas/RegistrationOptions" }
               }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/reverify/start": {
+      "post": {
+        "tags": ["wallet"],
+        "summary": "开通交易前的邮箱再验证：向账号邮箱发一封「开通交易」验证码。",
+        "operationId": "reverify_start",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ReverifyStarted" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wallet/reverify/verify": {
+      "post": {
+        "tags": ["wallet"],
+        "summary": "校验再验证码；成功后 10 分钟内可注册第一个钱包 Passkey。",
+        "operationId": "reverify_verify",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ReverifyRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {},
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
           }
         }
@@ -169,16 +1285,158 @@
   },
   "components": {
     "schemas": {
+      "AssertFinish": {
+        "type": "object",
+        "required": ["credential"],
+        "properties": {
+          "credential": {
+            "type": "object",
+            "description": "`navigator.credentials.get()` 的结果。"
+          }
+        }
+      },
+      "AssertionOptions": {
+        "type": "object",
+        "required": ["options"],
+        "properties": {
+          "options": { "type": "object", "description": "原样传给 `navigator.credentials.get()`。" }
+        }
+      },
+      "BoardResponse": {
+        "type": "object",
+        "required": ["forum", "pinned", "topics", "users"],
+        "properties": {
+          "forum": { "$ref": "#/components/schemas/ForumView" },
+          "next_cursor": { "type": ["string", "null"] },
+          "next_page": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "下一页页码（前 200 页）；之后改用 `next_cursor`。",
+            "minimum": 0
+          },
+          "pinned": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TopicSummary" },
+            "description": "置顶帖，只在第 1 页返回。"
+          },
+          "topics": { "type": "array", "items": { "$ref": "#/components/schemas/TopicSummary" } },
+          "users": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/UserCardView" },
+            "description": "列表里出现的作者与最后回复者。"
+          }
+        }
+      },
+      "CardStatus": {
+        "type": "string",
+        "enum": ["pending", "modified", "rejected", "cancelled", "expired", "paid"]
+      },
+      "CreatedListing": {
+        "type": "object",
+        "required": ["listing_id", "topic_id", "post_id", "content_hash"],
+        "properties": {
+          "content_hash": {
+            "type": "string",
+            "description": "报价里的 `listingHash`（`0x` + 64 位十六进制）。"
+          },
+          "listing_id": { "type": "integer", "format": "int64" },
+          "post_id": { "type": "integer", "format": "int64" },
+          "topic_id": { "type": "integer", "format": "int64" }
+        }
+      },
+      "CreatedPost": {
+        "type": "object",
+        "required": ["post_id", "floor", "page"],
+        "properties": {
+          "floor": { "type": "integer", "format": "int32" },
+          "page": { "type": "integer", "format": "int32", "description": "新楼层所在页码。" },
+          "post_id": { "type": "integer", "format": "int64" }
+        }
+      },
+      "CreatedTopic": {
+        "type": "object",
+        "required": ["topic_id", "post_id"],
+        "properties": {
+          "post_id": { "type": "integer", "format": "int64" },
+          "topic_id": { "type": "integer", "format": "int64" }
+        }
+      },
+      "Deadlines": {
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "一次性：买家确认期限（发货后才有）。"
+          },
+          "ship": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "一次性：发货期限（即时发货为空）。"
+          },
+          "start": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "分期：卖家开始服务的期限。"
+          }
+        }
+      },
+      "DisputeView": {
+        "type": "object",
+        "required": ["by", "from_bond"],
+        "properties": {
+          "by": { "type": "string" },
+          "disputed_at": { "type": ["string", "null"], "format": "date-time" },
+          "from_bond": { "type": "boolean", "description": "争议费从卖家保证金扣。" }
+        }
+      },
+      "EditHistory": {
+        "type": "object",
+        "required": ["edits"],
+        "properties": {
+          "edits": { "type": "array", "items": { "$ref": "#/components/schemas/EditView" } },
+          "next_cursor": { "type": ["string", "null"] }
+        }
+      },
+      "EditRequest": {
+        "type": "object",
+        "required": ["html", "source"],
+        "properties": {
+          "html": { "type": "string" },
+          "source": { "type": "object" },
+          "title": { "type": ["string", "null"], "description": "只有 1 楼可以同时改标题。" }
+        }
+      },
+      "EditView": {
+        "type": "object",
+        "required": ["id", "editor_id", "html", "edited_at"],
+        "properties": {
+          "edited_at": { "type": "string", "format": "date-time" },
+          "editor_id": { "type": "integer", "format": "int64" },
+          "html": { "type": "string", "description": "编辑前的 HTML。" },
+          "id": { "type": "integer", "format": "int64" },
+          "title": { "type": ["string", "null"], "description": "1 楼编辑时的旧标题。" }
+        }
+      },
+      "Eip712Domain": {
+        "type": "object",
+        "required": ["name", "version", "chainId"],
+        "properties": {
+          "chainId": { "type": "integer", "format": "int64", "minimum": 0 },
+          "name": { "type": "string" },
+          "verifyingContract": {
+            "type": ["string", "null"],
+            "description": "担保合约地址；未配置时为空，报价功能不可用。"
+          },
+          "version": { "type": "string" }
+        }
+      },
       "ErrorBody": {
         "type": "object",
         "required": ["code", "message"],
         "properties": {
-          "code": {
-            "$ref": "#/components/schemas/ErrorCode"
-          },
-          "message": {
-            "type": "string"
-          }
+          "code": { "$ref": "#/components/schemas/ErrorCode" },
+          "message": { "type": "string" }
         }
       },
       "ErrorCode": {
@@ -196,45 +1454,585 @@
           "TOO_MANY_ATTEMPTS",
           "UNAUTHORIZED",
           "ORIGIN_REJECTED",
+          "NOT_FOUND",
+          "FORBIDDEN",
+          "TOPIC_LOCKED",
+          "CONTENT_EMPTY",
+          "CONTENT_TOO_LONG",
+          "INVALID_TITLE",
+          "EXTERNAL_LINK_FORBIDDEN",
+          "AMOUNT_OUT_OF_RANGE",
+          "WINDOW_OUT_OF_RANGE",
+          "BOND_INVALID",
+          "FEE_LIMIT_INVALID",
+          "OFFER_EXPIRY_INVALID",
+          "OFFER_UNAVAILABLE",
+          "CONFLICT",
+          "USERNAME_REQUIRED",
+          "REVERIFY_REQUIRED",
+          "PASSKEY_REQUIRED",
+          "PASSKEY_FAILED",
+          "TOO_MANY_PASSKEYS",
+          "WALLET_REQUIRED",
+          "WALLET_ADDRESS_MISMATCH",
+          "SPONSOR_NOT_ALLOWED",
+          "SPONSOR_QUOTA_EXCEEDED",
+          "SPONSOR_PENDING",
+          "SPONSOR_SUSPENDED",
+          "SIMULATION_FAILED",
+          "SPONSOR_UNAVAILABLE",
           "INTERNAL"
         ]
+      },
+      "ForumView": {
+        "type": "object",
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "description",
+          "position",
+          "view_min_level",
+          "post_min_level",
+          "reply_min_level"
+        ],
+        "properties": {
+          "description": { "type": "string" },
+          "id": { "type": "integer", "format": "int32" },
+          "name": { "type": "string" },
+          "parent_id": { "type": ["integer", "null"], "format": "int32" },
+          "position": { "type": "integer", "format": "int32" },
+          "post_min_level": { "type": "integer", "format": "int32" },
+          "reply_min_level": { "type": "integer", "format": "int32" },
+          "slug": { "type": "string" },
+          "view_min_level": {
+            "type": "integer",
+            "format": "int32",
+            "description": "可见 / 发帖 / 回复所需最低等级（游客为 0）。"
+          }
+        }
       },
       "Health": {
         "type": "object",
         "required": ["status"],
+        "properties": { "status": { "type": "string" } }
+      },
+      "ListingTerms": {
+        "type": "object",
+        "description": "交易帖条款（预填给报价；实际成交以卖家签名的报价为准）。",
+        "required": ["ship_window", "confirm_window"],
         "properties": {
-          "status": {
-            "type": "string"
-          }
+          "bond": {
+            "type": "string",
+            "description": "卖家保证金（最小单位，十进制字符串）；默认 \"0\"。"
+          },
+          "confirm_window": { "type": "integer", "format": "int32", "minimum": 0 },
+          "fee_payer": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0 = 卖家、1 = 买家、2 = 各半。",
+            "minimum": 0
+          },
+          "instant": { "type": "boolean" },
+          "late_slash_bps": { "type": "integer", "format": "int32", "minimum": 0 },
+          "ship_window": { "type": "integer", "format": "int32", "minimum": 0 }
+        },
+        "additionalProperties": false
+      },
+      "ListingView": {
+        "type": "object",
+        "required": [
+          "id",
+          "topic_id",
+          "seller_id",
+          "chain_id",
+          "price",
+          "terms",
+          "content_hash",
+          "created_at"
+        ],
+        "properties": {
+          "chain_id": { "type": "integer", "format": "int64" },
+          "content_hash": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "id": { "type": "integer", "format": "int64" },
+          "price": { "type": "string" },
+          "seller_id": { "type": "integer", "format": "int64" },
+          "terms": { "$ref": "#/components/schemas/ListingTerms" },
+          "topic_id": { "type": "integer", "format": "int64" }
         }
       },
       "Me": {
         "type": "object",
         "required": ["id", "email"],
         "properties": {
-          "email": {
-            "type": "string"
+          "email": { "type": "string" },
+          "id": { "type": "integer", "format": "int64" },
+          "username": { "type": ["string", "null"] }
+        }
+      },
+      "ModerationAction": {
+        "type": "string",
+        "enum": ["pin", "unpin", "feature", "unfeature", "lock", "unlock", "hide", "unhide", "move"]
+      },
+      "ModerationRequest": {
+        "type": "object",
+        "required": ["action", "reason"],
+        "properties": {
+          "action": { "$ref": "#/components/schemas/ModerationAction" },
+          "forum_id": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "`move` 的目标板块。"
           },
-          "id": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "username": {
-            "type": ["string", "null"]
+          "reason": {
+            "type": "string",
+            "description": "预设理由或补充说明，写入审计日志（plan 第 9 节）。"
           }
+        }
+      },
+      "ModerationResult": {
+        "type": "object",
+        "required": ["forum_id", "flags"],
+        "properties": {
+          "flags": { "$ref": "#/components/schemas/TopicFlags" },
+          "forum_id": { "type": "integer", "format": "int32" }
+        }
+      },
+      "NewListingRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/NewTopicRequest" },
+          {
+            "type": "object",
+            "required": ["price", "terms"],
+            "properties": {
+              "price": {
+                "type": "string",
+                "description": "价格，USDT 最小单位（十进制字符串，如 \"45000000\" = 45 USDT）。"
+              },
+              "terms": { "$ref": "#/components/schemas/ListingTerms" }
+            }
+          }
+        ]
+      },
+      "NewOfferRequest": {
+        "type": "object",
+        "required": ["offer", "signature"],
+        "properties": {
+          "conversation_id": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "私信里的报价：必须指定买家、只能成交 1 次。"
+          },
+          "listing_id": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "交易帖下的报价：`offer.listingHash` 必须等于该帖的 `content_hash`。"
+          },
+          "offer": { "$ref": "#/components/schemas/Offer" },
+          "replaces": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "修改约定：被替换的待确认卡片（同一交易帖 / 会话、同一卖家），旧卡片变为「已修改」。"
+          },
+          "signature": {
+            "type": "string",
+            "description": "卖家对 `hashOffer(offer)` 的签名（`0x` 十六进制；智能账户为 ERC-1271 / ERC-6492 格式）。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "NewTopicRequest": {
+        "type": "object",
+        "required": ["title", "html", "source"],
+        "properties": {
+          "html": {
+            "type": "string",
+            "description": "Tiptap `getHTML()` 的结果；服务端会重新过滤。"
+          },
+          "source": {
+            "type": "object",
+            "description": "Tiptap `getJSON()` 原稿，重新编辑时加载。"
+          },
+          "title": { "type": "string" }
+        }
+      },
+      "NewWallet": {
+        "type": "object",
+        "required": ["chain_id", "address", "init_version"],
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "浏览器用 ZeroDev SDK（Kernel v3.3 + EntryPoint v0.7）按 `init_version` 的参数算出的 counterfactual 地址。",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "chain_id": { "type": "integer", "format": "int64", "minimum": 0 },
+          "init_version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "计算地址用的初始化参数版本（`GET /api/v1/trade/params` 的 `wallet_init_versions`）。",
+            "minimum": 0
+          }
+        }
+      },
+      "Offer": {
+        "type": "object",
+        "description": "与 `Escrow.Offer` 字段一一对应、同序。JSON 字段名与 EIP-712 typed data 的 `message` 相同（驼峰）。",
+        "required": [
+          "seller",
+          "buyer",
+          "token",
+          "amount",
+          "feePayer",
+          "maxFeeBps",
+          "maxBaseGas",
+          "maxMinFee",
+          "bond",
+          "lateSlashBps",
+          "instant",
+          "shipWindow",
+          "confirmWindow",
+          "listingHash",
+          "expiry",
+          "maxFills",
+          "nonce"
+        ],
+        "properties": {
+          "amount": {
+            "type": "string",
+            "description": "USDT 最小单位，十进制字符串。",
+            "example": "45000000"
+          },
+          "bond": { "type": "string" },
+          "buyer": { "type": "string", "description": "全 0 = 公开报价，任何人可付款。" },
+          "confirmWindow": { "type": "integer", "format": "int32", "minimum": 0 },
+          "expiry": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix 秒。",
+            "minimum": 0
+          },
+          "feePayer": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0 = 卖家、1 = 买家、2 = 各半（`FeeMath.Payer`）。",
+            "minimum": 0
+          },
+          "instant": { "type": "boolean" },
+          "lateSlashBps": { "type": "integer", "format": "int32", "minimum": 0 },
+          "listingHash": { "type": "string" },
+          "maxBaseGas": { "type": "string" },
+          "maxFeeBps": { "type": "integer", "format": "int32", "minimum": 0 },
+          "maxFills": { "type": "integer", "format": "int32", "minimum": 0 },
+          "maxMinFee": { "type": "string" },
+          "nonce": { "type": "string" },
+          "seller": { "type": "string", "example": "0x1111111111111111111111111111111111111111" },
+          "shipWindow": { "type": "integer", "format": "int32", "minimum": 0 },
+          "token": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "OfferView": {
+        "type": "object",
+        "required": [
+          "id",
+          "seller_id",
+          "status",
+          "chain_id",
+          "verifying_contract",
+          "offer",
+          "signature",
+          "offer_hash",
+          "expires_at",
+          "created_at"
+        ],
+        "properties": {
+          "buyer_id": { "type": ["integer", "null"], "format": "int64" },
+          "chain_id": { "type": "integer", "format": "int64" },
+          "conversation_id": { "type": ["integer", "null"], "format": "int64" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "expires_at": { "type": "string", "format": "date-time" },
+          "id": { "type": "integer", "format": "int64" },
+          "listing_id": { "type": ["integer", "null"], "format": "int64" },
+          "offer": {
+            "$ref": "#/components/schemas/Offer",
+            "description": "EIP-712 typed data 的 `message`。"
+          },
+          "offer_hash": { "type": "string" },
+          "reject_reason": { "type": ["string", "null"] },
+          "replaces_id": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "被这张卡片替换的旧卡片（修改约定）。"
+          },
+          "seller_id": { "type": "integer", "format": "int64" },
+          "signature": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/CardStatus" },
+          "verifying_contract": { "type": "string" }
+        }
+      },
+      "OrderFees": {
+        "type": "object",
+        "description": "下单时固定的费用（下单区块 `getOrder` 快照；快照缺失时为空）。",
+        "properties": {
+          "bond": { "type": ["string", "null"] },
+          "buyer_fee": { "type": ["string", "null"] },
+          "buyer_gas": { "type": ["string", "null"] },
+          "dispute_fee": { "type": ["string", "null"] },
+          "seller_fee": { "type": ["string", "null"] },
+          "seller_gas": { "type": ["string", "null"] }
+        }
+      },
+      "OrderPage": {
+        "type": "object",
+        "required": ["orders"],
+        "properties": {
+          "next_cursor": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "还有下一页时为下一页的游标。"
+          },
+          "orders": { "type": "array", "items": { "$ref": "#/components/schemas/OrderView" } }
+        }
+      },
+      "OrderSource": {
+        "type": "object",
+        "description": "订单的来源：卖家签名的报价（站内卡片 `GET /api/v1/offers/{id}`）与交易帖内容哈希（下单时锁定的版本）。",
+        "required": ["offer_hash", "listing_hash"],
+        "properties": {
+          "auction_id": { "type": ["string", "null"], "description": "拍卖成交的订单。" },
+          "listing_hash": { "type": "string" },
+          "listing_id": { "type": ["integer", "null"], "format": "int64" },
+          "listing_topic_id": { "type": ["integer", "null"], "format": "int64" },
+          "offer_hash": { "type": "string" },
+          "offer_id": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "站内报价卡片；拍卖成交或站外签出的报价没有。"
+          }
+        }
+      },
+      "OrderView": {
+        "type": "object",
+        "required": [
+          "id",
+          "chain_id",
+          "contract",
+          "chain_order_id",
+          "mode",
+          "state",
+          "level",
+          "buyer",
+          "seller",
+          "token",
+          "amount",
+          "fees",
+          "instant",
+          "deadlines",
+          "source",
+          "created_block",
+          "updated_block",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "amount": { "type": "string" },
+          "buyer": { "$ref": "#/components/schemas/Party" },
+          "chain_id": { "type": "integer", "format": "int64" },
+          "chain_order_id": { "type": "integer", "format": "int64" },
+          "contract": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "created_block": { "type": "integer", "format": "int64" },
+          "deadlines": { "$ref": "#/components/schemas/Deadlines" },
+          "dispute": {
+            "oneOf": [{ "$ref": "#/components/schemas/DisputeView" }, { "type": "null" }]
+          },
+          "fees": { "$ref": "#/components/schemas/OrderFees" },
+          "id": { "type": "integer", "format": "int64" },
+          "instant": { "type": "boolean" },
+          "level": {
+            "type": "string",
+            "description": "确认级别：`latest` / `safe` / `finalized`。"
+          },
+          "mode": { "type": "string", "description": "`escrow`（一次性）或 `stream`（分期）。" },
+          "proposal": {
+            "oneOf": [{ "$ref": "#/components/schemas/ProposalView" }, { "type": "null" }]
+          },
+          "ruling": {
+            "oneOf": [{ "$ref": "#/components/schemas/RulingView" }, { "type": "null" }]
+          },
+          "seller": { "$ref": "#/components/schemas/Party" },
+          "settlement": {
+            "oneOf": [{ "$ref": "#/components/schemas/SettlementView" }, { "type": "null" }]
+          },
+          "source": { "$ref": "#/components/schemas/OrderSource" },
+          "state": {
+            "type": "string",
+            "description": "`funded` / `disputed` / `released` / `refunded` / `settled`；`none` = 下单交易已被区块回滚撤销。"
+          },
+          "stream": {
+            "oneOf": [{ "$ref": "#/components/schemas/StreamView" }, { "type": "null" }]
+          },
+          "token": { "type": "string" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "updated_block": { "type": "integer", "format": "int64" }
+        }
+      },
+      "Party": {
+        "type": "object",
+        "required": ["address"],
+        "properties": {
+          "address": { "type": "string" },
+          "user_id": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "钱包属于本站用户时。"
+          }
+        }
+      },
+      "PasskeyView": {
+        "type": "object",
+        "required": ["id", "credential_id", "pubkey_x", "pubkey_y", "created_at"],
+        "properties": {
+          "created_at": { "type": "string", "format": "date-time" },
+          "credential_id": { "type": "string", "description": "base64url 凭证 ID。" },
+          "id": { "type": "integer", "format": "int64" },
+          "last_used_at": { "type": ["string", "null"], "format": "date-time" },
+          "pubkey_x": {
+            "type": "string",
+            "description": "P-256 公钥 x 坐标（`0x` + 64 位十六进制），用于计算 Kernel 智能账户地址。"
+          },
+          "pubkey_y": { "type": "string" }
+        }
+      },
+      "PaymentData": {
+        "type": "object",
+        "required": [
+          "offer_id",
+          "escrow",
+          "chain_id",
+          "offer",
+          "signature",
+          "offer_hash",
+          "buyer_pays",
+          "buyer_fee",
+          "buyer_gas",
+          "buyer_wallet"
+        ],
+        "properties": {
+          "buyer_fee": { "type": "string" },
+          "buyer_gas": { "type": "string" },
+          "buyer_pays": {
+            "type": "string",
+            "description": "按当前收费估算（最小单位）：买家需 `approve` 并转入的总额 = 金额 + 买家手续费 + 买家 gas 费。\n以链上建单时的参数为准；免费活动期间实际更少。"
+          },
+          "buyer_wallet": {
+            "type": "string",
+            "description": "买家智能账户地址（付款必须从这个地址发起）。"
+          },
+          "chain_id": { "type": "integer", "format": "int64" },
+          "escrow": {
+            "type": "string",
+            "description": "`createAndFund(offer, sellerSig)` 的合约地址与链。"
+          },
+          "offer": { "$ref": "#/components/schemas/Offer" },
+          "offer_hash": { "type": "string" },
+          "offer_id": { "type": "integer", "format": "int64" },
+          "signature": { "type": "string" }
+        }
+      },
+      "PostSource": {
+        "type": "object",
+        "required": ["source"],
+        "properties": { "source": { "type": "object" } }
+      },
+      "PostView": {
+        "type": "object",
+        "required": ["id", "floor", "author_id", "html", "deleted", "created_at"],
+        "properties": {
+          "author_id": { "type": "integer", "format": "int64" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "deleted": { "type": "boolean" },
+          "edited_at": { "type": ["string", "null"], "format": "date-time" },
+          "floor": { "type": "integer", "format": "int32" },
+          "html": { "type": "string", "description": "已过滤的 HTML；已删除的楼层为空字符串。" },
+          "id": { "type": "integer", "format": "int64" }
+        }
+      },
+      "ProposalView": {
+        "type": "object",
+        "required": ["proposer", "to_buyer"],
+        "properties": {
+          "expiry": { "type": ["string", "null"], "format": "date-time" },
+          "proposer": { "type": "string" },
+          "to_buyer": { "type": "string" }
+        }
+      },
+      "RegisterFinish": {
+        "type": "object",
+        "required": ["credential"],
+        "properties": {
+          "credential": {
+            "type": "object",
+            "description": "`navigator.credentials.create()` 的结果（二进制字段 base64url 编码）。"
+          }
+        }
+      },
+      "RegistrationOptions": {
+        "type": "object",
+        "required": ["options"],
+        "properties": {
+          "options": {
+            "type": "object",
+            "description": "原样传给 `navigator.credentials.create()`（`publicKey` 字段内为 base64url 编码，需先解码）。"
+          }
+        }
+      },
+      "RejectRequest": {
+        "type": "object",
+        "properties": {
+          "reason": { "type": ["string", "null"], "description": "拒绝理由（可选，≤ 200 字）。" }
+        }
+      },
+      "ReplyRequest": {
+        "type": "object",
+        "required": ["html", "source"],
+        "properties": { "html": { "type": "string" }, "source": { "type": "object" } }
+      },
+      "ReverifyRequest": {
+        "type": "object",
+        "required": ["code"],
+        "properties": { "code": { "type": "string" } }
+      },
+      "ReverifyStarted": {
+        "type": "object",
+        "required": ["expires_in", "resend_in"],
+        "properties": {
+          "expires_in": { "type": "integer", "format": "int64", "minimum": 0 },
+          "resend_in": { "type": "integer", "format": "int64", "minimum": 0 }
+        }
+      },
+      "RulingView": {
+        "type": "object",
+        "properties": {
+          "bond_to_buyer_bps": { "type": ["integer", "null"], "format": "int32" },
+          "to_buyer_bps": { "type": ["integer", "null"], "format": "int32" }
+        }
+      },
+      "SettlementView": {
+        "type": "object",
+        "properties": {
+          "to_buyer": { "type": ["string", "null"] },
+          "to_fee_recipient": { "type": ["string", "null"] },
+          "to_seller": { "type": ["string", "null"] }
         }
       },
       "StartRequest": {
         "type": "object",
         "required": ["email"],
         "properties": {
-          "captcha": {
-            "type": ["string", "null"],
-            "description": "Cloudflare Turnstile 令牌。"
-          },
-          "email": {
-            "type": "string"
-          }
+          "captcha": { "type": ["string", "null"], "description": "Cloudflare Turnstile 令牌。" },
+          "email": { "type": "string" }
         }
       },
       "StartResponse": {
@@ -255,29 +2053,261 @@
           }
         }
       },
+      "StreamView": {
+        "type": "object",
+        "description": "分期订单的进度。",
+        "required": ["interval_secs", "periods", "claimed"],
+        "properties": {
+          "claimed": {
+            "type": "string",
+            "description": "已领取的可解锁净本金（含领取 gas 与从已解锁部分扣的争议费）。"
+          },
+          "ends_at": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "全部期数到期的时间（开始后才有）。"
+          },
+          "interval_secs": { "type": "integer", "format": "int32" },
+          "periods": { "type": "integer", "format": "int32" },
+          "started_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "TopicFlags": {
+        "type": "object",
+        "required": ["pinned", "featured", "locked", "hidden"],
+        "properties": {
+          "featured": { "type": "boolean" },
+          "hidden": { "type": "boolean" },
+          "locked": { "type": "boolean" },
+          "pinned": { "type": "boolean" }
+        }
+      },
+      "TopicPage": {
+        "allOf": [
+          { "$ref": "#/components/schemas/TopicPageBody" },
+          {
+            "type": "object",
+            "required": ["page", "total_pages", "can_reply", "can_moderate"],
+            "properties": {
+              "can_moderate": { "type": "boolean" },
+              "can_reply": { "type": "boolean" },
+              "page": { "type": "integer", "format": "int32" },
+              "total_pages": { "type": "integer", "format": "int32" }
+            }
+          }
+        ]
+      },
+      "TopicPageBody": {
+        "type": "object",
+        "description": "主题页里与访问者无关、可以缓存的部分。",
+        "required": ["forum", "topic", "posts", "users"],
+        "properties": {
+          "forum": { "$ref": "#/components/schemas/ForumView" },
+          "posts": { "type": "array", "items": { "$ref": "#/components/schemas/PostView" } },
+          "topic": { "$ref": "#/components/schemas/TopicSummary" },
+          "users": { "type": "array", "items": { "$ref": "#/components/schemas/UserCardView" } }
+        }
+      },
+      "TopicSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "forum_id",
+          "author_id",
+          "title",
+          "kind",
+          "flags",
+          "replies",
+          "last_floor",
+          "last_post_at",
+          "created_at",
+          "views"
+        ],
+        "properties": {
+          "author_id": { "type": "integer", "format": "int64" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "flags": { "$ref": "#/components/schemas/TopicFlags" },
+          "forum_id": { "type": "integer", "format": "int32" },
+          "id": { "type": "integer", "format": "int64" },
+          "kind": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0=普通、1=交易、2=争议。"
+          },
+          "last_floor": { "type": "integer", "format": "int32" },
+          "last_post_at": { "type": "string", "format": "date-time" },
+          "last_poster_id": { "type": ["integer", "null"], "format": "int64" },
+          "replies": {
+            "type": "integer",
+            "format": "int32",
+            "description": "回复数（楼层数 − 1）。"
+          },
+          "title": { "type": "string" },
+          "views": { "type": "integer", "format": "int64" }
+        }
+      },
+      "TradeDefaults": {
+        "type": "object",
+        "required": [
+          "ship_window",
+          "confirm_window",
+          "fee_payer",
+          "public_offer_ttl",
+          "private_offer_ttl"
+        ],
+        "properties": {
+          "confirm_window": { "type": "integer", "format": "int32", "minimum": 0 },
+          "fee_payer": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0 = 卖家承担（默认）。",
+            "minimum": 0
+          },
+          "private_offer_ttl": { "type": "integer", "format": "int64", "minimum": 0 },
+          "public_offer_ttl": { "type": "integer", "format": "int64", "minimum": 0 },
+          "ship_window": { "type": "integer", "format": "int32", "minimum": 0 }
+        }
+      },
+      "TradeParams": {
+        "type": "object",
+        "required": [
+          "domain",
+          "min_order",
+          "order_cap",
+          "fee_bps",
+          "min_fee",
+          "base_gas",
+          "min_window",
+          "max_window",
+          "min_offer_ttl",
+          "max_offer_ttl",
+          "defaults",
+          "wallet_init_versions"
+        ],
+        "properties": {
+          "base_gas": { "type": "string" },
+          "defaults": { "$ref": "#/components/schemas/TradeDefaults" },
+          "domain": { "$ref": "#/components/schemas/Eip712Domain" },
+          "fee_bps": {
+            "type": "integer",
+            "format": "int32",
+            "description": "当前收费：报价里的 `maxFeeBps` / `maxBaseGas` / `maxMinFee` 不能低于这些值。",
+            "minimum": 0
+          },
+          "max_offer_ttl": { "type": "integer", "format": "int64", "minimum": 0 },
+          "max_window": { "type": "integer", "format": "int32", "minimum": 0 },
+          "min_fee": { "type": "string" },
+          "min_offer_ttl": { "type": "integer", "format": "int64", "minimum": 0 },
+          "min_order": {
+            "type": "string",
+            "description": "以下金额均为 USDT 最小单位（十进制字符串）。"
+          },
+          "min_window": { "type": "integer", "format": "int32", "minimum": 0 },
+          "order_cap": { "type": "string" },
+          "token": {
+            "type": ["string", "null"],
+            "description": "本链 USDT 地址（报价的 `token`）。"
+          },
+          "wallet_init_versions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/WalletInitVersionView" },
+            "description": "钱包初始化参数各版本（ADR 0008），按版本号升序；新钱包用最后一个，已有钱包用自己登记的版本。"
+          }
+        }
+      },
+      "UserCardView": {
+        "type": "object",
+        "required": ["id", "level"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "level": { "type": "integer", "format": "int32" },
+          "username": {
+            "type": ["string", "null"],
+            "description": "还没设置用户名时为空，前端显示「用户 {id}」。"
+          }
+        }
+      },
+      "Verified": {
+        "type": "object",
+        "required": ["passkey_id", "verified_until"],
+        "properties": {
+          "passkey_id": { "type": "integer", "format": "int64" },
+          "verified_until": {
+            "type": "integer",
+            "format": "int64",
+            "description": "近期验证有效至（Unix 秒）。"
+          }
+        }
+      },
       "VerifyRequest": {
         "type": "object",
         "required": ["email", "code"],
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          }
-        }
+        "properties": { "code": { "type": "string" }, "email": { "type": "string" } }
       },
       "VerifyResponse": {
         "type": "object",
         "required": ["user", "created"],
         "properties": {
-          "created": {
+          "created": { "type": "boolean", "description": "本次登录是否新注册。" },
+          "user": { "$ref": "#/components/schemas/Me" }
+        }
+      },
+      "WalletInitVersionView": {
+        "type": "object",
+        "description": "一个版本的 Kernel v3.3 账户初始化参数。地址为 `0x` 小写十六进制。",
+        "required": [
+          "version",
+          "kernel_implementation",
+          "kernel_factory",
+          "kernel_meta_factory",
+          "webauthn_validator",
+          "entry_point",
+          "paymaster",
+          "approve_token",
+          "approve_amount"
+        ],
+        "properties": {
+          "approve_amount": { "type": "string", "description": "十进制字符串。" },
+          "approve_token": { "type": "string" },
+          "entry_point": { "type": "string" },
+          "kernel_factory": { "type": "string" },
+          "kernel_implementation": { "type": "string" },
+          "kernel_meta_factory": { "type": "string" },
+          "paymaster": { "type": "string" },
+          "version": { "type": "integer", "format": "int32", "minimum": 0 },
+          "webauthn_validator": { "type": "string" }
+        }
+      },
+      "WalletOverview": {
+        "type": "object",
+        "required": ["enabled", "passkeys", "wallets"],
+        "properties": {
+          "enabled": {
             "type": "boolean",
-            "description": "本次登录是否新注册。"
+            "description": "是否已开通交易（至少一个钱包 Passkey 和本链钱包地址）。"
           },
-          "user": {
-            "$ref": "#/components/schemas/Me"
-          }
+          "passkeys": { "type": "array", "items": { "$ref": "#/components/schemas/PasskeyView" } },
+          "verified_until": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "当前会话的 Passkey 近期验证截止时间（Unix 秒）。"
+          },
+          "wallets": { "type": "array", "items": { "$ref": "#/components/schemas/WalletView" } }
+        }
+      },
+      "WalletView": {
+        "type": "object",
+        "required": ["chain_id", "address", "passkey_id", "init_version", "created_at"],
+        "properties": {
+          "address": { "type": "string" },
+          "chain_id": { "type": "integer", "format": "int64" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "init_version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "初始化参数版本：推算地址、部署钱包都用这个版本，不用当前最新版本（ADR 0008）。"
+          },
+          "passkey_id": { "type": "integer", "format": "int64" }
         }
       }
     }

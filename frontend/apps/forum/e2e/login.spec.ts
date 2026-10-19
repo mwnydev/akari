@@ -1,9 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { uniqueEmail } from "./auth";
 import { latestCode } from "./mailpit";
-
-function uniqueEmail(tag: string) {
-  return `e2e-${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@test.dev`;
-}
 
 test("guest logs in with an emailed code, sees themselves in the nav, then logs out", async ({
   page,

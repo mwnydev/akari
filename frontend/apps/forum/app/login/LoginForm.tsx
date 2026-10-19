@@ -1,15 +1,17 @@
 "use client";
 
-import { ApiError, createApi, errorMessage } from "@akari/api-client";
+import { ApiError, errorMessage } from "@akari/api-client";
 import { Button, Field, Input } from "@akari/ui";
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
-import { QueryClient, QueryClientProvider, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import * as z from "zod/mini";
-
-const api = createApi();
+import { QueryProvider } from "../../components/QueryProvider";
+import { api, unwrap } from "../../lib/browser-api";
+import { TURNSTILE_SITE_KEY } from "../../lib/public-config";
+import { Turnstile } from "./Turnstile";
 
 const EmailSchema = z.object({
   email: z.email({ error: "请输入正确的邮箱地址" }),
@@ -20,21 +22,11 @@ const CodeSchema = z.object({
 type EmailInput = z.infer<typeof EmailSchema>;
 type CodeInput = z.infer<typeof CodeSchema>;
 
-async function startLogin(email: string, captcha: string | null) {
-  const { data, error, response } = await api.POST("/api/v1/auth/email/start", {
-    body: { email, captcha },
-  });
-  if (!data) throw ApiError.from(error, response.status);
-  return data;
-}
+const startLogin = (email: string, captcha: string | null) =>
+  unwrap(api.POST("/api/v1/auth/email/start", { body: { email, captcha } }));
 
-async function verifyLogin(email: string, code: string) {
-  const { data, error, response } = await api.POST("/api/v1/auth/email/verify", {
-    body: { email, code },
-  });
-  if (!data) throw ApiError.from(error, response.status);
-  return data;
-}
+const verifyLogin = (email: string, code: string) =>
+  unwrap(api.POST("/api/v1/auth/email/verify", { body: { email, code } }));
 
 /** 每秒减 1 的倒计时；`start(n)` 重新开始。 */
 function useCountdown() {
@@ -47,17 +39,12 @@ function useCountdown() {
   return [left, setLeft] as const;
 }
 
-/**
- * Cloudflare Turnstile 占位：配置 NEXT_PUBLIC_TURNSTILE_SITE_KEY 后接入真实组件（P0 上线前）。
- * 后端未配置 TURNSTILE_SECRET 时不校验，开发环境传 null 即可。
- */
-function useCaptcha(): string | null {
-  return null;
-}
-
 function Steps({ next }: { next: string }) {
   const router = useRouter();
-  const captcha = useCaptcha();
+  // 配置了 NEXT_PUBLIC_TURNSTILE_SITE_KEY 才做人机验证；否则传 null（后端未配置 TURNSTILE_SECRET 时不校验）
+  const [captcha, setCaptcha] = useState<string | null>(null);
+  const [captchaRound, setCaptchaRound] = useState(0);
+  const captchaMissing = TURNSTILE_SITE_KEY !== "" && captcha === null;
   const [email, setEmail] = useState<string | null>(null);
   const [resendIn, setResendIn] = useCountdown();
 
@@ -80,7 +67,16 @@ function Steps({ next }: { next: string }) {
     onError: (e) => {
       if (e instanceof ApiError && e.code === "RESEND_TOO_SOON" && email) setResendIn(60);
     },
+    // Turnstile 令牌只能用一次，无论成败都换新的
+    onSettled: () => {
+      setCaptcha(null);
+      setCaptchaRound((n) => n + 1);
+    },
   });
+
+  const turnstile = TURNSTILE_SITE_KEY ? (
+    <Turnstile siteKey={TURNSTILE_SITE_KEY} round={captchaRound} onToken={setCaptcha} />
+  ) : null;
 
   const verify = useMutation({
     mutationFn: (v: CodeInput) => verifyLogin(email ?? "", v.code),
@@ -112,15 +108,13 @@ function Steps({ next }: { next: string }) {
             {...emailForm.register("email")}
           />
         </Field>
-        <div className="rounded-lg border border-dashed border-border p-3 text-sm text-fg-muted">
-          人机验证（开发环境已跳过）
-        </div>
+        {turnstile}
         {start.isError ? (
           <p role="alert" className="text-sm text-danger">
             {errorMessage(start.error)}
           </p>
         ) : null}
-        <Button type="submit" size="lg" disabled={start.isPending}>
+        <Button type="submit" size="lg" disabled={start.isPending || captchaMissing}>
           {start.isPending ? "发送中…" : "获取验证码"}
         </Button>
       </form>
@@ -163,6 +157,7 @@ function Steps({ next }: { next: string }) {
       <Button type="submit" size="lg" disabled={verify.isPending}>
         {verify.isPending ? "登录中…" : "登录"}
       </Button>
+      {turnstile}
       <div className="flex items-center justify-between text-sm">
         <Button
           variant="ghost"
@@ -178,7 +173,7 @@ function Steps({ next }: { next: string }) {
         <Button
           variant="ghost"
           size="sm"
-          disabled={resendIn > 0 || start.isPending}
+          disabled={resendIn > 0 || start.isPending || captchaMissing}
           onClick={() => start.mutate({ email })}
         >
           {resendIn > 0 ? `${resendIn} 秒后可重发` : "重新发送"}
@@ -189,12 +184,9 @@ function Steps({ next }: { next: string }) {
 }
 
 export function LoginForm({ next }: { next: string }) {
-  const [client] = useState(
-    () => new QueryClient({ defaultOptions: { mutations: { retry: false } } }),
-  );
   return (
-    <QueryClientProvider client={client}>
+    <QueryProvider>
       <Steps next={next} />
-    </QueryClientProvider>
+    </QueryProvider>
   );
 }

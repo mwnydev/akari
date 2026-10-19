@@ -1,7 +1,7 @@
 // 主入口只放轻量组件。弹窗、标签页、签名确认、聊天框等交互重的组件走子路径
 // （@akari/ui/dialog、/tabs、/sign-confirm、/chat、/toast），只进用到它们的页面（plan 第 12 节 JS 预算）。
 export { Amount, type AmountProps } from "./Amount";
-export { formatUsdt } from "./format";
+export { formatUsdt, parseUsdt } from "./format";
 export { shortAddress } from "./address";
 export { cn } from "./cn";
 export { Button, type ButtonProps, type ButtonVariant, type ButtonSize } from "./components/Button";

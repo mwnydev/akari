@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatUsdt } from "./format";
+import { formatUsdt, parseUsdt } from "./format";
 
 describe("formatUsdt", () => {
   it("formats with thousands separators, ≥ 2 decimals, trailing zeros trimmed", () => {
@@ -18,5 +18,20 @@ describe("formatUsdt", () => {
   it("rejects non-integer strings", () => {
     expect(() => formatUsdt("1.5")).toThrow();
     expect(() => formatUsdt("")).toThrow();
+  });
+});
+
+describe("parseUsdt", () => {
+  it("parses whole and fractional amounts exactly", () => {
+    expect(parseUsdt("45")).toBe(45_000_000n);
+    expect(parseUsdt(" 0.5 ")).toBe(500_000n);
+    expect(parseUsdt("12.345678")).toBe(12_345_678n);
+    expect(parseUsdt("1.")).toBe(1_000_000n);
+  });
+
+  it("rejects malformed input", () => {
+    for (const bad of ["", "-1", "1.2345678", "1,000", "abc", ".5", "1e6"]) {
+      expect(parseUsdt(bad)).toBeNull();
+    }
   });
 });

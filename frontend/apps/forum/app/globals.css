@@ -1,3 +1,12 @@
 @import "tailwindcss";
 @import "@akari/ui/styles.css";
 @source "../../../packages/ui/src";
+
+/* Tiptap 空编辑器的占位文字（Placeholder 扩展只加 data-placeholder 与 class） */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--color-fg-muted);
+}
