@@ -32,3 +32,14 @@ COOKIE_SIGNING_KEY=<后端 COOKIE_SECRET 前 64 个字符> DATABASE_URL=<同后�
 打到一个 Valkey 里没有这条会话的 forum-api（同一个开发用 `COOKIE_SECRET`、不同的 Valkey 库）时，tower-sessions
 回 `Set-Cookie: sid=; Max-Age=0`，浏览器的会话就没了（curl 有自己的 Cookie 罐，不受影响）。所以测试里的 API 请求一律
 用相对地址发到页面同源，经 Next rewrite 到同一个 forum-api。
+
+## 管理与仲裁（`staff.spec.ts`、`arbitration.spec.ts`）
+
+只跑桌面 Chromium（用 CDP 虚拟 WebAuthn 认证器）。需要：
+
+- 板块种子数据：`psql "$DATABASE_URL" -f backend/crates/db/seeds/dev.sql`；
+- 后台静态导出：`NEXT_PUBLIC_API_ORIGIN=http://localhost:<api 端口> NEXT_PUBLIC_FORUM_ORIGIN=<论坛地址> NEXT_PUBLIC_ADMIN_RP_ID=localhost pnpm --filter @akari/admin build`，
+  用任意静态服务托管 `apps/admin/out`（如 `python3 -m http.server`），地址设为 `ADMIN_URL`；
+- forum-api：`ADMIN_ORIGIN` = `ADMIN_URL`、`ADMIN_RP_ID=localhost`、`RULING_ORIGIN` = 论坛地址、`RULING_RP_ID=localhost`；
+  后台页面直接跨源调 forum-api，所以 API 要用 `localhost`（与论坛同一主机名，Cookie 才能共用）；
+- `MAILPIT_URL`（取后台与裁决 Passkey 的专用验证码）、`DATABASE_URL`（直接写库造角色与争议订单）。

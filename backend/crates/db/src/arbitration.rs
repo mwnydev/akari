@@ -388,12 +388,13 @@ pub async fn queue(db: impl PgExecutor<'_>, user_id: i64) -> Result<Vec<QueueIte
     .await
 }
 
-/// 站长要处理或盯着的案件：待终裁、待复核、已叫停、待 Safe 执行，以及找不到人接案的。
+/// 站长要处理或盯着的案件：待终裁、待复核、已叫停、待 Safe 执行，以及找不到人接案的、临近 `resolveTimeout` 兜底的。
 pub async fn owner_queue(db: impl PgExecutor<'_>) -> Result<Vec<(i64, String)>, sqlx::Error> {
     let rows = sqlx::query!(
         "SELECT id, status FROM arbitration_cases
          WHERE closed_at IS NULL
-           AND (status IN ('owner_review', 'appealed', 'halted', 'ready') OR stalled_alerted_at IS NOT NULL)
+           AND (status IN ('owner_review', 'appealed', 'halted', 'ready')
+                OR stalled_alerted_at IS NOT NULL OR timeout_alerted_at IS NOT NULL)
          ORDER BY id"
     )
     .fetch_all(db)

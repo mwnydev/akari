@@ -3,6 +3,7 @@ import { Amount, Badge, Button, Card, NetworkBadge, UserCard, type BadgeTone } f
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { OrderCasePanel } from "../../../components/arbitration/OrderCasePanel";
 import { PresenceDot } from "../../../components/live/PresenceDot";
 import { OrderChat } from "../../../components/orders/OrderChat";
 import { PageError } from "../../../components/PageError";
@@ -157,6 +158,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
               签名；这里的聊天记录只追加、带哈希链， 可作为仲裁证据。
             </p>
           </Card>
+          {order.dispute || order.state === "disputed" ? (
+            <OrderCasePanel orderId={order.id} />
+          ) : null}
         </section>
         <OrderChat orderId={order.id} me={me.id} names={names} />
       </main>

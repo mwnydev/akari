@@ -725,7 +725,7 @@ pub struct OwnerQueueEntry {
 pub struct ArbitrationQueue {
     /// 我在岗的分配，按期限排序。
     pub assignments: Vec<QueueEntry>,
-    /// 站长：待终裁、待复核、已叫停、待执行与找不到人接案的（非站长为空）。
+    /// 站长：待终裁、待复核、已叫停、待执行、找不到人接案与临近超时兜底的（非站长为空）。
     pub owner: Vec<OwnerQueueEntry>,
 }
 
@@ -806,7 +806,12 @@ pub async fn arbitration_workload(
     if !db::is_owner(&state.db, me).await? {
         return Err(ApiError(ErrorCode::Forbidden));
     }
-    let days = q.days.unwrap_or(30);
+    Ok(Json(workload(&state, q.days).await?))
+}
+
+/// 最近 `days` 天（1–366，默认 30）的工作量；论坛与后台共用。
+pub(crate) async fn workload(state: &AppState, days: Option<i64>) -> ApiResult<Workload> {
+    let days = days.unwrap_or(30);
     if !(1..=366).contains(&days) {
         return Err(ApiError(ErrorCode::InvalidParameter));
     }
@@ -824,7 +829,7 @@ pub async fn arbitration_workload(
             owner_rulings: w.owner_rulings,
         })
         .collect();
-    Ok(Json(Workload { days, arbitrators }))
+    Ok(Workload { days, arbitrators })
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -1292,6 +1297,11 @@ pub async fn execution_batch(
 ) -> ApiResult<Json<Vec<ExecutionBatch>>> {
     let me = current_user_id(&session).await?;
     require_eligible(&state, me).await?;
+    Ok(Json(ready_batches(&state).await?))
+}
+
+/// 按链分组的待执行裁决；论坛与后台共用。
+pub(crate) async fn ready_batches(state: &AppState) -> ApiResult<Vec<ExecutionBatch>> {
     let mut ready = Vec::new();
     for id in db::ready_case_ids(&state.db).await? {
         let Some(case) = db::case_by_id(&state.db, id).await? else {
@@ -1324,7 +1334,7 @@ pub async fn execution_batch(
             chain_id,
             safe: state.arbitration.safe.map(|a| a.to_checksum(None)),
             transaction_builder: builder(
-                &state,
+                state,
                 chain_id,
                 &format!("仲裁裁决批量执行（{} 件）", items.len()),
                 &items,
@@ -1332,11 +1342,11 @@ pub async fn execution_batch(
             )?,
             cases: items
                 .iter()
-                .map(|(c, r)| execution(&state, c, r))
+                .map(|(c, r)| execution(state, c, r))
                 .collect::<ApiResult<_>>()?,
         });
     }
-    Ok(Json(out))
+    Ok(out)
 }
 
 #[derive(Debug, Serialize, ToSchema)]

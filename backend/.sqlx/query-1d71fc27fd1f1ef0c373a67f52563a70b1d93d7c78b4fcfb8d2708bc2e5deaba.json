@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, status FROM arbitration_cases\n         WHERE closed_at IS NULL\n           AND (status IN ('owner_review', 'appealed', 'halted', 'ready') OR stalled_alerted_at IS NOT NULL)\n         ORDER BY id",
+  "query": "SELECT id, status FROM arbitration_cases\n         WHERE closed_at IS NULL\n           AND (status IN ('owner_review', 'appealed', 'halted', 'ready')\n                OR stalled_alerted_at IS NOT NULL OR timeout_alerted_at IS NOT NULL)\n         ORDER BY id",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "8d85c452e6673a2fdf2fa45a2b8e3ed0de7b9ba9b97c583a23398f200fe30a36"
+  "hash": "1d71fc27fd1f1ef0c373a67f52563a70b1d93d7c78b4fcfb8d2708bc2e5deaba"
 }

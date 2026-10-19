@@ -128,3 +128,36 @@ export function errorMessage(err: unknown): string {
   if (isErrorBody(err)) return err.message || ERROR_MESSAGES[err.code];
   return NETWORK_MESSAGE;
 }
+
+/**
+ * webauthn-rs 的 `CreationChallengeResponse` / `RequestChallengeResponse` 外面包着一层 `publicKey`，里面才是
+ * @simplewebauthn/browser 的 `optionsJSON`。取出时核对 RP ID：后台、裁决、钱包三组 Passkey 各有自己的 RP ID
+ * （ADR 0012、0013），服务端配错或接口被混用时在调起系统弹窗之前就停下。
+ */
+export function passkeyOptions<T extends { rp?: { id?: string } } | { rpId?: string }>(
+  options: unknown,
+  rpId: string,
+): T {
+  const inner = (options as { publicKey?: T } | null)?.publicKey;
+  const got = !inner
+    ? undefined
+    : "rp" in inner
+      ? inner.rp?.id
+      : "rpId" in inner
+        ? inner.rpId
+        : undefined;
+  if (!inner || got !== rpId) {
+    throw new ApiError("PASSKEY_FAILED", "Passkey 参数与本站不符，请刷新后重试", 0);
+  }
+  return inner;
+}
+
+/** 调起系统 Passkey 弹窗：被取消、超时等浏览器错误换成带中文提示的 ApiError，界面统一用 errorMessage 显示。 */
+export async function passkeyCeremony<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    if (e instanceof ApiError) throw e;
+    throw new ApiError("PASSKEY_FAILED", "Passkey 验证没有完成（已取消或超时），请重试", 0);
+  }
+}

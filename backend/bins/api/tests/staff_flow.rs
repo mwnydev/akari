@@ -1,5 +1,5 @@
 //! 管理角色、权限边界与兜底措施（ADR 0013）：版主只管自己板块、处罚时长与角色高低、封禁的效果、
-//! 管理人员新设备告警、限速与异常暂停、站长后台（Passkey、独立 Cookie、再验证、任免、阈值、一键撤销）。
+//! 管理人员新设备告警、限速与异常暂停、站长后台（Passkey、独立 Cookie、再验证、任免、阈值、一键撤销、仲裁总览）。
 //! 需要 PostgreSQL（`DATABASE_URL`）与 Valkey（`VALKEY_URL`，未设置则跳过）。
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // 测试代码
@@ -14,8 +14,8 @@ use axum::extract::connect_info::MockConnectInfo;
 use axum::http::{Request, StatusCode, header};
 use common::{
     ADMIN_ORIGIN, Res, SECRET, SoftAuth, WALLET_ORIGIN, age, build, call, call_from, clear_resend,
-    jar, latest_code, namespace, rand_ip, router_of, soft_passkey, state_with, unique_email, user,
-    wallet_state,
+    jar, latest_code, namespace, rand_ip, router_of, set_username, soft_passkey, state_with,
+    unique_email, user, wallet_state,
 };
 use forum_auth::passkey::webauthn::{CreationChallengeResponse, RequestChallengeResponse, Url};
 use forum_core::staff::ModerationSettings;
@@ -1567,4 +1567,133 @@ async fn revert_restores_staff_edit(db: PgPool) {
     )
     .await;
     assert_eq!(src.body["source"], doc("x"));
+}
+
+/// 申诉中的案件（订单 `usdt` 整 USDT，争议发生在 `disputed_days_ago` 天前），没有复核人。
+async fn appealed_case(db: &PgPool, buyer: i64, seller: i64, disputed_days_ago: i32) -> i64 {
+    sqlx::query(
+        "INSERT INTO chains (chain_id, name, escrow_address, config_address, token_address, token_symbol,
+           token_decimals, start_block, safe_depth, finalized_depth)
+         VALUES (421614, 'test', decode(repeat('44', 20), 'hex'), decode(repeat('c0', 20), 'hex'),
+           decode(repeat('33', 20), 'hex'), 'USDT', 6, 0, 240, 4800)
+         ON CONFLICT DO NOTHING",
+    )
+    .execute(db)
+    .await
+    .unwrap();
+    sqlx::query_scalar(
+        "WITH o AS (
+           INSERT INTO escrow_orders (chain_id, contract, chain_order_id, mode, buyer, seller, buyer_id, seller_id,
+             token, amount, instant, offer_hash, listing_hash, state, disputed_at, level, created_block, updated_block)
+           VALUES (421614, decode(repeat('44', 20), 'hex'),
+             (SELECT coalesce(max(chain_order_id), 0) + 7 FROM escrow_orders), 0,
+             decode(repeat('b1', 20), 'hex'), decode(repeat('c1', 20), 'hex'), $1, $2,
+             decode(repeat('33', 20), 'hex'), 45000000, false, decode(repeat('ab', 32), 'hex'),
+             decode(repeat('ab', 32), 'hex'), 2, now() - make_interval(days => $3), 'safe', 1, 1)
+           RETURNING id
+         )
+         INSERT INTO arbitration_cases (order_id, panel_size, evidence_until, status, appeal_by, appeal_reason)
+         SELECT id, 1, now() - interval '1 day', 'appealed', $1, '不服' FROM o
+         RETURNING id",
+    )
+    .bind(buyer)
+    .bind(seller)
+    .bind(disputed_days_ago)
+    .fetch_one(db)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn owner_lookups_and_arbitration_overview(db: PgPool) {
+    let ns = namespace();
+    let Some(state) = state_with(db.clone(), wallet_state(), &ns) else {
+        return;
+    };
+    let app = router_of(state);
+    let f = forum(&db, "general").await;
+    let (u, _) = member(&app, &db).await;
+    set_username(&db, u, &format!("lookup{u}")).await;
+    let (seller, _) = member(&app, &db).await;
+    let o = owner(&app, &db).await;
+
+    // 任命用的查人与板块（后台页面不能跨源调论坛接口）
+    let r = admin_call(
+        &app,
+        "GET",
+        &format!("/api/v1/admin/users/search?q=lookup{u}"),
+        None,
+        &o.admin,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(r.body[0]["id"], json!(u));
+    let r = admin_call(&app, "GET", "/api/v1/admin/forums", None, &o.admin).await;
+    assert!(
+        r.body
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x["id"] == json!(f))
+    );
+
+    // 仲裁总览：申诉后没有复核人 = 缺人；争议 28 天前发生 = 临近 30 天超时兜底
+    let case = appealed_case(&db, u, seller, 28).await;
+    let r = admin_call(
+        &app,
+        "GET",
+        "/api/v1/admin/arbitration?days=30",
+        None,
+        &o.admin,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    let c = r.body["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["case_id"] == json!(case))
+        .cloned()
+        .unwrap();
+    assert_eq!(c["status"], "appealed");
+    assert_eq!(c["unstaffed"], true);
+    assert_eq!(c["timeout_soon"], true);
+    assert_eq!(r.body["workload"]["days"], 30);
+    assert_eq!(
+        admin_call(
+            &app,
+            "GET",
+            "/api/v1/admin/arbitration?days=0",
+            None,
+            &o.admin
+        )
+        .await
+        .status,
+        StatusCode::BAD_REQUEST
+    );
+    let r = admin_call(
+        &app,
+        "GET",
+        "/api/v1/admin/arbitration/execution",
+        None,
+        &o.admin,
+    )
+    .await;
+    assert_eq!(r.body, json!([]));
+
+    // 只有后台会话能看：论坛会话不行，论坛来源也不行
+    for path in [
+        "/api/v1/admin/arbitration",
+        "/api/v1/admin/forums",
+        "/api/v1/admin/users/search?q=a",
+    ] {
+        assert_eq!(
+            admin_call(&app, "GET", path, None, &o.forum).await.status,
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            code(&call(&app, "GET", path, None, &o.admin).await).1,
+            Some("ORIGIN_REJECTED")
+        );
+    }
 }

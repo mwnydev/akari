@@ -172,6 +172,10 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::admin::reinstate))
         .routes(routes!(routes::admin::revoke))
         .routes(routes!(routes::admin::audit_log))
+        .routes(routes!(routes::admin::admin_search_users))
+        .routes(routes!(routes::admin::admin_forums))
+        .routes(routes!(routes::admin::arbitration_overview))
+        .routes(routes!(routes::admin::arbitration_execution))
         .split_for_parts()
 }
 

@@ -227,25 +227,29 @@ pub async fn search_users(
     State(state): State<AppState>,
     Query(q): Query<SearchQuery>,
 ) -> ApiResult<Json<Vec<MentionView>>> {
-    let prefix = q.q.trim();
+    Ok(Json(search_prefix(&state, &q.q).await?))
+}
+
+/// 用户名以 `prefix` 开头的用户（论坛 @提及与后台任命共用）；含用户名不允许的字符时为空。
+pub(crate) async fn search_prefix(state: &AppState, prefix: &str) -> ApiResult<Vec<MentionView>> {
+    let prefix = prefix.trim();
     let n = prefix.chars().count();
     if n == 0
         || n > forum_core::username::MAX_CHARS
         || !prefix.chars().all(forum_core::username::is_name_char)
     {
-        return Ok(Json(Vec::new()));
+        return Ok(Vec::new());
     }
     let rows = forum_db::users::search_prefix(&state.db, prefix, MENTION_LIMIT).await?;
-    Ok(Json(
-        rows.into_iter()
-            .map(|m| MentionView {
-                id: m.id,
-                username: m.username,
-                avatar_url: m.avatar_url,
-                level: m.level,
-            })
-            .collect(),
-    ))
+    Ok(rows
+        .into_iter()
+        .map(|m| MentionView {
+            id: m.id,
+            username: m.username,
+            avatar_url: m.avatar_url,
+            level: m.level,
+        })
+        .collect())
 }
 
 #[derive(Debug, Deserialize, IntoParams)]

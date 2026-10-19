@@ -49,6 +49,65 @@
         }
       }
     },
+    "/api/v1/admin/arbitration": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "仲裁总览（后台）：工作量与按时率、需要站长关注的案件。裁决本身仍在论坛仲裁页用裁决 Passkey 做。",
+        "operationId": "arbitration_overview",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "工作量统计最近多少天（1–366，默认 30）。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ArbitrationOverview" }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/arbitration/execution": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "全部可执行裁决的 Safe 批量交易文件（后台下载，与论坛 `GET /api/v1/arbitration/execution` 相同）。",
+        "operationId": "arbitration_execution",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ExecutionBatch" }
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/audit": {
       "get": {
         "tags": ["admin"],
@@ -152,6 +211,32 @@
             }
           },
           "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/forums": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "全部板块（任命版主时选板块；含等级不够看不到的）。",
+        "operationId": "admin_forums",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ForumView" } }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
@@ -680,6 +765,44 @@
             }
           },
           "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/search": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "任命时按用户名找人（后台页面不能跨源调论坛接口，这里给一份同样的结果）。",
+        "operationId": "admin_search_users",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "用户名前缀（不区分大小写）。",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/MentionView" }
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
@@ -4504,6 +4627,18 @@
           "user_id": { "type": "integer", "format": "int64" }
         }
       },
+      "ArbitrationOverview": {
+        "type": "object",
+        "required": ["workload", "cases"],
+        "properties": {
+          "cases": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AttentionCase" },
+            "description": "站长要处理或盯着的案件（待终裁、待复核、已叫停、待执行、缺人、临近超时兜底）。"
+          },
+          "workload": { "$ref": "#/components/schemas/Workload" }
+        }
+      },
       "ArbitrationQueue": {
         "type": "object",
         "required": ["assignments", "owner"],
@@ -4516,7 +4651,7 @@
           "owner": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/OwnerQueueEntry" },
-            "description": "站长：待终裁、待复核、已叫停、待执行与找不到人接案的（非站长为空）。"
+            "description": "站长：待终裁、待复核、已叫停、待执行、找不到人接案与临近超时兜底的（非站长为空）。"
           }
         }
       },
@@ -4535,6 +4670,44 @@
         "required": ["options"],
         "properties": {
           "options": { "type": "object", "description": "原样传给 `navigator.credentials.get()`。" }
+        }
+      },
+      "AttentionCase": {
+        "type": "object",
+        "required": [
+          "case_id",
+          "order_id",
+          "status",
+          "panel_size",
+          "amount",
+          "token_decimals",
+          "evidence_until",
+          "timeout_soon",
+          "unstaffed"
+        ],
+        "properties": {
+          "amount": { "type": "string", "description": "订单金额（最小单位）与代币精度。" },
+          "appeal_until": { "type": ["string", "null"], "format": "date-time" },
+          "case_id": { "type": "integer", "format": "int64" },
+          "evidence_until": { "type": "string", "format": "date-time" },
+          "halt_reason": { "type": ["string", "null"] },
+          "order_id": { "type": "integer", "format": "int64" },
+          "panel_size": { "type": "integer", "format": "int32" },
+          "status": {
+            "type": "string",
+            "description": "`reviewing` / `owner_review` / `appeal_window` / `appealed` / `ready` / `halted`。"
+          },
+          "timeout_at": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "`resolveTimeout` 可调用的时间。"
+          },
+          "timeout_soon": { "type": "boolean", "description": "剩余不足 3 天（或已可调用）。" },
+          "token_decimals": { "type": "integer", "format": "int32" },
+          "unstaffed": {
+            "type": "boolean",
+            "description": "缺人：裁决中在岗的仲裁员不够，或申诉后还没有复核人（全部回避或已参与时需要站长复核）。"
+          }
         }
       },
       "AuctionSummary": {

@@ -1,5 +1,5 @@
 //! 站长后台的管理功能（ADR 0013）：任免管理员与版主、限速与异常阈值、恢复被暂停的管理权限、
-//! 一键撤销某账号某时间段的管理操作、审计日志。全部要求后台会话（[`AdminSession`]，只有站长），
+//! 一键撤销某账号某时间段的管理操作、审计日志，以及仲裁总览与 Safe 批量执行文件。全部要求后台会话（[`AdminSession`]，只有站长），
 //! 改动类操作还要求 5 分钟内用后台 Passkey 再验证；每次改动写审计日志并推送管理员群。
 
 use axum::Json;
@@ -7,16 +7,19 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use forum_core::ErrorCode;
 use forum_core::staff::{ModerationSettings, Permission, Role};
-use forum_db::{audit, outbox, staff};
+use forum_db::{arbitration as arb, audit, outbox, staff};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 use utoipa::{IntoParams, ToSchema};
 
+use super::arbitration::{self, ExecutionBatch, Workload};
+use super::users::{MentionView, search_prefix};
 use crate::admin::AdminSession;
 use crate::error::{ApiError, ApiResult, ErrorBody};
 use crate::moderation::{self, RevertEffects, RevertStatus};
 use crate::state::AppState;
+use crate::views::ForumView;
 
 /// 一次撤销最多处理的操作数；更多时缩小时间段分批处理。
 const REVOKE_LIMIT: i64 = 500;
@@ -564,4 +567,149 @@ pub async fn audit_log(
             .collect(),
         next_cursor,
     }))
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct UserSearchQuery {
+    /// 用户名前缀（不区分大小写）。
+    pub q: String,
+}
+
+/// 任命时按用户名找人（后台页面不能跨源调论坛接口，这里给一份同样的结果）。
+#[utoipa::path(
+    get, path = "/api/v1/admin/users/search", tag = "admin",
+    params(UserSearchQuery),
+    responses(
+        (status = 200, body = Vec<MentionView>), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody)
+    )
+)]
+pub async fn admin_search_users(
+    State(state): State<AppState>,
+    admin: AdminSession,
+    Query(q): Query<UserSearchQuery>,
+) -> ApiResult<Json<Vec<MentionView>>> {
+    admin.require(Permission::ManageStaff)?;
+    Ok(Json(search_prefix(&state, &q.q).await?))
+}
+
+/// 全部板块（任命版主时选板块；含等级不够看不到的）。
+#[utoipa::path(
+    get, path = "/api/v1/admin/forums", tag = "admin",
+    responses((status = 200, body = Vec<ForumView>), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody))
+)]
+pub async fn admin_forums(
+    State(state): State<AppState>,
+    admin: AdminSession,
+) -> ApiResult<Json<Vec<ForumView>>> {
+    admin.require(Permission::ManageStaff)?;
+    let forums = forum_db::forums::list_all(&state.db).await?;
+    Ok(Json(forums.iter().map(ForumView::from).collect()))
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AttentionCase {
+    pub case_id: i64,
+    pub order_id: i64,
+    /// `reviewing` / `owner_review` / `appeal_window` / `appealed` / `ready` / `halted`。
+    pub status: String,
+    pub panel_size: i16,
+    /// 订单金额（最小单位）与代币精度。
+    pub amount: String,
+    pub token_decimals: i16,
+    #[schema(value_type = String, format = DateTime)]
+    #[serde(with = "time::serde::rfc3339")]
+    pub evidence_until: OffsetDateTime,
+    #[schema(value_type = Option<String>, format = DateTime)]
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub appeal_until: Option<OffsetDateTime>,
+    /// `resolveTimeout` 可调用的时间。
+    #[schema(value_type = Option<String>, format = DateTime)]
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub timeout_at: Option<OffsetDateTime>,
+    /// 剩余不足 3 天（或已可调用）。
+    pub timeout_soon: bool,
+    /// 缺人：裁决中在岗的仲裁员不够，或申诉后还没有复核人（全部回避或已参与时需要站长复核）。
+    pub unstaffed: bool,
+    pub halt_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ArbitrationOverview {
+    pub workload: Workload,
+    /// 站长要处理或盯着的案件（待终裁、待复核、已叫停、待执行、缺人、临近超时兜底）。
+    pub cases: Vec<AttentionCase>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct OverviewQuery {
+    /// 工作量统计最近多少天（1–366，默认 30）。
+    pub days: Option<i64>,
+}
+
+/// 仲裁总览（后台）：工作量与按时率、需要站长关注的案件。裁决本身仍在论坛仲裁页用裁决 Passkey 做。
+#[utoipa::path(
+    get, path = "/api/v1/admin/arbitration", tag = "admin",
+    params(OverviewQuery),
+    responses(
+        (status = 200, body = ArbitrationOverview), (status = 400, body = ErrorBody),
+        (status = 401, body = ErrorBody)
+    )
+)]
+pub async fn arbitration_overview(
+    State(state): State<AppState>,
+    // 后台会话本身就确认了是站长
+    _admin: AdminSession,
+    Query(q): Query<OverviewQuery>,
+) -> ApiResult<Json<ArbitrationOverview>> {
+    let workload = arbitration::workload(&state, q.days).await?;
+    let now = OffsetDateTime::now_utc();
+    let mut cases = Vec::new();
+    for (id, _) in arb::owner_queue(&state.db).await? {
+        let Some(c) = arb::case_by_id(&state.db, id).await? else {
+            continue;
+        };
+        let active = arb::assignments(&state.db, id)
+            .await?
+            .into_iter()
+            .filter(|a| a.is_active())
+            .collect::<Vec<_>>();
+        let seated = |role: &str| active.iter().filter(|a| a.role == role).count();
+        let unstaffed = match c.status.as_str() {
+            arb::STATUS_REVIEWING => seated(arb::ROLE_PANEL) < c.panel(),
+            arb::STATUS_APPEALED => seated(arb::ROLE_APPEAL) == 0,
+            _ => false,
+        };
+        let timeout_at = c.timeout_at();
+        cases.push(AttentionCase {
+            case_id: c.id,
+            order_id: c.order_id,
+            panel_size: c.panel_size,
+            amount: c.amount.clone(),
+            token_decimals: c.token_decimals,
+            evidence_until: c.evidence_until,
+            appeal_until: c.appeal_until,
+            timeout_soon: timeout_at
+                .is_some_and(|t| t - now < forum_core::arbitration::TIMEOUT_ALERT),
+            timeout_at,
+            unstaffed,
+            halt_reason: c
+                .halt_reason
+                .clone()
+                .filter(|_| c.status == arb::STATUS_HALTED),
+            status: c.status,
+        });
+    }
+    Ok(Json(ArbitrationOverview { workload, cases }))
+}
+
+/// 全部可执行裁决的 Safe 批量交易文件（后台下载，与论坛 `GET /api/v1/arbitration/execution` 相同）。
+#[utoipa::path(
+    get, path = "/api/v1/admin/arbitration/execution", tag = "admin",
+    responses((status = 200, body = [ExecutionBatch]), (status = 401, body = ErrorBody))
+)]
+pub async fn arbitration_execution(
+    State(state): State<AppState>,
+    _admin: AdminSession,
+) -> ApiResult<Json<Vec<ExecutionBatch>>> {
+    Ok(Json(arbitration::ready_batches(&state).await?))
 }

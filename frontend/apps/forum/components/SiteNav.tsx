@@ -1,9 +1,10 @@
 import type { Me } from "@akari/api-client";
 import { Avatar, Button, GlassNav } from "@akari/ui";
-import { Bell, MessageCircle, Search } from "lucide-react";
+import { Bell, Gavel, MessageCircle, Search } from "lucide-react";
 import Link from "next/link";
 import { profileHref } from "../lib/display";
 import { getMe } from "../lib/session";
+import { isArbitrator } from "../lib/staff";
 import { UnreadBadge } from "./live/UnreadBadge";
 import { LogoutButton } from "./LogoutButton";
 
@@ -42,6 +43,12 @@ export async function SiteNav({ active }: { active?: string }) {
                 <MessageCircle size={18} aria-hidden />
                 <span className="sr-only sm:not-sr-only">私信</span>
               </a>
+              {isArbitrator(me.staff) ? (
+                <a href="/arbitration" className={iconLink}>
+                  <Gavel size={18} aria-hidden />
+                  <span className="sr-only sm:not-sr-only">仲裁</span>
+                </a>
+              ) : null}
               <a href="/notifications" className={iconLink}>
                 <Bell size={18} aria-hidden />
                 <span className="sr-only sm:not-sr-only">通知</span>

@@ -21,6 +21,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/admin/arbitration": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 仲裁总览（后台）：工作量与按时率、需要站长关注的案件。裁决本身仍在论坛仲裁页用裁决 Passkey 做。 */
+    get: operations["arbitration_overview"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/arbitration/execution": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 全部可执行裁决的 Safe 批量交易文件（后台下载，与论坛 `GET /api/v1/arbitration/execution` 相同）。 */
+    get: operations["arbitration_execution"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/admin/audit": {
     parameters: {
       query?: never;
@@ -66,6 +100,23 @@ export interface paths {
     put?: never;
     /** 校验验证码；成功后 10 分钟内可绑定第一个后台 Passkey。 */
     post: operations["admin_enroll_verify"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/forums": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 全部板块（任命版主时选板块；含等级不够看不到的）。 */
+    get: operations["admin_forums"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -326,6 +377,23 @@ export interface paths {
     put?: never;
     /** 恢复被暂停的管理权限（站长确认后）。 */
     post: operations["reinstate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/users/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 任命时按用户名找人（后台页面不能跨源调论坛接口，这里给一份同样的结果）。 */
+    get: operations["admin_search_users"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1999,10 +2067,15 @@ export interface components {
       /** Format: int64 */
       user_id: number;
     };
+    ArbitrationOverview: {
+      /** @description 站长要处理或盯着的案件（待终裁、待复核、已叫停、待执行、缺人、临近超时兜底）。 */
+      cases: components["schemas"]["AttentionCase"][];
+      workload: components["schemas"]["Workload"];
+    };
     ArbitrationQueue: {
       /** @description 我在岗的分配，按期限排序。 */
       assignments: components["schemas"]["QueueEntry"][];
-      /** @description 站长：待终裁、待复核、已叫停、待执行与找不到人接案的（非站长为空）。 */
+      /** @description 站长：待终裁、待复核、已叫停、待执行、找不到人接案与临近超时兜底的（非站长为空）。 */
       owner: components["schemas"]["OwnerQueueEntry"][];
     };
     AssertFinish: {
@@ -2012,6 +2085,34 @@ export interface components {
     AssertionOptions: {
       /** @description 原样传给 `navigator.credentials.get()`。 */
       options: Record<string, unknown>;
+    };
+    AttentionCase: {
+      /** @description 订单金额（最小单位）与代币精度。 */
+      amount: string;
+      /** Format: date-time */
+      appeal_until?: string | null;
+      /** Format: int64 */
+      case_id: number;
+      /** Format: date-time */
+      evidence_until: string;
+      halt_reason?: string | null;
+      /** Format: int64 */
+      order_id: number;
+      /** Format: int32 */
+      panel_size: number;
+      /** @description `reviewing` / `owner_review` / `appeal_window` / `appealed` / `ready` / `halted`。 */
+      status: string;
+      /**
+       * Format: date-time
+       * @description `resolveTimeout` 可调用的时间。
+       */
+      timeout_at?: string | null;
+      /** @description 剩余不足 3 天（或已可调用）。 */
+      timeout_soon: boolean;
+      /** Format: int32 */
+      token_decimals: number;
+      /** @description 缺人：裁决中在岗的仲裁员不够，或申诉后还没有复核人（全部回避或已参与时需要站长复核）。 */
+      unstaffed: boolean;
     };
     /** @description 拍卖帖的信息行（拍卖上线时填写，ADR 0011）。 */
     AuctionSummary: {
@@ -3982,6 +4083,71 @@ export interface operations {
       };
     };
   };
+  arbitration_overview: {
+    parameters: {
+      query?: {
+        /** @description 工作量统计最近多少天（1–366，默认 30）。 */
+        days?: number | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ArbitrationOverview"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  arbitration_execution: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ExecutionBatch"][];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
   audit_log: {
     parameters: {
       query?: {
@@ -4117,6 +4283,41 @@ export interface operations {
         };
       };
       429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_forums: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ForumView"][];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -4836,6 +5037,44 @@ export interface operations {
         };
       };
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_search_users: {
+    parameters: {
+      query: {
+        /** @description 用户名前缀（不区分大小写）。 */
+        q: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MentionView"][];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
         headers: {
           [name: string]: unknown;
         };

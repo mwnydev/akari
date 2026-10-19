@@ -10,9 +10,10 @@ import { Pager } from "../../../components/Pager";
 import { SiteNav } from "../../../components/SiteNav";
 import { TopicBadges } from "../../../components/TopicBadges";
 import { Floor } from "../../../components/topic/Floor";
-import { ModerationMenu } from "../../../components/topic/ModerationMenu";
+import { PostModMenu } from "../../../components/moderation/PostModMenu";
+import { TopicModMenu } from "../../../components/moderation/TopicModMenu";
 import { load, serverApi } from "../../../lib/api";
-import { cardLookup } from "../../../lib/display";
+import { cardLookup, userName } from "../../../lib/display";
 import { listForums } from "../../../lib/forums";
 import { boardHref, loginHref, topicHref } from "../../../lib/links";
 import { floorPage, parsePositiveInt } from "../../../lib/pagination";
@@ -97,11 +98,12 @@ export default async function TopicPage({
             {topic.title}
           </h1>
           {data.can_moderate ? (
-            <ModerationMenu
+            <TopicModMenu
               topicId={topic.id}
               forumId={forum.id}
               flags={topic.flags}
               forums={forums instanceof ApiError ? [] : forums}
+              staff={me?.staff}
             />
           ) : null}
         </div>
@@ -118,6 +120,19 @@ export default async function TopicPage({
               author={user(p.author_id)}
               title={p.floor === 1 ? topic.title : undefined}
               mentionable={mentionable}
+              mod={
+                data.can_moderate ? (
+                  <PostModMenu
+                    postId={p.id}
+                    floor={p.floor}
+                    forumId={forum.id}
+                    deleted={p.deleted}
+                    author={{ id: p.author_id, name: userName(user(p.author_id)) }}
+                    staff={me?.staff}
+                    isOwn={own}
+                  />
+                ) : null
+              }
               perms={{
                 canEdit: !p.deleted && (data.can_moderate || (own && !topic.flags.locked)),
                 asModerator: data.can_moderate && !own,

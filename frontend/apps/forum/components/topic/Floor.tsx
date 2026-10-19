@@ -1,5 +1,6 @@
 import type { Schemas } from "@akari/api-client";
 import { Card, UserCard } from "@akari/ui";
+import type { ReactNode } from "react";
 import { formatTime, profileHref, userName, type UserCardView } from "../../lib/display";
 import { PresenceDot } from "../live/PresenceDot";
 import { Prose } from "../Prose";
@@ -11,6 +12,7 @@ export function Floor({
   title,
   perms,
   mentionable,
+  mod,
 }: {
   post: Schemas["PostView"];
   author: UserCardView;
@@ -18,6 +20,8 @@ export function Floor({
   title?: string | undefined;
   perms: FloorPermissions;
   mentionable: UserCardView[];
+  /** 管理菜单（管理人员才有） */
+  mod?: ReactNode;
 }) {
   const meta = (
     <>
@@ -36,9 +40,12 @@ export function Floor({
           avatarBadge={<PresenceDot userId={author.id} avatarSize={32} />}
           size="sm"
         />
-        <a href={`#floor-${post.floor}`} className="amount shrink-0 text-sm text-fg-muted">
-          #{post.floor}
-        </a>
+        <span className="flex shrink-0 items-center gap-1">
+          {mod}
+          <a href={`#floor-${post.floor}`} className="amount text-sm text-fg-muted">
+            #{post.floor}
+          </a>
+        </span>
       </div>
       <FloorShell
         postId={post.id}
