@@ -6,7 +6,7 @@ import { useMutation } from "@tanstack/react-query";
 import { ScanFace } from "lucide-react";
 import { useState } from "react";
 import { userMessage, walletApi, type WithdrawAddressView } from "../lib/wallet/api";
-import { chain } from "../lib/wallet/config";
+import { NETWORK_LABEL, chain } from "../lib/wallet/config";
 import { loadWalletSdk } from "../lib/wallet/load";
 import { remaining } from "../lib/wallet/order";
 import { addressUsable, checkAddress, labelError } from "../lib/wallet/withdraw";
@@ -144,7 +144,7 @@ export function WithdrawAddresses({
           <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="如：币安" />
         </Field>
         <Field
-          label="充值地址（Arbitrum One）"
+          label={`充值地址（${NETWORK_LABEL}）`}
           hint={
             saved.length > 0
               ? "新地址 24 小时后生效，防止账号被盗后被偷换"

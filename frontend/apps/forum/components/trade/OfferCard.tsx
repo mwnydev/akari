@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { formatDays, formatTime } from "../../lib/display";
 import { FEE_PAYERS } from "../../lib/fees";
 import { WALLET_ORIGIN } from "../../lib/public-config";
+import { WalletLink } from "../settings/UsernameGate";
 
 const ZERO_ADDRESS = /^0x0{40}$/i;
 
@@ -63,7 +64,7 @@ export function OfferCard({
       </dl>
       {offer.status === "pending" && canPay ? (
         <Button asChild size="lg" className="w-full">
-          <a href={`${WALLET_ORIGIN}/pay?offer=${offer.id}`}>担保购买</a>
+          <WalletLink href={`${WALLET_ORIGIN}/pay?offer=${offer.id}`}>担保购买</WalletLink>
         </Button>
       ) : null}
       {children}

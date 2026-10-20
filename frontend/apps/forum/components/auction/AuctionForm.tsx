@@ -24,6 +24,7 @@ import {
   pricesUsdt,
   type AuctionInput,
 } from "./auction-schema";
+import { WalletLink } from "../settings/UsernameGate";
 
 const DAY = 86_400;
 const DEFAULT_DURATION = 3 * DAY;
@@ -231,9 +232,9 @@ function Form({ forumSlug, trade, auction }: Props) {
           {walletMissing ? (
             <>
               {" "}
-              <a href={`${WALLET_ORIGIN}/setup`} className="underline">
+              <WalletLink href={`${WALLET_ORIGIN}/setup`} className="underline">
                 开通交易
-              </a>
+              </WalletLink>
             </>
           ) : null}
         </p>

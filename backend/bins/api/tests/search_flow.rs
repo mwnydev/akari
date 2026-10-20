@@ -258,3 +258,56 @@ async fn guests_are_rate_limited_per_ip(db: PgPool) {
     let r = call(&app, "GET", "/api/v1/search?q=x", None, &[]).await;
     assert_eq!(r.status, StatusCode::TOO_MANY_REQUESTS);
 }
+
+/// 搜索页默认的「全部」：只有标题命中的主题也在结果里（不会显示「没有找到」），楼层与主题各带命中数；
+/// 关键词像用户名时带上用户；不翻页（带游标 400），只算一次限流。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn all_mixes_topics_posts_and_people(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    forum(&db, "open", 0).await;
+    let (id, a) = member(&app, &db, 1).await;
+    set_username(&db, id, "zebra_seller").await;
+    let titled = topic(&app, &a, "open", "独角兽 礼品卡", "正文里没有那个词").await;
+    let both = topic(&app, &a, "open", "另一个", "正文提到独角兽").await;
+
+    // 帖子页签只看正文：标题命中的主题不在里面
+    let posts = search(&app, &[], &format!("q={}&type=post", enc("独角兽"))).await;
+    assert_eq!(topic_ids(&posts, "posts"), vec![both]);
+
+    let all = search(&app, &[], &format!("q={}&type=all", enc("独角兽"))).await;
+    assert_eq!(all["type"], "all");
+    let topics: Vec<i64> = all["topics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["topic"]["id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(topics, vec![titled]);
+    assert_eq!(topic_ids(&all, "posts"), vec![both]);
+    assert!(all["topic_total"].as_i64().unwrap() >= 1);
+    assert!(all["total"].as_i64().unwrap() >= 1);
+    assert_eq!(all["next_cursor"], Value::Null);
+    assert!(all["people"].as_array().unwrap().is_empty());
+    assert!(
+        all["users"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|u| u["id"] == id)
+    );
+
+    // 像用户名：带上用户（前缀匹配）
+    let all = search(&app, &[], "q=zebra&type=all").await;
+    assert_eq!(all["people"][0]["username"], "zebra_seller");
+
+    // 「全部」不翻页
+    let r = call(
+        &app,
+        "GET",
+        "/api/v1/search?q=x&type=all&cursor=9.20",
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{:?}", r.body);
+}

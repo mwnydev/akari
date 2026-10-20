@@ -11,6 +11,7 @@ import * as z from "zod/mini";
 import { QueryProvider } from "../../components/QueryProvider";
 import { api, unwrap } from "../../lib/browser-api";
 import { TURNSTILE_SITE_KEY } from "../../lib/public-config";
+import { isExternalNext } from "../../lib/safe-next";
 import { Turnstile } from "../../components/captcha/Turnstile";
 
 const EmailSchema = z.object({
@@ -75,6 +76,11 @@ function Steps({ next }: { next: string }) {
   const verify = useMutation({
     mutationFn: (v: CodeInput) => verifyLogin(email ?? "", v.code),
     onSuccess: () => {
+      // 钱包里点「去登录」来的：整页回到钱包（next 已经过 safeNext 校验，只可能是配置的钱包源）
+      if (isExternalNext(next)) {
+        location.assign(next);
+        return;
+      }
       router.replace(next);
       router.refresh();
     },

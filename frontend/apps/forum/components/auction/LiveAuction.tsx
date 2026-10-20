@@ -23,6 +23,7 @@ import { WALLET_ORIGIN } from "../../lib/public-config";
 import { useRealtimeEvents, useRealtimeStatus, useTopic } from "../../lib/realtime/react";
 import { AuctionPanel, type BidAccess } from "../forum/AuctionPanel";
 import { AuctionRules } from "../forum/AuctionRules";
+import { WalletLink } from "../settings/UsernameGate";
 
 /** 实时推送不可用（轮询模式）时多久用 REST 拉一次。 */
 const POLL_MS = 10_000;
@@ -213,12 +214,12 @@ export function LiveAuction({
             notice: (
               <>
                 出价需要先开通交易（创建 Passkey 钱包）。{" "}
-                <a
+                <WalletLink
                   href={`${WALLET_ORIGIN}/setup`}
                   className="font-medium text-accent hover:underline"
                 >
                   开通交易
-                </a>
+                </WalletLink>
               </>
             ),
           }

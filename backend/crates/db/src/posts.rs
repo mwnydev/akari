@@ -22,6 +22,10 @@ pub struct Post {
     pub status: i16,
     pub created_at: OffsetDateTime,
     pub edited_at: Option<OffsetDateTime>,
+    /// 回复的楼层（同一主题），以及它的楼层号与作者（显示「回复 #N 名字」）。
+    pub reply_to_post_id: Option<i64>,
+    pub reply_to_floor: Option<i32>,
+    pub reply_to_author_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -43,6 +47,8 @@ pub struct NewReply<'a> {
     pub mentions: &'a [i64],
     /// 管理人员可回复锁定的主题。
     pub allow_locked: bool,
+    /// 回复的楼层：必须是同一主题里状态正常的楼层（调用方先校验；写入时不满足就不记）。
+    pub reply_to: Option<i64>,
 }
 
 /// 回帖。主题不存在、已隐藏或已锁定（且无权回复锁定帖）时返回 `None`。
@@ -58,7 +64,8 @@ pub async fn reply(
         r.plain_text,
         r.source,
         r.mentions,
-        r.allow_locked
+        r.allow_locked,
+        r.reply_to
     )
     .fetch_optional(db)
     .await?;

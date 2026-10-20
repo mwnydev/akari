@@ -8,6 +8,7 @@ import { useState } from "react";
 import { api, unwrap } from "../../lib/browser-api";
 import { WALLET_ORIGIN } from "../../lib/public-config";
 import { usePreview } from "../forum/preview";
+import { useUsernameGate } from "../settings/UsernameGate";
 
 /**
  * 打开（或新建）与对方的私信会话，然后：`chat` 跳到会话；`offer` 去钱包在这个会话里发起担保
@@ -30,6 +31,7 @@ export function StartConversation({
 }) {
   const router = useRouter();
   const preview = usePreview();
+  const gate = useUsernameGate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +56,8 @@ export function StartConversation({
         size={size}
         variant={variant}
         className={className}
-        onClick={() => void open()}
+        // 发起担保要先有用户名（钱包开通交易要求），没有就先弹出设置
+        onClick={() => (then === "offer" ? gate.ask(() => void open()) : void open())}
         disabled={pending}
       >
         <Icon size={16} aria-hidden />

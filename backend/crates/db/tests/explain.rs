@@ -320,7 +320,8 @@ async fn hot_queries_use_indexes(db: PgPool) {
             .bind("x")
             .bind(&src)
             .bind(vec![3_i64])
-            .bind(false),
+            .bind(false)
+            .bind(Some(1234_i64)),
         "topics_pkey",
     )
     .await;

@@ -199,6 +199,7 @@ export class FakeBackend {
           passkeys: user.passkeys,
           wallets: user.wallets,
           verified_until: user.verifiedUntil,
+          needs_username: false,
         };
         return [200, overview];
       }

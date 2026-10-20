@@ -22,6 +22,11 @@ describe("search params", () => {
       cursor: "9.20",
     });
     expect(parseSearchParams({}).q).toBe("");
+    // 默认「全部」；「全部」不翻页，带游标的旧地址按帖子翻
+    expect(parseSearchParams({ q: "x" }).type).toBe("all");
+    expect(parseSearchParams({ q: "x", type: "evil" }).type).toBe("all");
+    expect(parseSearchParams({ q: "x", type: "all", cursor: "9.20" }).type).toBe("post");
+    expect(parseSearchParams({ q: "x", type: "post" }).type).toBe("post");
   });
 
   it("truncates by characters, not code units", () => {
@@ -36,7 +41,8 @@ describe("search params", () => {
     expect(searchHref({ q: "x", type: "user", board: "a/b", cursor: "1.20" })).toBe(
       "/search?q=x&type=user&board=a%2Fb&cursor=1.20",
     );
-    expect(searchHref({ q: "x", type: "post" })).toBe("/search?q=x");
+    expect(searchHref({ q: "x", type: "all" })).toBe("/search?q=x");
+    expect(searchHref({ q: "x", type: "post" })).toBe("/search?q=x&type=post");
   });
 
   it("only suggests from two characters on", () => {

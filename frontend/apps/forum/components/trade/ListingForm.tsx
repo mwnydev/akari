@@ -14,6 +14,7 @@ import { usePostCaptcha } from "../captcha/PostCaptcha";
 import { EditorField, useForumEditor } from "../composer/Editor";
 import { QueryProvider } from "../QueryProvider";
 import { listingSchema, listingTerms, type ListingInput } from "./listing-schema";
+import { WalletLink } from "../settings/UsernameGate";
 
 const DAY = 86_400;
 const selectClass = "h-10 w-full rounded-md border border-border bg-surface px-3 text-fg";
@@ -137,9 +138,9 @@ function Form({ forumSlug, params }: Props) {
           {walletMissing ? (
             <>
               {" "}
-              <a href={`${WALLET_ORIGIN}/setup`} className="underline">
+              <WalletLink href={`${WALLET_ORIGIN}/setup`} className="underline">
                 开通交易
-              </a>
+              </WalletLink>
             </>
           ) : null}
         </p>

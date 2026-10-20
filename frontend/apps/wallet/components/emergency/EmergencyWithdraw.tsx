@@ -233,7 +233,7 @@ function TransferForm({
   const ready = dest.ok && amount !== null && !amountError && amount > 0n && tailOk && sure;
   return (
     <div className="space-y-3">
-      <Field label="收款地址（Arbitrum One）" error={addressError ?? undefined}>
+      <Field label={`收款地址（${NETWORK_LABEL}）`} error={addressError ?? undefined}>
         <Input
           value={to}
           onChange={(e) => setTo(e.target.value)}
@@ -278,7 +278,7 @@ function TransferForm({
           className="mt-1 accent-(--color-accent)"
         />
         <span>
-          我确认收款地址是 <strong>Arbitrum One</strong> 网络上的地址（如交易所的 Arbitrum One
+          我确认收款地址是 <strong>{NETWORK_LABEL}</strong> 网络上的地址（如交易所的 {NETWORK_LABEL}{" "}
           充值地址）。转错地址或网络，资金无法找回。
         </span>
       </label>

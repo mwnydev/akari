@@ -123,7 +123,7 @@ test("member creates a topic, replies, edits, deletes and jumps to page 2; guest
   }
 });
 
-test("quoting a floor keeps only its own words, and replying to a floor @-mentions its author", async ({
+test("quoting a floor keeps only its own words; replying to a floor no longer pre-fills an @-mention", async ({
   browser,
   baseURL,
 }, info) => {
@@ -149,7 +149,10 @@ test("quoting a floor keeps only its own words, and replying to a floor @-mentio
 
     await b.page.locator("#floor-2").getByRole("button", { name: "回复", exact: true }).click();
     const replying = b.page.getByRole("dialog", { name: `回复 #2 ${a.username}` });
-    await expect(replying.getByRole("textbox", { name: "正文" })).toContainText(`@${a.username}`);
+    // 「回复」记下回复的楼层（显示「回复 #N」并通知作者），不再在正文开头 @ 作者
+    await expect(replying.getByRole("textbox", { name: "正文" })).not.toContainText(
+      `@${a.username}`,
+    );
   } finally {
     await Promise.all([a.context.close(), b.context.close()]);
   }
@@ -160,4 +163,52 @@ test("unknown topics and boards render the Chinese not-found page", async ({ pag
   expect(res?.status()).toBe(404);
   await expect(page.getByText("内容不存在或已被删除")).toBeVisible();
   expect((await page.goto("/f/no-such-board"))?.status()).toBe(404);
+});
+
+test("replying to a floor links back to it and notifies its author; search finds title-only hits by default", async ({
+  browser,
+  baseURL,
+}, info) => {
+  test.setTimeout(90_000);
+  const base = baseURL ?? "";
+  const author = await member(browser, base, `rta${info.project.name}`, { username: true });
+  const replier = await member(browser, base, `rtb${info.project.name}`, { username: true });
+  const word = `独角兽${Date.now().toString(36)}`;
+  const topicId = await createTopic(author.page, base, "general", `${word} 标题`);
+  const floor2 = await replyTo(author.page, base, topicId, "<p>楼主自己的 2 楼</p>");
+
+  // 楼层上的「回复」：弹窗标题写明回复谁，不再预填 @作者；发出后新楼层显示「回复 #2 作者」，点了跳回 2 楼
+  const page = replier.page;
+  await page.goto(`/t/${topicId}`);
+  await page.locator(`#floor-${floor2}`).getByRole("button", { name: "回复", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: `回复 #${floor2} ${author.username}` });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('[data-type="mention"]')).toHaveCount(0);
+  await dialog.getByRole("textbox", { name: "正文" }).fill("同意楼上");
+  await dialog.getByRole("button", { name: "发表回复" }).click();
+  const floor3 = page.locator(`#floor-${floor2 + 1}`);
+  await expect(floor3).toContainText("同意楼上");
+  const link = floor3.getByTestId("reply-to");
+  await expect(link).toHaveText(`回复 #${floor2} ${author.username}`);
+  await link.click();
+  await expect(page).toHaveURL(new RegExp(`#floor-${floor2}$`));
+
+  // 被回复的人收到通知
+  await expect(async () => {
+    await author.page.goto("/notifications");
+    await expect(author.page.getByText(`${replier.username} 回复了你`).first()).toBeVisible({
+      timeout: 2_000,
+    });
+  }).toPass({ timeout: 20_000 });
+
+  // 搜索默认「全部」：只有标题里有这个词，也能在默认页签找到主题
+  await page.goto(`/search?q=${encodeURIComponent(word)}`);
+  const topics = page.getByRole("region", { name: "主题" });
+  await expect(topics.getByRole("link", { name: new RegExp(word) })).toBeVisible();
+  await expect(page.getByText("没有找到相关内容")).toHaveCount(0);
+  await expect(
+    page.getByRole("navigation", { name: "搜索范围" }).getByRole("link", { name: "全部" }),
+  ).toHaveAttribute("aria-current", "page");
+
+  await Promise.all([author.context.close(), replier.context.close()]);
 });

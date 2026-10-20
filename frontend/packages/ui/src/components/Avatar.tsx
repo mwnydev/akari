@@ -3,6 +3,7 @@
 import * as AvatarPrimitive from "@radix-ui/react-avatar";
 import type { ReactNode } from "react";
 import { cn } from "../cn";
+import { avatarInitial } from "../initial";
 
 export interface AvatarProps {
   name: string;
@@ -45,7 +46,7 @@ export function Avatar({ name, src, size = 40, online, badge, className }: Avata
           className="flex size-full items-center justify-center font-medium text-fg-muted"
           style={{ fontSize: size * 0.42 }}
         >
-          {Array.from(name)[0] ?? "?"}
+          {avatarInitial(name)}
         </AvatarPrimitive.Fallback>
       </AvatarPrimitive.Root>
       {online !== undefined ? <OnlineDot online={online} avatarSize={size} /> : null}

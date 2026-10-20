@@ -1,8 +1,10 @@
 // 搜索页与顶栏搜索框共用的规则（后端 GET /api/v1/search）。
 
-export type SearchType = "post" | "topic" | "user";
+export type SearchType = "all" | "post" | "topic" | "user";
 
+/** 默认「全部」：主题、帖子（与像用户名时的用户）一起显示，只搜到标题也不会显示「没有找到」。 */
 export const SEARCH_TYPES: { value: SearchType; label: string }[] = [
+  { value: "all", label: "全部" },
   { value: "post", label: "帖子" },
   { value: "topic", label: "主题" },
   { value: "user", label: "用户" },
@@ -31,23 +33,25 @@ export function normalizeQuery(raw: string): string {
   return Array.from(raw.trim()).slice(0, MAX_QUERY_CHARS).join("").trim();
 }
 
-/** 地址栏参数 → 搜索条件；未知的类型当作帖子。 */
+/** 地址栏参数 → 搜索条件；未知的类型当作「全部」；「全部」不翻页（带游标时按帖子翻）。 */
 export function parseSearchParams(sp: Record<string, string | string[] | undefined>): SearchParams {
   const type = first(sp.type);
   const board = first(sp.board);
   const cursor = first(sp.cursor);
+  const valid = SEARCH_TYPES.some((t) => t.value === type);
+  const parsed = type as SearchType;
   return {
     q: normalizeQuery(first(sp.q) ?? ""),
-    type: SEARCH_TYPES.some((t) => t.value === type) ? (type as SearchType) : "post",
+    type: valid && !(parsed === "all" && cursor) ? parsed : cursor ? "post" : "all",
     board: board || undefined,
     cursor: cursor || undefined,
   };
 }
 
-/** 搜索页地址；默认值（帖子、全部板块、第一页）不写进地址。 */
+/** 搜索页地址；默认值（全部、全部板块、第一页）不写进地址。 */
 export function searchHref(p: Partial<SearchParams> & { q: string }): string {
   const qs = new URLSearchParams({ q: p.q });
-  if (p.type && p.type !== "post") qs.set("type", p.type);
+  if (p.type && p.type !== "all") qs.set("type", p.type);
   if (p.board) qs.set("board", p.board);
   if (p.cursor) qs.set("cursor", p.cursor);
   return `/search?${qs.toString()}`;

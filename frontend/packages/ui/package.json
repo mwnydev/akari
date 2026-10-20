@@ -12,6 +12,7 @@
     "./lazy": "./src/components/Lazy.tsx",
     "./sign-confirm": "./src/components/SignConfirmDialog.tsx",
     "./chat": "./src/components/ChatBox.tsx",
+    "./route-error": "./src/components/RouteError.tsx",
     "./toast": "./src/toast.ts",
     "./styles.css": "./src/styles.css"
   },

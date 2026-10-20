@@ -1,7 +1,7 @@
 import { GlassNav, NetworkBadge } from "@akari/ui";
 import { FORUM_ORIGIN, NETWORK_LABEL } from "../lib/wallet/config";
 
-// 「下单」（/checkout，设计稿模拟数据）与「报价」（/offer，要从交易帖或私信带着参数进入，直接打开只有一条错误提示）
+// 「报价」（/offer）与「付款」（/pay）要从交易帖或私信带着参数进入，直接打开只有一条错误提示，
 // 不放进导航；最后一项回论坛（钱包页面原来没有回去的入口）
 const links = [
   { href: "/", label: "钱包" },

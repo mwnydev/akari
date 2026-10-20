@@ -16,6 +16,7 @@ import { usePresence } from "../live/PresenceDot";
 import { useMessageStream } from "../chat/useMessageStream";
 import { CONVERSATIONS_KEY } from "./ConversationList";
 import { OfferMessage, offersKey } from "./OfferMessage";
+import { WalletLink } from "../settings/UsernameGate";
 
 type Message = Schemas["Message"];
 
@@ -196,10 +197,10 @@ export function ConversationView({ id, me }: { id: number; me: number }) {
       <div className="flex flex-wrap items-center gap-1">
         {!c.blocked ? (
           <Button asChild size="sm" variant="secondary">
-            <a href={`${WALLET_ORIGIN}/offer?conversation=${id}`}>
+            <WalletLink href={`${WALLET_ORIGIN}/offer?conversation=${id}`}>
               <ShieldCheck size={16} aria-hidden />
               发起担保
-            </a>
+            </WalletLink>
           </Button>
         ) : null}
         {confirmBlock ? (

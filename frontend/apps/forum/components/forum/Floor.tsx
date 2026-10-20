@@ -1,4 +1,5 @@
 import { Avatar, Badge } from "@akari/ui";
+import { CornerUpLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import { UserPopover, type PersonCard } from "./UserPopover";
 
@@ -16,6 +17,7 @@ export function Floor({
   time,
   timeFull,
   edited,
+  replyTo,
   children,
 }: {
   floor: number;
@@ -29,6 +31,8 @@ export function Floor({
   timeFull?: string | undefined;
   /** 「已编辑」的悬停说明（编辑时间）；没编辑过不传 */
   edited?: string | undefined;
+  /** 回复的楼层（Discourse 式「回复 #N 名字」，点击跳到那一楼） */
+  replyTo?: { floor: number; name: string; href: string } | undefined;
   children: ReactNode;
 }) {
   const avatar = (size: number, badge: ReactNode) => (
@@ -72,6 +76,19 @@ export function Floor({
           {author.role ? <Badge>{author.role}</Badge> : null}
           {isOp ? <Badge tone="outline">楼主</Badge> : null}
           <span className="ml-auto flex items-center gap-2 text-sm text-fg-muted">
+            {replyTo ? (
+              <a
+                href={replyTo.href}
+                data-testid="reply-to"
+                className="inline-flex max-w-40 items-center gap-1 rounded-sm hover:text-fg"
+                title={`回复 #${replyTo.floor} ${replyTo.name}`}
+              >
+                <CornerUpLeft size={14} aria-hidden className="shrink-0" />
+                <span className="truncate">
+                  回复 #{replyTo.floor} {replyTo.name}
+                </span>
+              </a>
+            ) : null}
             {edited ? <span title={edited}>已编辑</span> : null}
             <time dateTime={timeIso} title={timeFull}>
               {time}

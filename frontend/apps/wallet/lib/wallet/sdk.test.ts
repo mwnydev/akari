@@ -109,6 +109,7 @@ function memoryApi(state: { overview: WalletOverview; remote: WalletInitVersion[
 
 const overviewWith = (address: Address, init_version = 1): WalletOverview => ({
   enabled: true,
+  needs_username: false,
   passkeys: [passkey],
   wallets: [
     {

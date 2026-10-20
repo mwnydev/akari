@@ -71,7 +71,6 @@ export function FloorContent({
   postId,
   floor,
   author,
-  mention = null,
   quoteHref,
   title,
   deleted = false,
@@ -90,8 +89,6 @@ export function FloorContent({
   postId: number;
   floor: number;
   author: string;
-  /** 「回复」这层楼时编辑器开头 @ 的人（作者本人、没有用户名的、1 楼为空） */
-  mention?: { id: number; label: string } | null;
   /** 「引用」引用块里链接回这层楼的地址 */
   quoteHref: string;
   /** 1 楼编辑时可以一起改标题 */
@@ -191,7 +188,7 @@ export function FloorContent({
             size="sm"
             aria-haspopup="dialog"
             onPointerEnter={prefetchComposer}
-            onClick={() => composer.openComposer({ kind: "reply", floor, author, mention })}
+            onClick={() => composer.openComposer({ kind: "reply", floor, author, postId })}
           >
             <Reply size={16} aria-hidden />
             <span className={narrowLabel}>回复</span>

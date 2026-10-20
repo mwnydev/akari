@@ -1,6 +1,7 @@
 import { ApiError, type Schemas } from "@akari/api-client";
 import { Avatar, Button, EmptyState } from "@akari/ui";
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { AppShell } from "../../components/forum/AppShell";
@@ -29,7 +30,10 @@ async function clientIpHeader(): Promise<Record<string, string>> {
   return ip ? { "cf-connecting-ip": ip } : {};
 }
 
-/** 搜索页：帖子正文、主题标题、用户名三种；`?board=` 只搜一个板块，`?cursor=` 翻到更早的结果。 */
+/**
+ * 搜索页：默认「全部」（主题标题、帖子正文，关键词像用户名时还有用户，各带命中数），也可以只看帖子、主题、用户；
+ * `?board=` 只搜一个板块，`?cursor=` 翻到更早的结果（单一类型才翻页）。
+ */
 export default async function SearchPage({ searchParams }: { searchParams: Search }) {
   const p = parseSearchParams(await searchParams);
   const forums = await listForums();
@@ -71,7 +75,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
             </option>
           ))}
         </select>
-        {p.type !== "post" ? <input type="hidden" name="type" value={p.type} /> : null}
+        {p.type !== "all" ? <input type="hidden" name="type" value={p.type} /> : null}
         <Button type="submit">搜索</Button>
       </form>
       <nav aria-label="搜索范围" className="mb-2 flex gap-1 border-b border-border">
@@ -105,26 +109,147 @@ export default async function SearchPage({ searchParams }: { searchParams: Searc
   );
 }
 
-function Results({
-  data,
-  q,
-}: {
-  data: Schemas["SearchResponse"];
-  q: ReturnType<typeof parseSearchParams>;
-}) {
+type Data = Schemas["SearchResponse"];
+type Params = ReturnType<typeof parseSearchParams>;
+
+function lookups(data: Data) {
   const user = cardLookup(data.users);
   const forum = new Map(data.forums.map((f) => [f.id, f]));
   const board = (id: number) => {
     const f = forum.get(id);
     return f ? { name: f.name, color: boardColor(f), href: boardHref(f.slug) } : null;
   };
+  return { user, board };
+}
+
+function PostItems({ data }: { data: Data }) {
+  const { user, board } = lookups(data);
+  return data.posts.map((r) => {
+    const b = board(r.forum_id);
+    const author = user(r.author_id);
+    return (
+      <li key={`p${r.id}`} className="py-3">
+        <Link href={topicHref(r.topic_id, r.page, r.floor)} className="font-medium hover:underline">
+          {r.topic_title}
+        </Link>
+        <p className="mt-1 text-sm leading-relaxed break-words">
+          <Highlighted parts={r.snippet} before={r.truncated_start} after={r.truncated_end} />
+        </p>
+        <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-fg-muted">
+          {b ? <BoardMark board={b} link /> : null}
+          <Link href={profileHref(author)} className="hover:text-fg">
+            {userName(author)}
+          </Link>
+          <span>#{r.floor}</span>
+          <time dateTime={r.created_at}>{formatTime(r.created_at)}</time>
+        </p>
+      </li>
+    );
+  });
+}
+
+function TopicItems({ data }: { data: Data }) {
+  const { user, board } = lookups(data);
+  return data.topics.map(({ topic: t, title }) => {
+    const b = board(t.forum_id);
+    return (
+      <li key={`t${t.id}`} className="py-3">
+        <Link href={topicHref(t.id)} className="font-medium hover:underline">
+          <Highlighted parts={title} />
+        </Link>
+        <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-fg-muted">
+          {b ? <BoardMark board={b} link /> : null}
+          <span>{userName(user(t.author_id))}</span>
+          <span>{t.replies} 回复</span>
+          <time dateTime={t.last_post_at}>{formatTime(t.last_post_at)}</time>
+        </p>
+      </li>
+    );
+  });
+}
+
+function PeopleItems({ data }: { data: Data }) {
+  return data.people.map((u) => (
+    <li key={`u${u.id}`} className="py-2">
+      <Link href={profileHref(u)} className="flex items-center gap-3 hover:underline">
+        <Avatar name={u.username} src={u.avatar_url ?? undefined} size={32} />
+        <span>{u.username}</span>
+        <span className="text-xs text-fg-muted">{u.level} 级</span>
+      </Link>
+    </li>
+  ));
+}
+
+const notFound = <EmptyState title="没有找到相关内容" description="换个词试试，或者减少关键词" />;
+
+/** 「全部」的一组结果：标题带命中数，「查看全部」切到这一类（可以翻页）。 */
+function Group({
+  title,
+  count,
+  more,
+  children,
+}: {
+  title: string;
+  count: string;
+  more: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <section aria-label={title} className="mb-4">
+      <h2 className="flex items-baseline gap-2 border-b border-border py-2 text-sm font-medium">
+        {title}
+        <span className="text-xs font-normal text-fg-muted">{count}</span>
+        {more ? (
+          <Link href={more} className="ml-auto text-xs font-normal text-accent hover:underline">
+            查看全部
+          </Link>
+        ) : null}
+      </h2>
+      <ul className="divide-y divide-border">{children}</ul>
+    </section>
+  );
+}
+
+function AllResults({ data, q }: { data: Data; q: Params }) {
+  if (data.posts.length === 0 && data.topics.length === 0 && data.people.length === 0) {
+    return notFound;
+  }
+  const about = (n: number) => `约 ${n.toLocaleString("zh-CN")} 条`;
+  const tab = (type: "post" | "topic" | "user") => searchHref({ ...q, type, cursor: undefined });
+  return (
+    <>
+      {data.topics.length > 0 ? (
+        <Group
+          title="主题"
+          count={about(data.topic_total)}
+          more={data.topic_total > data.topics.length ? tab("topic") : null}
+        >
+          <TopicItems data={data} />
+        </Group>
+      ) : null}
+      {data.posts.length > 0 ? (
+        <Group
+          title="帖子"
+          count={about(data.total)}
+          more={data.total > data.posts.length ? tab("post") : null}
+        >
+          <PostItems data={data} />
+        </Group>
+      ) : null}
+      {data.people.length > 0 ? (
+        <Group title="用户" count={`${data.people.length} 人`} more={tab("user")}>
+          <PeopleItems data={data} />
+        </Group>
+      ) : null}
+    </>
+  );
+}
+
+function Results({ data, q }: { data: Data; q: Params }) {
+  if (q.type === "all") return <AllResults data={data} q={q} />;
   const empty = data.posts.length === 0 && data.topics.length === 0 && data.people.length === 0;
   if (empty) {
-    return q.cursor ? (
-      <EmptyState title="没有更多结果了" />
-    ) : (
-      <EmptyState title="没有找到相关内容" description="换个词试试，或者减少关键词" />
-    );
+    return q.cursor ? <EmptyState title="没有更多结果了" /> : notFound;
   }
   return (
     <>
@@ -132,56 +257,9 @@ function Results({
         <p className="py-2 text-sm text-fg-muted">约 {data.total.toLocaleString("zh-CN")} 条结果</p>
       ) : null}
       <ul className="divide-y divide-border">
-        {data.posts.map((r) => {
-          const b = board(r.forum_id);
-          const author = user(r.author_id);
-          return (
-            <li key={r.id} className="py-3">
-              <Link
-                href={topicHref(r.topic_id, r.page, r.floor)}
-                className="font-medium hover:underline"
-              >
-                {r.topic_title}
-              </Link>
-              <p className="mt-1 text-sm leading-relaxed break-words">
-                <Highlighted parts={r.snippet} before={r.truncated_start} after={r.truncated_end} />
-              </p>
-              <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-fg-muted">
-                {b ? <BoardMark board={b} link /> : null}
-                <Link href={profileHref(author)} className="hover:text-fg">
-                  {userName(author)}
-                </Link>
-                <span>#{r.floor}</span>
-                <time dateTime={r.created_at}>{formatTime(r.created_at)}</time>
-              </p>
-            </li>
-          );
-        })}
-        {data.topics.map(({ topic: t, title }) => {
-          const b = board(t.forum_id);
-          return (
-            <li key={t.id} className="py-3">
-              <Link href={topicHref(t.id)} className="font-medium hover:underline">
-                <Highlighted parts={title} />
-              </Link>
-              <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-fg-muted">
-                {b ? <BoardMark board={b} link /> : null}
-                <span>{userName(user(t.author_id))}</span>
-                <span>{t.replies} 回复</span>
-                <time dateTime={t.last_post_at}>{formatTime(t.last_post_at)}</time>
-              </p>
-            </li>
-          );
-        })}
-        {data.people.map((u) => (
-          <li key={u.id} className="py-2">
-            <Link href={profileHref(u)} className="flex items-center gap-3 hover:underline">
-              <Avatar name={u.username} src={u.avatar_url ?? undefined} size={32} />
-              <span>{u.username}</span>
-              <span className="text-xs text-fg-muted">{u.level} 级</span>
-            </Link>
-          </li>
-        ))}
+        <PostItems data={data} />
+        <TopicItems data={data} />
+        <PeopleItems data={data} />
       </ul>
       {data.next_cursor ? (
         <p className="py-3 text-center">

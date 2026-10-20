@@ -8,6 +8,7 @@ import {
 } from "../../lib/display";
 import { peopleOf, socialView, type PostSocial, type SocialPerson } from "../../lib/floor-social";
 import { topicHref } from "../../lib/links";
+import { floorPage } from "../../lib/pagination";
 import { can } from "../../lib/staff";
 import { personCard } from "../../lib/topic-views";
 import { PresenceDot } from "../live/PresenceDot";
@@ -23,6 +24,7 @@ import { FloorContent, type FloorPermissions } from "./FloorContent";
 export function LiveFloor({
   post,
   author,
+  replyTo,
   topic,
   page,
   perms,
@@ -36,6 +38,8 @@ export function LiveFloor({
 }: {
   post: Schemas["PostView"];
   author: UserCardView;
+  /** 这一楼回复的楼层的作者（`post.reply_to` 不为空时） */
+  replyTo: UserCardView | null;
   topic: Schemas["TopicSummary"];
   page: number;
   perms: FloorPermissions;
@@ -63,18 +67,21 @@ export function LiveFloor({
       time={formatActivity(post.created_at, now)}
       timeFull={formatTime(post.created_at)}
       edited={post.edited_at ? `编辑于 ${formatTime(post.edited_at)}` : undefined}
+      replyTo={
+        post.reply_to && replyTo
+          ? {
+              floor: post.reply_to.floor,
+              name: userName(replyTo),
+              href: topicHref(topic.id, floorPage(post.reply_to.floor), post.reply_to.floor),
+            }
+          : undefined
+      }
     >
       <FloorContent
         topicId={topic.id}
         postId={post.id}
         floor={post.floor}
         author={card.name}
-        mention={
-          // 回复 1 楼就是回复主题（楼主本来就收到回帖通知），不必 @
-          post.floor > 1 && !perms.own && author.username
-            ? { id: author.id, label: author.username }
-            : null
-        }
         quoteHref={topicHref(topic.id, page, post.floor)}
         title={post.floor === 1 ? topic.title : undefined}
         deleted={post.deleted}
@@ -140,6 +147,7 @@ export function LiveFloors({
         key={p.id}
         post={p}
         author={author}
+        replyTo={p.reply_to ? user(p.reply_to.author_id) : null}
         topic={topic}
         page={page}
         mentionable={mentionable}

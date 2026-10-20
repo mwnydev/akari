@@ -14,11 +14,11 @@ export interface QuoteTarget {
 
 /**
  * 编辑器从哪里打开（弹窗标题「回复 #2 张三」「引用 #2 张三」）：
- * - `reply`：楼层上的「回复」，`mention` 不为空时编辑器开头先 @ 这层楼的作者（对方会收到提及通知）；
+ * - `reply`：楼层上的「回复」，回帖记下回复的楼层（`postId`），显示「回复 #N 名字」，该楼作者收到回复通知；
  * - `quote`：楼层上的「引用」，开头插入引用块。
  */
 export type ComposeContext =
-  | { kind: "reply"; floor: number; author: string; mention: { id: number; label: string } | null }
+  | { kind: "reply"; floor: number; author: string; postId: number }
   | ({ kind: "quote" } & QuoteTarget);
 
 interface ComposerApi {

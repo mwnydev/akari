@@ -31,7 +31,7 @@ test("保存提币地址 → 全部提回交易所 → 余额刷新", async ({ b
   await expect(page.getByText("选 TRC20 无法找回")).toBeVisible();
 
   // 地址校验：自己的钱包、合约地址都不行
-  const address = page.getByLabel("充值地址（Arbitrum One）");
+  const address = page.getByLabel(/^充值地址（/);
   await address.fill(wallet);
   await expect(page.getByText("这是你自己的钱包地址")).toBeVisible();
   await address.fill(chain.contracts.MockUSDT);

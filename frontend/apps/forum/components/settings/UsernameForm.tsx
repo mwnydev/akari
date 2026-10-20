@@ -16,8 +16,22 @@ const FIELD_ERRORS: ReadonlySet<ErrorCode | "NETWORK"> = new Set([
   "USERNAME_CHANGE_TOO_SOON",
 ]);
 
-/** 设置 / 修改用户名。保存后刷新服务端组件，导航栏与个人主页立即换成新名字。 */
-export function UsernameForm({ id, current }: { id: number; current: string | null }) {
+/**
+ * 设置 / 修改用户名。保存后刷新服务端组件，导航栏与个人主页立即换成新名字。
+ * `onSaved`：保存成功后调用（设置用户名弹窗用来关闭并继续刚才的操作）；
+ * `next`：从别处（如钱包「开通交易」）跳来设置的，保存后给一个「继续」链接（已经过 safeNext 校验）。
+ */
+export function UsernameForm({
+  id,
+  current,
+  onSaved,
+  next,
+}: {
+  id: number;
+  current: string | null;
+  onSaved?: (username: string) => void;
+  next?: string | undefined;
+}) {
   const router = useRouter();
   const [value, setValue] = useState(current ?? "");
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -42,6 +56,7 @@ export function UsernameForm({ id, current }: { id: number; current: string | nu
       setValue(res.username);
       setSaved(res.username);
       startTransition(() => router.refresh());
+      onSaved?.(res.username);
     } catch (err) {
       const msg = errorMessage(err);
       if (err instanceof ApiError && FIELD_ERRORS.has(err.code)) setFieldError(msg);
@@ -76,9 +91,15 @@ export function UsernameForm({ id, current }: { id: number; current: string | nu
         {saved ? (
           <span role="status" className="text-sm text-success">
             已保存。
-            <Link href={profileHref({ id, username: saved })} className="text-accent underline">
-              查看个人主页
-            </Link>
+            {next ? (
+              <a href={next} className="text-accent underline">
+                继续刚才的操作
+              </a>
+            ) : (
+              <Link href={profileHref({ id, username: saved })} className="text-accent underline">
+                查看个人主页
+              </Link>
+            )}
           </span>
         ) : null}
         {formError ? (

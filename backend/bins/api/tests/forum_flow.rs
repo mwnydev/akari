@@ -171,6 +171,150 @@ async fn topic_reply_and_board_order(db: PgPool) {
     );
 }
 
+async fn reply_to(
+    app: &Router,
+    cookies: &[String],
+    topic: i64,
+    target: Value,
+    html: &str,
+) -> common::Res {
+    call(
+        app,
+        "POST",
+        &format!("/api/v1/topics/{topic}/posts"),
+        Some(json!({"html": html, "source": doc("r"), "reply_to_post_id": target})),
+        cookies,
+    )
+    .await
+}
+
+/// 发件箱里的 `notify.reply`：(接收者, 楼层)，按写入顺序（同一条回帖语句里的两条顺序不定）。
+async fn reply_notes(db: &PgPool) -> Vec<(i64, i64)> {
+    sqlx::query_as(
+        "SELECT (payload->>'to')::bigint, (payload->>'floor')::bigint FROM outbox
+         WHERE kind = 'notify.reply' ORDER BY id",
+    )
+    .fetch_all(db)
+    .await
+    .unwrap()
+}
+
+/// Discourse 式「回复 #N」：只能回复同一主题里正常显示的楼层；被回复者收到回复通知（楼主与自己不重复通知，
+/// 也不再另收提及通知）；主题页带出被回复楼层的楼层号、作者与名片。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn reply_to_a_floor(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    forum(&db, "general", 0, 1).await;
+    let (alice, a) = member(&app, &db).await;
+    let (bob, b) = member(&app, &db).await;
+    let (carol, c) = member(&app, &db).await;
+    let t = post_topic(&app, &a, "general", "回复测试", "<p>1</p>")
+        .await
+        .body["topic_id"]
+        .as_i64()
+        .unwrap();
+    let other = post_topic(&app, &a, "general", "别的主题", "<p>1</p>")
+        .await
+        .body["topic_id"]
+        .as_i64()
+        .unwrap();
+    let r = reply(&app, &b, t, "<p>bob 的 2 楼</p>").await;
+    let bob_post = r.body["post_id"].as_i64().unwrap();
+    let other_post = reply(&app, &b, other, "<p>x</p>").await.body["post_id"]
+        .as_i64()
+        .unwrap();
+    sqlx::query("DELETE FROM outbox")
+        .execute(&db)
+        .await
+        .unwrap();
+
+    // 别的主题的楼层、不存在的楼层、类型不对：400，什么都不写
+    for target in [json!(other_post), json!(999_999_999), json!("x")] {
+        let r = reply_to(&app, &c, t, target.clone(), "<p>no</p>").await;
+        assert!(
+            r.status == StatusCode::BAD_REQUEST || r.status == StatusCode::UNPROCESSABLE_ENTITY,
+            "{target}: {:?} {:?}",
+            r.status,
+            r.body
+        );
+    }
+    assert!(reply_notes(&db).await.is_empty());
+
+    // carol 回复 bob 的 2 楼并 @bob：bob 收到一条回复通知（不再另收提及），楼主 alice 收到回帖通知
+    let html = format!(
+        r#"<p><span data-type="mention" data-id="{bob}" data-label="x">@x</span> 同意</p>"#
+    );
+    let r = reply_to(&app, &c, t, json!(bob_post), &html).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let floor = r.body["floor"].as_i64().unwrap();
+    let mut notes = reply_notes(&db).await;
+    notes.sort_unstable();
+    let mut want = vec![(alice, floor), (bob, floor)];
+    want.sort_unstable();
+    assert_eq!(notes, want);
+    let mentions: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM outbox WHERE kind = 'notify.mention'")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(mentions, 0);
+
+    // 回复楼主的 1 楼：楼主只收到一条；回复自己的楼层：自己不收
+    sqlx::query("DELETE FROM outbox")
+        .execute(&db)
+        .await
+        .unwrap();
+    let page = call(&app, "GET", &format!("/api/v1/topics/{t}"), None, &[]).await;
+    let first = page.body["posts"][0]["id"].clone();
+    reply_to(&app, &c, t, first.clone(), "<p>回 1 楼</p>").await;
+    let f = reply_to(&app, &b, t, json!(bob_post), "<p>补充</p>")
+        .await
+        .body["floor"]
+        .as_i64()
+        .unwrap();
+    assert_eq!(
+        reply_notes(&db)
+            .await
+            .iter()
+            .filter(|n| n.0 == alice)
+            .count(),
+        2
+    );
+    assert!(!reply_notes(&db).await.iter().any(|n| n.0 == bob));
+    assert_eq!(reply_notes(&db).await.last(), Some(&(alice, f)));
+
+    // 主题页：reply_to 带楼层号与作者，作者名片在 users 里；没有回复的为 null
+    let page = call(&app, "GET", &format!("/api/v1/topics/{t}"), None, &[]).await;
+    assert_eq!(page.status, StatusCode::OK);
+    let posts = page.body["posts"].as_array().unwrap();
+    assert_eq!(posts[1]["reply_to"], Value::Null);
+    assert_eq!(
+        posts[2]["reply_to"],
+        json!({"post_id": bob_post, "floor": 2, "author_id": bob})
+    );
+    assert_eq!(posts[3]["reply_to"]["floor"], 1);
+    assert!(
+        page.body["users"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|u| u["id"] == carol)
+    );
+
+    // 已删除的楼层不能再被回复
+    let r = call(
+        &app,
+        "DELETE",
+        &format!("/api/v1/posts/{bob_post}"),
+        None,
+        &b,
+    )
+    .await;
+    assert!(r.status.is_success(), "{:?}", r.body);
+    let r = reply_to(&app, &c, t, json!(bob_post), "<p>晚了</p>").await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{:?}", r.body);
+}
+
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn page1_cache_is_invalidated_by_reply_and_edit(db: PgPool) {
     let Some(app) = build(db.clone()) else { return };

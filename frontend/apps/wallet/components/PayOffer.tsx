@@ -153,7 +153,7 @@ function Confirm({
         </Button>
       ) : (
         <div className="space-y-1 rounded-lg bg-warning-soft p-3 text-sm text-warning">
-          <p>余额不足，请先从交易所选 Arbitrum One 网络提币到钱包：</p>
+          <p>余额不足，请先从交易所选 {NETWORK_LABEL} 网络提币到钱包：</p>
           <p className="amount font-mono break-all">{wallet.address}</p>
         </div>
       )}

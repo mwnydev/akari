@@ -13,7 +13,7 @@ export function boardHref(slug: string, page = 1, cursor?: string): string {
   return page > 1 ? `${base}?page=${page}` : base;
 }
 
-/** 登录页，登录后回到 `next`（只接受站内路径，见 app/login/safe-next.ts）。 */
+/** 登录页，登录后回到 `next`（只接受站内路径，或钱包中心，见 lib/safe-next.ts）。 */
 export function loginHref(next: string): string {
   return `/login?next=${encodeURIComponent(next)}`;
 }

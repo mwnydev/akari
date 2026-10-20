@@ -26,6 +26,7 @@ import { headerViewer } from "../../../lib/nav";
 import { WALLET_ORIGIN, needsPostCaptcha } from "../../../lib/public-config";
 import { getMe } from "../../../lib/session";
 import { personCard, topicHeaderView } from "../../../lib/topic-views";
+import { WalletLink } from "../../../components/settings/UsernameGate";
 
 type Params = Promise<{ id: string }>;
 
@@ -165,10 +166,10 @@ export default async function TradePage({ params }: { params: Params }) {
         action={
           offer && !isSeller ? (
             <Button asChild size="sm" className="xl:hidden">
-              <a href={`${WALLET_ORIGIN}/pay?offer=${offer.id}`}>
+              <WalletLink href={`${WALLET_ORIGIN}/pay?offer=${offer.id}`}>
                 <ShieldCheck size={16} aria-hidden />
                 担保购买
-              </a>
+              </WalletLink>
             </Button>
           ) : null
         }

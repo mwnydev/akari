@@ -1,6 +1,9 @@
 import { Button, Card, EmptyState } from "@akari/ui";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { AppShell } from "../components/forum/AppShell";
+
+export const metadata: Metadata = { title: "页面不存在", robots: { index: false } };
 
 export default function NotFound() {
   return (

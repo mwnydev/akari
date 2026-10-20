@@ -70,7 +70,7 @@ test("后端停摆：Passkey 找回钱包，自付 ETH 把 USDT 转到任意地�
   await expect(user.page.getByTestId("emergency-usdt")).toContainText("12.50");
 
   const to = privateKeyToAccount(generatePrivateKey()).address;
-  await user.page.getByLabel("收款地址（Arbitrum One）").fill(to);
+  await user.page.getByLabel(/^收款地址（/).fill(to);
   await user.page.getByRole("button", { name: "全部", exact: true }).click();
   await user.page.getByLabel("再输入一遍收款地址的最后 6 位").fill(to.slice(-6));
   const next = user.page.getByRole("button", { name: "下一步：估算 gas" });

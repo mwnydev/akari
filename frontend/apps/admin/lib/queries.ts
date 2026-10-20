@@ -9,6 +9,7 @@ export const keys = {
   forums: ["admin-forums"] as const,
   suspensions: ["admin-suspensions"] as const,
   settings: ["admin-settings"] as const,
+  auctionSettings: ["admin-auction-settings"] as const,
   passkeys: ["admin-passkeys"] as const,
   reports: ["admin-reports"] as const,
   arbitration: (days: number) => ["admin-arbitration", days] as const,

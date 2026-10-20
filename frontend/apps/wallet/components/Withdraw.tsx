@@ -73,7 +73,7 @@ export function Withdraw({
       <p className="text-sm text-fg-muted">
         {addresses.some((a) => a.status !== "revoked")
           ? "新地址还在 24 小时冷却期，生效后就能提回。"
-          : "先在下方「提币地址」里保存交易所的 Arbitrum One 充值地址，再来提回。"}
+          : `先在下方「提币地址」里保存交易所的 ${NETWORK_LABEL} 充值地址，再来提回。`}
       </p>
     );
   }
@@ -180,7 +180,7 @@ export function Withdraw({
             { label: "交易所到账", value: <Amount value={amount} /> },
             { label: "代付费", value: <Amount value={fee} /> },
           ]}
-          note="请确认交易所充值页选择的也是 Arbitrum One 网络，转出后无法撤回。"
+          note={`请确认交易所充值页选择的也是 ${NETWORK_LABEL} 网络，转出后无法撤回。`}
           onConfirm={async () => {
             const hash = await wallet.withdraw(dest.address, amount);
             setOpen(false);

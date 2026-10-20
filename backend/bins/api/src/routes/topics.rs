@@ -154,6 +154,11 @@ async fn topic_page(state: &AppState, viewer: &Viewer, id: i64, page: i32) -> Ap
     let user_ids: Vec<i64> = [body.topic.author_id]
         .into_iter()
         .chain(body.posts.iter().map(|p| p.author_id))
+        .chain(
+            body.posts
+                .iter()
+                .filter_map(|p| p.reply_to.map(|r| r.author_id)),
+        )
         .chain(social_users)
         .collect();
     let users = cards::load(state, &user_ids).await?;
@@ -381,6 +386,9 @@ pub struct ReplyRequest {
     pub source: Value,
     /// 注册 24 小时内必填：Turnstile 令牌（组件的 `action` 为 `post`）。
     pub captcha: Option<String>,
+    /// 回复某一楼（Discourse 式「回复 #N」）：同一主题里正常显示的楼层，否则 400；该楼作者收到回复通知。
+    #[serde(default)]
+    pub reply_to_post_id: Option<i64>,
 }
 
 /// 回帖。楼层在一条多 CTE 语句里分配，HTML 在事务外过滤（plan 第 8 节）。
@@ -428,6 +436,14 @@ pub async fn reply(
         }
     }
     posting::check_sanctions(&state, actor.id, Some(forum.id)).await?;
+    if let Some(target) = req.reply_to_post_id {
+        let ok = posts::by_id(&state.db, target)
+            .await?
+            .is_some_and(|p| p.topic_id == id && p.status == posts::STATUS_NORMAL);
+        if !ok {
+            return Err(ApiError(ErrorCode::InvalidParameter));
+        }
+    }
     let cleaned = posting::clean(&state, &actor, &req.html, &req.source)?;
     posting::check_new_user_captcha(&state, &actor, req.captcha.as_deref(), ip).await?;
     posting::limit_new_content(&state, &actor, &REPLY_RATE).await?;
@@ -442,6 +458,7 @@ pub async fn reply(
             source: &req.source,
             mentions: &cleaned.mentions,
             allow_locked: staff,
+            reply_to: req.reply_to_post_id,
         },
     )
     .await?;

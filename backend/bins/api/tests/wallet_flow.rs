@@ -49,9 +49,14 @@ async fn first_passkey_needs_username_and_email_reverification(db: PgPool) {
     let (id, cookies) = user(&app, &db).await;
     let start = "/api/v1/wallet/passkey/register/start";
 
+    // 钱包概览告诉前端先去论坛设置用户名
+    let r = wallet_call(&app, "GET", "/api/v1/wallet", None, &cookies).await;
+    assert_eq!(r.body["needs_username"], true, "{:?}", r.body);
     let r = wallet_call(&app, "POST", start, None, &cookies).await;
     assert_eq!(r.body["code"], "USERNAME_REQUIRED");
     set_username(&db, id, "alice").await;
+    let r = wallet_call(&app, "GET", "/api/v1/wallet", None, &cookies).await;
+    assert_eq!(r.body["needs_username"], false);
 
     // 刚登录也不行：开通交易必须专门做一次邮箱再验证
     let r = wallet_call(&app, "POST", start, None, &cookies).await;

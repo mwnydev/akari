@@ -109,6 +109,32 @@ test("owner enrolls an admin passkey and appoints a board moderator", async ({
     await pin.getByRole("button", { name: "确认" }).click();
     await expect(pin.getByRole("alert")).toHaveText("没有权限进行此操作");
 
+    // —— 拍卖设置：开关单独确认，参数按小时 / 分钟 / 天填写，超出上下限前端先拦下（刚再验证过，不再弹）
+    await admin.goto(`${ADMIN_URL}/auction/`);
+    const status = admin.getByText(/^已(开启|关闭)$/);
+    const wasOn = (await status.textContent()) === "已开启";
+    await admin.getByRole("button", { name: wasOn ? "关闭拍卖" : "开启拍卖" }).click();
+    const flip = admin.getByRole("dialog", { name: wasOn ? "关闭拍卖？" : "开启拍卖？" });
+    await flip.getByRole("button", { name: wasOn ? "确认关闭" : "确认开启" }).click();
+    await expect(flip).toBeHidden();
+    await expect(status).toHaveText(wasOn ? "已关闭" : "已开启");
+    const params = admin.getByRole("form", { name: "拍卖参数" });
+    const payWindow = params.getByLabel("赢家付款期（小时）");
+    await payWindow.fill("500");
+    await params.getByRole("button", { name: "保存参数" }).click();
+    await expect(params).toContainText("不能大于 168 小时");
+    await payWindow.fill("36");
+    await params.getByRole("button", { name: "保存参数" }).click();
+    await expect(admin.getByText("已保存，并已推送管理员群").first()).toBeVisible();
+    await admin.reload();
+    await expect(
+      admin.getByRole("form", { name: "拍卖参数" }).getByLabel("赢家付款期（小时）"),
+    ).toHaveValue("36");
+    // 还原开关（其他测试按需要自己打开拍卖）
+    await admin.getByRole("button", { name: wasOn ? "开启拍卖" : "关闭拍卖" }).click();
+    await admin.getByRole("dialog").getByRole("button", { name: /^确认/ }).click();
+    await expect(admin.getByText(wasOn ? "已开启" : "已关闭", { exact: true })).toBeVisible();
+
     // —— 仲裁总览与 Safe 批量文件区块
     await admin.goto(`${ADMIN_URL}/arbitration/`);
     await expect(admin.getByRole("table", { name: "仲裁员工作量" })).toBeVisible();

@@ -4406,7 +4406,7 @@
             "name": "type",
             "in": "query",
             "required": false,
-            "schema": { "type": "string", "enum": ["post", "topic", "user"] }
+            "schema": { "type": "string", "enum": ["post", "topic", "user", "all"] }
           },
           {
             "name": "board",
@@ -7932,7 +7932,8 @@
           "deleted",
           "hidden",
           "hidden_reason",
-          "created_at"
+          "created_at",
+          "reply_to"
         ],
         "properties": {
           "author_id": { "type": "integer", "format": "int64" },
@@ -7952,7 +7953,16 @@
             "type": "string",
             "description": "已过滤的 HTML；已删除的楼层，以及访问者看不到的隐藏楼层为空字符串。"
           },
-          "id": { "type": "integer", "format": "int64" }
+          "id": { "type": "integer", "format": "int64" },
+          "reply_to": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ReplyTo",
+                "description": "这一楼回复的楼层（同一主题）：显示「回复 #N 名字」，作者名片在页面的 `users` 里。\n（`serde(default)` 只为读取本字段加入之前缓存的主题页，接口总会返回。）"
+              },
+              { "type": "null" }
+            ]
+          }
         }
       },
       "Presence": {
@@ -8127,7 +8137,22 @@
             "description": "注册 24 小时内必填：Turnstile 令牌（组件的 `action` 为 `post`）。"
           },
           "html": { "type": "string" },
+          "reply_to_post_id": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "回复某一楼（Discourse 式「回复 #N」）：同一主题里正常显示的楼层，否则 400；该楼作者收到回复通知。"
+          },
           "source": { "type": "object" }
+        }
+      },
+      "ReplyTo": {
+        "type": "object",
+        "description": "被回复的楼层。",
+        "required": ["post_id", "floor", "author_id"],
+        "properties": {
+          "author_id": { "type": "integer", "format": "int64" },
+          "floor": { "type": "integer", "format": "int32" },
+          "post_id": { "type": "integer", "format": "int64" }
         }
       },
       "ReportCaseView": {
@@ -8672,7 +8697,16 @@
       },
       "SearchResponse": {
         "type": "object",
-        "required": ["type", "total", "posts", "topics", "people", "forums", "users"],
+        "required": [
+          "type",
+          "total",
+          "topic_total",
+          "posts",
+          "topics",
+          "people",
+          "forums",
+          "users"
+        ],
         "properties": {
           "forums": {
             "type": "array",
@@ -8682,11 +8716,16 @@
           "next_cursor": { "type": ["string", "null"] },
           "people": { "type": "array", "items": { "$ref": "#/components/schemas/MentionView" } },
           "posts": { "type": "array", "items": { "$ref": "#/components/schemas/PostResult" } },
+          "topic_total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "主题标题的命中数估计：`topic` 与 `all` 才有，其余为 0。"
+          },
           "topics": { "type": "array", "items": { "$ref": "#/components/schemas/TopicResult" } },
           "total": {
             "type": "integer",
             "format": "int64",
-            "description": "从本页起往前的命中数估计（含访问者看不到的，翻页时变小；用户搜索为结果数）。"
+            "description": "从本页起往前的命中数估计（含访问者看不到的，翻页时变小；用户搜索为结果数；`all` 为楼层命中数）。"
           },
           "type": { "$ref": "#/components/schemas/SearchType" },
           "users": {
@@ -8696,7 +8735,7 @@
           }
         }
       },
-      "SearchType": { "type": "string", "enum": ["post", "topic", "user"] },
+      "SearchType": { "type": "string", "enum": ["post", "topic", "user", "all"] },
       "SendMessage": {
         "type": "object",
         "required": ["body"],
@@ -9313,11 +9352,15 @@
       },
       "WalletOverview": {
         "type": "object",
-        "required": ["enabled", "passkeys", "wallets"],
+        "required": ["enabled", "passkeys", "wallets", "needs_username"],
         "properties": {
           "enabled": {
             "type": "boolean",
             "description": "是否已开通交易（至少一个钱包 Passkey 和本链钱包地址）。"
+          },
+          "needs_username": {
+            "type": "boolean",
+            "description": "还没设置论坛用户名：开通交易（注册钱包 Passkey）前要先设置，钱包据此引导去论坛设置。"
           },
           "passkeys": { "type": "array", "items": { "$ref": "#/components/schemas/PasskeyView" } },
           "verified_until": {

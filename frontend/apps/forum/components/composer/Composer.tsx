@@ -25,7 +25,7 @@ export interface ComposerProps {
   /** 提交成功：发主题、回帖给出要跳转的地址，编辑为 null（原地刷新） */
   onDone: (href: string | null) => void;
   onCancel: () => void;
-  /** 从楼层打开：「引用」在开头插入被引用楼层的摘录，「回复」在开头 @ 楼层作者 */
+  /** 从楼层打开：「引用」在开头插入被引用楼层的摘录，「回复」记下回复的楼层 */
   context?: ComposeContext | null;
   /** 打开后把光标放进编辑框（编辑器弹窗） */
   autoFocus?: boolean;
@@ -69,29 +69,26 @@ function quoteBlock(q: QuoteTarget): JSONContent {
   };
 }
 
-/** 打开时的初始内容：草稿（或空）前面加上引用块，或一段「@作者 」。 */
+/** 打开时的初始内容：「引用」在草稿（或空）前面加上引用块，后面留一个空段落。 */
 function withContext(doc: JSONContent | null, c: ComposeContext | null | undefined) {
-  if (!c || (c.kind === "reply" && !c.mention)) return doc;
+  if (c?.kind !== "quote") return doc;
   const rest = doc?.content ?? [];
-  const first: JSONContent =
-    c.kind === "quote"
-      ? quoteBlock(c)
-      : {
-          type: "paragraph",
-          content: [
-            { type: "mention", attrs: { id: String(c.mention?.id), label: c.mention?.label } },
-            { type: "text", text: " " },
-          ],
-        };
-  // @ 作者那一段之后接着写（光标在末尾）；引用块后面留一个空段落
-  const tail = rest.length ? rest : c.kind === "quote" ? [{ type: "paragraph" }] : [];
-  return { type: "doc", content: [first, ...tail] };
+  return {
+    type: "doc",
+    content: [quoteBlock(c), ...(rest.length ? rest : [{ type: "paragraph" }])],
+  };
 }
 
-/** `captcha`：新用户发主题、回帖时的 Turnstile 令牌（编辑不需要）。 */
+/** `captcha`：新用户发主题、回帖时的 Turnstile 令牌（编辑不需要）；`replyTo`：回复的楼层。 */
 async function submit(
   target: ComposeTarget,
-  body: { title: string; html: string; source: JSONContent; captcha: string | null },
+  body: {
+    title: string;
+    html: string;
+    source: JSONContent;
+    captcha: string | null;
+    replyTo: number | null;
+  },
 ): Promise<string | null> {
   const { html, source, captcha } = body;
   switch (target.kind) {
@@ -108,7 +105,7 @@ async function submit(
       const created = await unwrap(
         api.POST("/api/v1/topics/{id}/posts", {
           params: { path: { id: target.topicId } },
-          body: { html, source, captcha },
+          body: { html, source, captcha, reply_to_post_id: body.replyTo },
         }),
       );
       return topicHref(target.topicId, created.page, created.floor);
@@ -149,7 +146,7 @@ function ComposerForm({
   const postCaptcha = usePostCaptcha();
   const captcha = target.kind === "edit" ? null : postCaptcha;
 
-  // 从楼层打开：引用块或 @作者 放在初始内容最前面（弹窗换了楼层会重新挂载本组件）
+  // 从楼层打开：引用块放在初始内容最前面（弹窗换了楼层会重新挂载本组件）
   const [content] = useState(() => withContext(initial.doc, context));
   const ed = useForumEditor({
     content,
@@ -161,7 +158,7 @@ function ComposerForm({
   });
   const editor = ed.editor;
 
-  // 「改过」= 与打开时的内容（草稿、引用块、@作者）不同；草稿本来就存在本机，没改过就不必确认
+  // 「改过」= 与打开时的内容（草稿、引用块）不同；草稿本来就存在本机，没改过就不必确认
   const baseline = useRef<string | null>(null);
   const dirtyRef = useRef<boolean | null>(null);
   function reportDirty() {
@@ -207,6 +204,7 @@ function ComposerForm({
         html: editor.getHTML(),
         source: editor.getJSON(),
         captcha: captcha?.token ?? null,
+        replyTo: context?.kind === "reply" ? context.postId : null,
       });
     },
     // Turnstile 令牌只能用一次

@@ -260,6 +260,19 @@ pub struct PostView {
     pub created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339::option")]
     pub edited_at: Option<OffsetDateTime>,
+    /// 这一楼回复的楼层（同一主题）：显示「回复 #N 名字」，作者名片在页面的 `users` 里。
+    /// （`serde(default)` 只为读取本字段加入之前缓存的主题页，接口总会返回。）
+    #[serde(default)]
+    #[schema(required = true)]
+    pub reply_to: Option<ReplyTo>,
+}
+
+/// 被回复的楼层。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ReplyTo {
+    pub post_id: i64,
+    pub floor: i32,
+    pub author_id: i64,
 }
 
 impl PostView {
@@ -277,6 +290,14 @@ impl PostView {
             hidden_reason: hidden_reason.filter(|_| hidden),
             created_at: p.created_at,
             edited_at: p.edited_at,
+            reply_to: match (p.reply_to_post_id, p.reply_to_floor, p.reply_to_author_id) {
+                (Some(post_id), Some(floor), Some(author_id)) => Some(ReplyTo {
+                    post_id,
+                    floor,
+                    author_id,
+                }),
+                _ => None,
+            },
         }
     }
 

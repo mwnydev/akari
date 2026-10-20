@@ -528,6 +528,8 @@ pub struct WalletOverview {
     pub wallets: Vec<WalletView>,
     /// 当前会话的 Passkey 近期验证截止时间（Unix 秒）。
     pub verified_until: Option<i64>,
+    /// 还没设置论坛用户名：开通交易（注册钱包 Passkey）前要先设置，钱包据此引导去论坛设置。
+    pub needs_username: bool,
 }
 
 /// 我的钱包 Passkey 与地址。
@@ -539,11 +541,13 @@ pub async fn overview(
     State(state): State<AppState>,
     session: Session,
 ) -> ApiResult<Json<WalletOverview>> {
-    let user_id = current_user_id(&session).await?;
+    let user = current_user(&state, &session).await?;
+    let user_id = user.id;
     let passkeys = db::wallet_passkeys(&state.db, user_id).await?;
     let wallets = db::wallets(&state.db, user_id).await?;
     let chain_id = state.wallet.chain_id();
     Ok(Json(WalletOverview {
+        needs_username: user.username.is_none(),
         enabled: !passkeys.is_empty() && wallets.iter().any(|w| w.chain_id == chain_id),
         passkeys: passkeys.iter().map(PasskeyView::from).collect(),
         wallets: wallets.into_iter().map(WalletView::from).collect(),

@@ -32,8 +32,13 @@ export async function waitForCode(to: string, after?: Mail, timeoutMs = 15_000):
   throw new Error(`no code mailed to ${to}`);
 }
 
-/** 用钱包页面的源（在 WALLET_ORIGINS 里）登录；会话 Cookie 落在这个浏览器上下文里。 */
-export async function signIn(context: BrowserContext, baseURL: string, tag: string) {
+/** 用钱包页面的源（在 WALLET_ORIGINS 里）登录；会话 Cookie 落在这个浏览器上下文里。`username: false` 不设用户名。 */
+export async function signIn(
+  context: BrowserContext,
+  baseURL: string,
+  tag: string,
+  { username: withUsername = true } = {},
+) {
   const email = `wallet-e2e-${tag}-${Date.now()}@test.dev`;
   const headers = { origin: baseURL };
   const start = await context.request.post(`${baseURL}/api/v1/auth/email/start`, {
@@ -47,8 +52,10 @@ export async function signIn(context: BrowserContext, baseURL: string, tag: stri
     data: { email, code: mail.code },
   });
   if (!verify.ok()) throw new Error(`login verify failed: ${verify.status()}`);
-  const username = `w${tag.replace(/\W/g, "").slice(0, 10)}${Date.now() % 1e9}`;
-  psql("UPDATE users SET username = :'username' WHERE email = :'email';", { username, email });
+  if (withUsername) {
+    const username = `w${tag.replace(/\W/g, "").slice(0, 10)}${Date.now() % 1e9}`;
+    psql("UPDATE users SET username = :'username' WHERE email = :'email';", { username, email });
+  }
   return { email, loginMail: mail };
 }
 

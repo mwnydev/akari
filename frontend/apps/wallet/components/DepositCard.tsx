@@ -36,7 +36,7 @@ function AddressQr({ address }: { address: string }) {
   );
 }
 
-/** 充值卡片：地址、二维码、网络标识，醒目提示网络必须选 Arbitrum One（plan 第 5 节「充值」）。 */
+/** 充值卡片：地址、二维码、网络标识，醒目提示网络必须选构建所在的链（plan 第 5 节「充值」；测试网显示 Arbitrum Sepolia）。 */
 export function DepositCard({ address }: { address: string }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
@@ -60,13 +60,13 @@ export function DepositCard({ address }: { address: string }) {
       >
         <TriangleAlert size={18} className="mt-0.5 shrink-0" aria-hidden />
         <p>
-          交易所提币请选 <strong>Arbitrum One</strong> 网络，选 <strong>TRC20</strong> 无法找回。
+          交易所提币请选 <strong>{NETWORK_LABEL}</strong> 网络，选 <strong>TRC20</strong> 无法找回。
         </p>
       </div>
       <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
         <AddressQr address={address} />
         <div className="min-w-0 flex-1 space-y-2">
-          <p className="text-sm text-fg-muted">你的钱包地址（只收 Arbitrum One 上的 USDT）</p>
+          <p className="text-sm text-fg-muted">你的钱包地址（只收 {NETWORK_LABEL} 上的 USDT）</p>
           <p className="amount font-mono text-sm break-all" data-testid="deposit-address">
             {address}
           </p>

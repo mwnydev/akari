@@ -12,6 +12,8 @@ const button =
 export default function RouteError({ reset }: { error: Error; reset: () => void }) {
   return (
     <>
+      {/* 客户端组件不能导出 metadata；React 19 把这个 title 提升到 <head> */}
+      <title>页面出错 · Akari</title>
       <header className="h-14 border-b border-border bg-surface">
         <div className="mx-auto flex h-full max-w-[90rem] items-center px-2 sm:px-4">
           <Brand />

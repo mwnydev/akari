@@ -38,6 +38,11 @@
 		Referrer-Policy strict-origin-when-cross-origin
 		-Server
 	}
+	# 不存在的页面显示静态导出里的 404 页（与 Cloudflare Pages 的做法一致），状态码仍是 404
+	handle_errors 404 {
+		rewrite * /404.html
+		file_server
+	}
 }
 
 {% endif %}

@@ -1,21 +1,39 @@
 "use client";
 
 import { Button, Card, EmptyState, ErrorState, LoadingState } from "@akari/ui";
-import type { ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import { FORUM_ORIGIN } from "../lib/wallet/config";
 import type { Wallet } from "../lib/wallet/sdk";
 import { useWallet } from "../lib/wallet/useWallet";
 
-/** 钱包没有自己的登录：用论坛账号（会话 Cookie 与论坛共用，ADR 0009）。 */
+const noSubscribe = () => () => undefined;
+
+/**
+ * 去论坛的某个页面，处理完回到钱包当前页面（论坛只接受配置的钱包源，见论坛 lib/safe-next.ts）。
+ * 地址在浏览器里补上（静态导出的页面在构建时不知道查询参数），服务端渲染先用不带 next 的地址。
+ */
+export function useForumHref(path: string): string {
+  const here = useSyncExternalStore(
+    noSubscribe,
+    () => location.href,
+    () => null,
+  );
+  return here
+    ? `${FORUM_ORIGIN}${path}?next=${encodeURIComponent(here)}`
+    : `${FORUM_ORIGIN}${path}`;
+}
+
+/** 钱包没有自己的登录：用论坛账号（会话 Cookie 与论坛共用，ADR 0009），登录后回到这里。 */
 export function LoginPrompt() {
+  const href = useForumHref("/login");
   return (
     <Card>
       <EmptyState
         title="请先登录论坛"
-        description="钱包使用论坛账号。登录后回到这个页面刷新即可继续。"
+        description="钱包使用论坛账号，登录后会回到这个页面继续。"
         action={
           <Button asChild>
-            <a href={`${FORUM_ORIGIN}/login`}>去登录</a>
+            <a href={href}>去登录</a>
           </Button>
         }
       />

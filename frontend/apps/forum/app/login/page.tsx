@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "../../components/forum/AppShell";
 import { getMe } from "../../lib/session";
 import { LoginForm } from "./LoginForm";
-import { safeNext } from "./safe-next";
+import { safeNext } from "../../lib/safe-next";
 
 export const metadata: Metadata = { title: "登录", robots: { index: false } };
 

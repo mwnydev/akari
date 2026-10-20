@@ -129,7 +129,7 @@ function Confirm({
         <>
           <p role="alert" className="rounded-lg bg-warning-soft p-3 text-sm text-warning">
             余额不足：还差 <Amount value={quote.total - balance} />
-            。请先从交易所选 Arbitrum One 网络提币到下面的地址，到账后刷新本页。
+            。请先从交易所选 {NETWORK_LABEL} 网络提币到下面的地址，到账后刷新本页。
           </p>
           <DepositCard address={wallet.address} />
         </>

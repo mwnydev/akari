@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "-- 主题第 N 页：按楼层区间取，走唯一索引 (topic_id, floor)，第 1 页与第 5000 页一样快。\n-- $1 topic_id, $2 from_floor, $3 to_floor\nSELECT id, topic_id, floor, author_id, html, status, created_at, edited_at\nFROM posts\nWHERE topic_id = $1 AND floor BETWEEN $2 AND $3\nORDER BY floor\n",
+  "query": "-- 主题第 N 页：按楼层区间取，走唯一索引 (topic_id, floor)，第 1 页与第 5000 页一样快。\n-- 被回复楼层（reply_to_post_id）按主键取楼层号与作者，只为显示「回复 #N 名字」。\n-- $1 topic_id, $2 from_floor, $3 to_floor\nSELECT p.id, p.topic_id, p.floor, p.author_id, p.html, p.status, p.created_at, p.edited_at,\n       p.reply_to_post_id, r.floor AS \"reply_to_floor?\", r.author_id AS \"reply_to_author_id?\"\nFROM posts p\nLEFT JOIN posts r ON r.id = p.reply_to_post_id\nWHERE p.topic_id = $1 AND p.floor BETWEEN $2 AND $3\nORDER BY p.floor\n",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,39 @@
             "name": "edited_at"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "reply_to_post_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "reply_to_post_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "reply_to_floor?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "floor"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "reply_to_author_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "posts",
+            "name": "author_id"
+          }
+        }
       }
     ],
     "parameters": {
@@ -107,8 +140,11 @@
       false,
       false,
       false,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "cd416a22cfaf203dbc4c95f0c8434cfa4c9744989a83a067a00375ad420fef52"
+  "hash": "783895166cd3c5792da85b62b082975c55261ba3e8f05a924e9529adc19dac19"
 }

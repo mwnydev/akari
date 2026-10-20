@@ -79,6 +79,17 @@ export function LoginGate({
       ) : null}
       {step === "login" ? (
         <Card className="space-y-3">
+          <div className="space-y-1 text-sm text-fg-muted">
+            <p className="font-medium text-fg">怎么登录</p>
+            <ol className="list-decimal space-y-1 pl-5">
+              <li>先在论坛用邮箱验证码登录站长账号（本页与论坛共用登录状态）。</li>
+              <li>
+                第一次进后台：点下面「第一次使用」，向站长邮箱发一封专用验证码，验证后在这台设备上创建后台
+                Passkey（绑定即登录）。
+              </li>
+              <li>以后每次进后台：直接「用后台 Passkey 登录」，用 Face ID / 指纹确认。</li>
+            </ol>
+          </div>
           <Button onClick={() => login.mutate()} disabled={login.isPending} className="w-full">
             <KeyRound size={16} aria-hidden />
             {login.isPending ? "等待 Passkey…" : "用后台 Passkey 登录"}
@@ -92,6 +103,10 @@ export function LoginGate({
               {errorMessage(login.error)}
             </p>
           ) : null}
+          <Button variant="secondary" onClick={() => setStep("enroll")} className="w-full">
+            <Mail size={16} aria-hidden />
+            第一次使用：邮箱验证后绑定 Passkey
+          </Button>
         </Card>
       ) : (
         <Enroll onLogin={onLogin} onBack={() => setStep("login")} />

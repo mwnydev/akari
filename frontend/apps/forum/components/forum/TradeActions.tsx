@@ -4,6 +4,7 @@ import Link from "next/link";
 import { loginHref } from "../../lib/links";
 import { WALLET_ORIGIN } from "../../lib/public-config";
 import { StartConversation } from "../messages/StartConversation";
+import { WalletLink } from "../settings/UsernameGate";
 
 /**
  * 面板里的操作。买家：「担保购买」去钱包付卖家的公开报价；「私信卖家」「发起担保」先打开与卖家的私信会话，
@@ -29,10 +30,10 @@ export function TradeActions({
     return (
       <>
         <Button asChild size="lg" className="w-full">
-          <a href={`${WALLET_ORIGIN}/offer?listing=${id}`}>
+          <WalletLink href={`${WALLET_ORIGIN}/offer?listing=${id}`}>
             <ShieldCheck size={18} aria-hidden />
             发布公开报价
-          </a>
+          </WalletLink>
         </Button>
         <p className="text-xs text-fg-muted">
           这是你的交易帖：在钱包里签名公开报价后，买家就能直接担保购买。
@@ -44,10 +45,10 @@ export function TradeActions({
     <>
       {offerId !== undefined ? (
         <Button asChild size="lg" className="w-full">
-          <a href={`${WALLET_ORIGIN}/pay?offer=${offerId}`}>
+          <WalletLink href={`${WALLET_ORIGIN}/pay?offer=${offerId}`}>
             <ShieldCheck size={18} aria-hidden />
             担保购买
-          </a>
+          </WalletLink>
         </Button>
       ) : (
         <>

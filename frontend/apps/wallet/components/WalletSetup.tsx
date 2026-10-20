@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardTitle,
+  EmptyState,
   ErrorState,
   Field,
   Input,
@@ -22,7 +23,7 @@ import { NETWORK_LABEL } from "../lib/wallet/config";
 import { loadWalletSdk } from "../lib/wallet/load";
 import type { Wallet } from "../lib/wallet/sdk";
 import { useWallet } from "../lib/wallet/useWallet";
-import { LoginPrompt } from "./WalletGate";
+import { LoginPrompt, useForumHref } from "./WalletGate";
 
 function WalletCard({ wallet }: { wallet: Wallet }) {
   const [balance, setBalance] = useState<bigint | null>(null);
@@ -205,6 +206,25 @@ function PasskeyStep({
   );
 }
 
+/** 开通交易前要先在论坛设置用户名（钱包 Passkey 以用户名命名，交易对手与仲裁员按用户名认人）。 */
+function UsernameFirst() {
+  const href = useForumHref("/settings");
+  return (
+    <Card className="space-y-3">
+      <CardTitle>开通交易</CardTitle>
+      <EmptyState
+        title="先设置用户名"
+        description="开通交易前要先在论坛设置用户名：交易对手和仲裁员都按用户名认人。设置后会回到这里继续。"
+        action={
+          <Button asChild>
+            <a href={href}>去论坛设置用户名</a>
+          </Button>
+        }
+      />
+    </Card>
+  );
+}
+
 function SetupFlow({
   overview,
   onReady,
@@ -215,6 +235,7 @@ function SetupFlow({
   // 第一个 Passkey 需要邮箱再验证；已注册过 Passkey（只差登记地址）直接到最后一步
   const [emailDone, setEmailDone] = useState(overview.passkeys.length > 0);
   const [expired, setExpired] = useState(false);
+  if (overview.needs_username) return <UsernameFirst />;
   return (
     <Card className="space-y-3">
       <CardTitle>开通交易</CardTitle>

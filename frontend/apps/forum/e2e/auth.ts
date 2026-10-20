@@ -30,8 +30,11 @@ export async function useTestIp(page: Page) {
   await page.setExtraHTTPHeaders({ "cf-connecting-ip": `10.${n()}.${n()}.${n()}` });
 }
 
-/** 走一遍邮箱验证码登录（新邮箱自动注册），停在首页。 */
-export async function login(page: Page, email: string) {
+/**
+ * 走一遍邮箱验证码登录（新邮箱自动注册），停在首页。新账号登录后会弹一次「设置用户名」：
+ * 默认先在本机记成「以后再说」再刷新（测试各自的操作不被弹窗挡住），`usernamePrompt` 为真时保留弹窗。
+ */
+export async function login(page: Page, email: string, { usernamePrompt = false } = {}) {
   await useTestIp(page);
   await page.goto("/login");
   await page.getByLabel("邮箱").fill(email);
@@ -39,7 +42,16 @@ export async function login(page: Page, email: string) {
   await page.getByLabel("验证码").fill(await latestCode(email));
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(page.getByTestId("nav-user")).toBeVisible();
+  if (!usernamePrompt) {
+    const me = (await (await page.request.get("/api/v1/me")).json()) as { id: number };
+    // 与 lib/username-prompt.ts 的键一致
+    await page.evaluate((key) => localStorage.setItem(key, "1"), USERNAME_PROMPT_KEY + me.id);
+    await page.reload();
+    await expect(page.getByTestId("nav-user")).toBeVisible();
+  }
 }
+
+export const USERNAME_PROMPT_KEY = "akari:username-prompt-dismissed:";
 
 /**
  * 把账号的注册时间提前两天：注册 24 小时内发帖限频每小时 5 条（plan 第 9 节），

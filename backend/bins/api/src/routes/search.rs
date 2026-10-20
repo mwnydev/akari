@@ -67,7 +67,15 @@ pub enum SearchType {
     Topic,
     /// 用户名前缀。
     User,
+    /// 搜索页默认的「全部」：主题标题（前 [`ALL_TOPICS`] 条）、楼层正文（前 [`ALL_POSTS`] 条）与用户名前缀
+    /// （关键词像用户名时）一起返回，各带命中数，不翻页（翻页切到单一类型）。只算一次限流。
+    All,
 }
+
+/// 「全部」里每种最多几条。
+const ALL_TOPICS: usize = 5;
+const ALL_POSTS: usize = 10;
+const ALL_PEOPLE: usize = 5;
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct SearchQuery {
@@ -118,8 +126,10 @@ pub struct TopicResult {
 pub struct SearchResponse {
     #[serde(rename = "type")]
     pub kind: SearchType,
-    /// 从本页起往前的命中数估计（含访问者看不到的，翻页时变小；用户搜索为结果数）。
+    /// 从本页起往前的命中数估计（含访问者看不到的，翻页时变小；用户搜索为结果数；`all` 为楼层命中数）。
     pub total: i64,
+    /// 主题标题的命中数估计：`topic` 与 `all` 才有，其余为 0。
+    pub topic_total: i64,
     pub posts: Vec<PostResult>,
     pub topics: Vec<TopicResult>,
     pub people: Vec<MentionView>,
@@ -178,6 +188,7 @@ pub async fn search(
     let mut res = SearchResponse {
         kind: q.kind,
         total: 0,
+        topic_total: 0,
         posts: Vec::new(),
         topics: Vec::new(),
         people: Vec::new(),
@@ -200,6 +211,9 @@ pub async fn search(
         }
         None => (None, 0),
     };
+    if q.kind == SearchType::All && q.cursor.is_some() {
+        return Err(ApiError(ErrorCode::InvalidParameter));
+    }
     if served >= MAX_RESULTS {
         return Ok(Json(res));
     }
@@ -222,23 +236,77 @@ pub async fn search(
         .execute(&mut *tx)
         .await?;
     let found = match q.kind {
-        SearchType::Topic => find_topics(&mut tx, &query, &forum_ids, before).await?,
-        _ => find_posts(&mut tx, &query, &forum_ids, before).await?,
+        SearchType::Topic => vec![find_topics(&mut tx, &query, &forum_ids, before).await?],
+        SearchType::All => vec![
+            find_topics(&mut tx, &query, &forum_ids, None).await?,
+            find_posts(&mut tx, &query, &forum_ids, None).await?,
+        ],
+        SearchType::Post | SearchType::User => {
+            vec![find_posts(&mut tx, &query, &forum_ids, before).await?]
+        }
     };
     tx.commit().await?;
 
-    res.total = found.total;
-    let shown = served + found.ids.len();
-    res.next_cursor = found
-        .next
-        .filter(|_| shown < MAX_RESULTS)
-        .map(|id| format!("{id}.{shown}"));
     let mut user_ids = Vec::new();
     let mut forum_seen = HashSet::new();
+    for found in found {
+        if q.kind == SearchType::All {
+            fill(
+                &state,
+                &mut res,
+                found.cut(),
+                &terms,
+                &mut user_ids,
+                &mut forum_seen,
+            )
+            .await?;
+        } else {
+            let shown = served + found.ids.len();
+            res.next_cursor = found
+                .next
+                .filter(|_| shown < MAX_RESULTS)
+                .map(|id| format!("{id}.{shown}"));
+            fill(
+                &state,
+                &mut res,
+                found,
+                &terms,
+                &mut user_ids,
+                &mut forum_seen,
+            )
+            .await?;
+        }
+    }
+    if q.kind == SearchType::Topic {
+        res.total = res.topic_total;
+    }
+    if q.kind == SearchType::All {
+        res.people = search_prefix(&state, &q.q).await?;
+        res.people.truncate(ALL_PEOPLE);
+    }
+    res.forums = forums
+        .iter()
+        .filter(|f| forum_seen.contains(&f.id))
+        .map(ForumView::from)
+        .collect();
+    res.users = cards::load(&state, &user_ids).await?;
+    Ok(Json(res))
+}
+
+/// 把一种结果填进回应：命中数（楼层记在 `total`，主题记在 `topic_total`）、条目、要带的名片与板块。
+async fn fill(
+    state: &AppState,
+    res: &mut SearchResponse,
+    found: Found,
+    terms: &[String],
+    user_ids: &mut Vec<i64>,
+    forum_seen: &mut HashSet<i32>,
+) -> ApiResult<()> {
     match found.rows {
         Rows::Posts(rows) => {
+            res.total = found.total;
             for p in rows {
-                let (snippet, truncated_start, truncated_end) = snippet(&p.plain_text, &terms);
+                let (snippet, truncated_start, truncated_end) = snippet(&p.plain_text, terms);
                 user_ids.push(p.author_id);
                 forum_seen.insert(p.forum_id);
                 res.posts.push(PostResult {
@@ -257,10 +325,11 @@ pub async fn search(
             }
         }
         Rows::Topics(rows) => {
-            user_ids = topic_user_ids(rows.iter());
+            res.topic_total = found.total;
+            user_ids.extend(topic_user_ids(rows.iter()));
             forum_seen.extend(rows.iter().map(|t| t.forum_id));
-            for summary in summaries(&state, &rows).await? {
-                let title = highlight(&summary.title, &terms);
+            for summary in summaries(state, &rows).await? {
+                let title = highlight(&summary.title, terms);
                 res.topics.push(TopicResult {
                     topic: summary,
                     title,
@@ -268,13 +337,7 @@ pub async fn search(
             }
         }
     }
-    res.forums = forums
-        .iter()
-        .filter(|f| forum_seen.contains(&f.id))
-        .map(ForumView::from)
-        .collect();
-    res.users = cards::load(&state, &user_ids).await?;
-    Ok(Json(res))
+    Ok(())
 }
 
 enum Rows {
@@ -315,6 +378,18 @@ async fn find_posts(
         }
     }
     Ok(found_posts(total, out, before))
+}
+
+impl Found {
+    /// 「全部」里每种只留前几条（不翻页）。
+    fn cut(mut self) -> Self {
+        match &mut self.rows {
+            Rows::Posts(rows) => rows.truncate(ALL_POSTS),
+            Rows::Topics(rows) => rows.truncate(ALL_TOPICS),
+        }
+        self.next = None;
+        self
+    }
 }
 
 fn found_posts(total: i64, rows: Vec<search::PostHit>, next: Option<i64>) -> Found {

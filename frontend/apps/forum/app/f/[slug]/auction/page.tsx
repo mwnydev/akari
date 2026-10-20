@@ -12,6 +12,7 @@ import { listForums } from "../../../../lib/forums";
 import { boardHref, loginHref } from "../../../../lib/links";
 import { needsPostCaptcha, WALLET_ORIGIN } from "../../../../lib/public-config";
 import { getMe } from "../../../../lib/session";
+import { WalletLink } from "../../../../components/settings/UsernameGate";
 
 export const metadata: Metadata = { title: "发起拍卖", robots: { index: false } };
 
@@ -64,10 +65,10 @@ export default async function NewAuctionPage({ params }: { params: Promise<{ slu
           ) : (
             <EmptyState
               title="发拍卖帖需要先开通交易"
-              description="开通交易会创建你的 Passkey 钱包（Arbitrum One），用于签名拍卖授权和收款；只需一次。"
+              description="开通交易会创建你的 Passkey 钱包，用于签名拍卖授权和收款；只需一次。"
               action={
                 <Button asChild>
-                  <a href={`${WALLET_ORIGIN}/setup`}>开通交易</a>
+                  <WalletLink href={`${WALLET_ORIGIN}/setup`}>开通交易</WalletLink>
                 </Button>
               }
             />

@@ -4063,6 +4063,7 @@ export interface components {
       html: string;
       /** Format: int64 */
       id: number;
+      reply_to: components["schemas"]["ReplyTo"] | null;
     };
     /** @description 在线状态。隐身用户对非交易对手只显示活跃到天（`last_seen_date`）。 */
     Presence: {
@@ -4184,7 +4185,21 @@ export interface components {
       /** @description 注册 24 小时内必填：Turnstile 令牌（组件的 `action` 为 `post`）。 */
       captcha?: string | null;
       html: string;
+      /**
+       * Format: int64
+       * @description 回复某一楼（Discourse 式「回复 #N」）：同一主题里正常显示的楼层，否则 400；该楼作者收到回复通知。
+       */
+      reply_to_post_id?: number | null;
       source: Record<string, unknown>;
+    };
+    /** @description 被回复的楼层。 */
+    ReplyTo: {
+      /** Format: int64 */
+      author_id: number;
+      /** Format: int32 */
+      floor: number;
+      /** Format: int64 */
+      post_id: number;
     };
     ReportCaseView: {
       /** @description 已处理时采取的措施：`hide` / `delete` / `sanction`。 */
@@ -4555,10 +4570,15 @@ export interface components {
       next_cursor?: string | null;
       people: components["schemas"]["MentionView"][];
       posts: components["schemas"]["PostResult"][];
+      /**
+       * Format: int64
+       * @description 主题标题的命中数估计：`topic` 与 `all` 才有，其余为 0。
+       */
+      topic_total: number;
       topics: components["schemas"]["TopicResult"][];
       /**
        * Format: int64
-       * @description 从本页起往前的命中数估计（含访问者看不到的，翻页时变小；用户搜索为结果数）。
+       * @description 从本页起往前的命中数估计（含访问者看不到的，翻页时变小；用户搜索为结果数；`all` 为楼层命中数）。
        */
       total: number;
       type: components["schemas"]["SearchType"];
@@ -4566,7 +4586,7 @@ export interface components {
       users: components["schemas"]["UserCardView"][];
     };
     /** @enum {string} */
-    SearchType: "post" | "topic" | "user";
+    SearchType: "post" | "topic" | "user" | "all";
     SendMessage: {
       /** @description 文字，≤ 2000 字（图片消息在图片上传上线后支持）。 */
       body: string;
@@ -4970,6 +4990,8 @@ export interface components {
     WalletOverview: {
       /** @description 是否已开通交易（至少一个钱包 Passkey 和本链钱包地址）。 */
       enabled: boolean;
+      /** @description 还没设置论坛用户名：开通交易（注册钱包 Passkey）前要先设置，钱包据此引导去论坛设置。 */
+      needs_username: boolean;
       passkeys: components["schemas"]["PasskeyView"][];
       /**
        * Format: int64
@@ -10549,7 +10571,7 @@ export interface operations {
       query: {
         /** @description 关键词，空格分隔的多个词须同时出现；最多 64 个字符、5 个词。 */
         q: string;
-        type?: "post" | "topic" | "user";
+        type?: "post" | "topic" | "user" | "all";
         /** @description 只搜这个板块（slug）。 */
         board?: string | null;
         /** @description 上一页的 `next_cursor`。 */

@@ -1,7 +1,7 @@
 import { escrowAbi, localChain as chain } from "@akari/contracts";
 import { expect, test, type Page } from "@playwright/test";
 import { backendPaths, chainIsDown, publicClient } from "./env";
-import { ensureBoard } from "./forum-user";
+import { ensureBoard, signIn } from "./forum-user";
 import {
   U,
   balances,
@@ -190,11 +190,31 @@ test("开通交易 → 卖家发报价 → 买家一次 Face ID 付款 → 卖�
   expect(order.seller).toBe(sellerAddr);
 });
 
-test("未登录时引导去论坛登录", async ({ browser }) => {
+test("未登录时引导去论坛登录，登录后回到钱包当前页面", async ({ browser }) => {
   const paths = await backendPaths();
   test.skip(!paths.has("/api/v1/wallet"), "forum-api 没有运行");
   const page = await (await browser.newContext()).newPage();
   await page.goto("/setup");
   await expect(page.getByText("请先登录论坛")).toBeVisible();
-  await expect(page.getByRole("link", { name: "去登录" })).toHaveAttribute("href", /\/login$/);
+  const link = page.getByRole("link", { name: "去登录" });
+  await expect(link).toHaveAttribute("href", /\/login\?next=/);
+  const href = new URL((await link.getAttribute("href")) ?? "");
+  expect(href.pathname).toBe("/login");
+  expect(href.searchParams.get("next")).toBe(page.url());
+});
+
+test("还没设置用户名时，开通交易先引导去论坛设置，设置后回到钱包", async ({ browser, baseURL }) => {
+  const paths = await backendPaths();
+  test.skip(!paths.has("/api/v1/wallet"), "forum-api 没有运行");
+  const context = await browser.newContext();
+  await signIn(context, baseURL ?? "", "nouser", { username: false });
+  const page = await context.newPage();
+  await page.goto("/setup");
+  await expect(page.getByText("先设置用户名")).toBeVisible();
+  const href = new URL(
+    (await page.getByRole("link", { name: "去论坛设置用户名" }).getAttribute("href")) ?? "",
+  );
+  expect(href.pathname).toBe("/settings");
+  expect(href.searchParams.get("next")).toBe(page.url());
+  await context.close();
 });

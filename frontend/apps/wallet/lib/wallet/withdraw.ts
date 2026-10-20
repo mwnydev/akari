@@ -39,7 +39,7 @@ export function checkAddress(
 ): AddressCheck {
   const raw = input.trim();
   if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) {
-    return { ok: false, error: "地址格式不对：应为 0x 开头、共 42 位的 Arbitrum One（EVM）地址" };
+    return { ok: false, error: "地址格式不对：应为 0x 开头、共 42 位的 EVM 地址" };
   }
   const body = raw.slice(2);
   const mixedCase = body !== body.toLowerCase() && body !== body.toUpperCase();
