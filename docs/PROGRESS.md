@@ -137,7 +137,7 @@
 | 开源 Paymaster 是否支持固定代付费与预扣 | 阶段 2 前 | lead | ✅ 不支持预扣、未审计 → 自写（ADR 0004） |
 | ZeroDev 恢复模块 48h 延迟 + 可取消 | 阶段 2 前 | lead | ✅ 官方无延迟 → 自写（ADR 0005） |
 | Passkey 中心域名与备用域名 | 第 3 周 | 站长 | ✅ 钱包 `wallet.akari.cc`、后台 `administrator.akari.cc`（ADR 0012）、论坛主站 `akari.cc`；备用域名待定 |
-| RPC 主备服务商、备用 Bundler | 第 5 周 | 站长 | ✅ 主 Alchemy、备 Infura（免费套餐起步，均支持 Arbitrum One / Sepolia 与 WebSocket；用量接近上限或上线后转付费）；密钥站长自行放服务器加密配置。备用 Bundler 待定 |
+| RPC 主备服务商、备用 Bundler | 第 5 周 | 站长 | 主 Infura（免费 300 万 credits/天）；Alchemy 免费额度已用完，暂不用（2026-10-20）；备用节点与备用 Bundler 待定。密钥只放服务器加密配置 |
 | 固定 gas 费按测试网校准 | 第 11 周 | lead | 先用 0.1 / 0.02 |
 | OKX Arbitrum One 提币费实测；Firefox 关联域名实测 | 上线前 | 站长 | 待定 |
 
