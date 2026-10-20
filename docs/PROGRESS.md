@@ -84,7 +84,8 @@
 - [x] 第 10 轮：测试网部署工具（`deploy/testnet/testnet.sh`：preflight / deploy / configure / verify / emit-config），分叉链完整演练含四个后端服务；Infura Sepolia 只读实测（不支持 `eth_simulateV1`，走兜底模拟）；indexer 校对间隔生产默认 20 秒（约 175 万 credits/天）；主网 Paymaster owner 也必须是 2/3 Safe
 - [x] 第 10 轮：合约冻结准备：Halmos 符号证明（费用、Paymaster、单笔 / 总额上限、拍卖只成交一次已完整证明；各结束路径资金守恒有界证明；人民币取整超时，由模糊测试与向量覆盖）、变异测试（有意义变异全部被杀，补 124 个用例）、冻结清单、AI 审计提示包、漏洞赏金草案；合约源码未改
 - [x] 第 10 轮合计：后端 447（覆盖率 91.5%）、合约 276、前端 22 项全部通过；论坛 e2e 46、钱包 e2e 6/6；musl 静态构建通过
-- [ ] 下一轮：托管总额 ≥ 80% 上限时 Telegram 告警 + 处理手册；变异测试复筛补跑；漏洞赏金金额与安全邮箱（站长定）；第一次真实测试网部署（站长准备好 Safe、部署钱包、Arbiscan 密钥后）
+- [x] Arbitrum Sepolia 首次真实部署（2026-10-21）：3 个 Safe（仲裁 / 金库 2/3、运维 1/1，测试签名人）、5 份合约全部在 Arbiscan 验证源码，verify 51 项通过；真实 Infura 上代付兜底模拟跑通（`eth_simulateV1` 返回 -32601 → EntryPoint 模拟）；花费约 0.0403 ETH（其中 0.04 为押金 / 转发钱包 / 质押）；地址见 `deploy/testnet/deployments/arbitrum-sepolia/`
+- [ ] 下一轮：托管总额 ≥ 80% 上限时 Telegram 告警 + 处理手册；变异测试复筛补跑；漏洞赏金金额与安全邮箱（站长定）；测试服务器上线（四个服务 + 前端连接测试网）
 
 ### 评审记录
 
@@ -145,7 +146,7 @@
 | 开源 Paymaster 是否支持固定代付费与预扣 | 阶段 2 前 | lead | ✅ 不支持预扣、未审计 → 自写（ADR 0004） |
 | ZeroDev 恢复模块 48h 延迟 + 可取消 | 阶段 2 前 | lead | ✅ 官方无延迟 → 自写（ADR 0005） |
 | Passkey 中心域名与备用域名 | 第 3 周 | 站长 | ✅ 钱包 `wallet.akari.cc`、后台 `administrator.akari.cc`（ADR 0012）、论坛主站 `akari.cc`；备用域名待定 |
-| RPC 主备服务商、备用 Bundler | 第 5 周 | 站长 | 主 Infura（免费 300 万 credits/天）；Alchemy 免费额度已用完，暂不用（2026-10-20）；备用节点与备用 Bundler 待定。密钥只放服务器加密配置 |
+| RPC 主备服务商、备用 Bundler | 第 5 周 | 站长 | ✅ 主 Infura（HTTP + WebSocket，免费 300 万 credits/天）；备 Arbitrum 官方公共节点（仅 HTTP，无需密钥）；Alchemy 免费额度用完、Google Blockchain RPC 不支持 Arbitrum（2026-10-21）。备用 Bundler 待定 |
 | 固定 gas 费按测试网校准 | 第 11 周 | lead | 先用 0.1 / 0.02 |
 | OKX Arbitrum One 提币费实测；Firefox 关联域名实测 | 上线前 | 站长 | 待定 |
 
