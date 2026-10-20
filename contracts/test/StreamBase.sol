@@ -19,6 +19,7 @@ abstract contract StreamBase is EscrowBase {
     uint256 internal constant DISPUTE_FEE = 1_000_000;
 
     function setUp() public virtual override {
+        vm.warp(START_TIME);
         (seller, sellerKey) = makeAddrAndKey("seller");
         (platform, platformKey) = makeAddrAndKey("auctionSigner");
         usdt = new FreezableUSDT();

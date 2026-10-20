@@ -30,6 +30,9 @@ contract EscrowBondTest is EscrowBase {
         (t,,) = _bond();
         assertEq(t, 30 * U);
         assertEq(config.totalLocked(), 30 * U);
+        _depositBond(25 * U); // deposits add up
+        (t,,) = _bond();
+        assertEq(t, 55 * U);
     }
 
     function test_revert_depositWithdraw() public {
@@ -38,6 +41,8 @@ contract EscrowBondTest is EscrowBase {
         escrow.depositBond(address(usdt), 0);
         vm.expectRevert(Escrow.BadParams.selector);
         escrow.depositBond(makeAddr("notAToken"), 1);
+        vm.expectRevert(Escrow.BadParams.selector);
+        escrow.depositBond(makeAddr("notAToken"), 0);
         escrow.depositBond(address(usdt), 10 * U);
         vm.expectRevert(Escrow.InsufficientBond.selector);
         escrow.withdrawBond(address(usdt), 0, seller);
@@ -66,6 +71,22 @@ contract EscrowBondTest is EscrowBase {
         vm.prank(seller);
         vm.expectRevert(Escrow.InsufficientBond.selector);
         escrow.withdrawBond(address(usdt), 41 * U, seller);
+
+        // exactly the free part can back a second order; locks add up and release one by one
+        o.bond = 40 * U;
+        o.nonce = 3;
+        uint256 id2 = _create(o);
+        (, l, a) = _bond();
+        assertEq(l, 100 * U);
+        assertEq(a, 0);
+        vm.prank(buyer);
+        escrow.release(id);
+        (, l,) = _bond();
+        assertEq(l, 40 * U);
+        vm.prank(buyer);
+        escrow.release(id2);
+        (, l,) = _bond();
+        assertEq(l, 0);
     }
 
     function test_revert_create_badBondTerms() public {
@@ -180,6 +201,9 @@ contract EscrowBondTest is EscrowBase {
         vm.prank(seller);
         vm.expectRevert(Escrow.InsufficientBond.selector);
         escrow.disputeWithBond(id);
+        _depositBond(1 * U); // exactly the dispute fee is enough
+        vm.prank(seller);
+        escrow.disputeWithBond(id);
     }
 
     function test_acceptEnd_and_resolveTimeout_unlockBond() public {
@@ -221,18 +245,23 @@ contract EscrowBondTest is EscrowBase {
         MockMarket m = _addMarket();
         IBondPool pool = IBondPool(address(escrow));
         m.lock(pool, seller, address(usdt), 30 * U);
-        assertEq(escrow.lockedBy(address(m), seller, address(usdt)), 30 * U);
+        m.lock(pool, seller, address(usdt), 20 * U);
+        assertEq(escrow.lockedBy(address(m), seller, address(usdt)), 50 * U);
         (, uint256 l,) = _bond();
-        assertEq(l, 30 * U);
+        assertEq(l, 50 * U);
 
         uint256 b0 = _bal(buyer);
-        m.release(pool, seller, address(usdt), 20 * U, buyer, 5 * U);
+        m.release(pool, seller, address(usdt), 40 * U, buyer, 5 * U);
         assertEq(_bal(buyer) - b0, 5 * U);
-        m.release(pool, seller, address(usdt), 10 * U, buyer, 0);
+        assertEq(escrow.lockedBy(address(m), seller, address(usdt)), 10 * U);
+        (, l,) = _bond();
+        assertEq(l, 10 * U);
+        m.release(pool, seller, address(usdt), 10 * U, buyer, 10 * U); // all of it to the buyer
+        assertEq(_bal(buyer) - b0, 15 * U);
         (uint256 t, uint256 l2,) = _bond();
-        assertEq(t, 95 * U);
+        assertEq(t, 85 * U);
         assertEq(l2, 0);
-        assertEq(config.totalLocked(), 95 * U);
+        assertEq(config.totalLocked(), 85 * U);
     }
 
     function test_revert_market() public {
@@ -345,6 +374,12 @@ contract EscrowBondTest is EscrowBase {
         assertEq(escrow.getOrder(b).confirmDeadline, conf0 + 14 days);
         assertEq(escrow.getOrder(a).arbExtended, 14 days);
         assertEq(escrow.getOrder(c).arbExtended, 0); // disputed: skipped
+
+        vm.prank(seller);
+        escrow.refund(a);
+        vm.prank(arbiter);
+        escrow.extendDeadlines(ids, 1); // settled and over the cap: still skipped
+        assertEq(escrow.getOrder(a).shipDeadline, ship0 + 14 days);
     }
 
     function test_revert_extendDeadlines() public {

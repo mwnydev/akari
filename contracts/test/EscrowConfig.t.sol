@@ -5,7 +5,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Escrow} from "../src/Escrow.sol";
 import {EscrowConfig} from "../src/EscrowConfig.sol";
 import {FeeMath} from "../src/libraries/FeeMath.sol";
-import {FreezableUSDT, Token18} from "./mocks/TestTokens.sol";
+import {FreezableUSDT, Token5, Token18} from "./mocks/TestTokens.sol";
 import {EscrowBase} from "./EscrowBase.sol";
 
 /// Campaign scheduling, token whitelist and the generic 72h queue (plan §6「手续费限时免费活动」「代币白名单」).
@@ -13,6 +13,7 @@ contract EscrowConfigTest is EscrowBase {
     uint8 internal constant K_CAMPAIGN = 1;
     uint8 internal constant K_TOKEN = 2;
     uint8 internal constant K_SIGNER = 3;
+    uint8 internal constant K_MARKET = 4;
 
     function _c(uint256 start, uint256 end, uint16 rate, uint8 scope, uint32 subsidy)
         internal
@@ -46,6 +47,13 @@ contract EscrowConfigTest is EscrowBase {
         assertEq(escrow.getOrder(id).sellerFee, 0);
     }
 
+    /// A campaign whose scope does not cover the order leaves the regular rate, even if its own rate is higher.
+    function test_campaign_otherScopeKeepsRegularRate() public {
+        _setCampaign(_c(block.timestamp, block.timestamp + 10 days, 500, 2, 0)); // auctions only, 5%
+        uint256 id = _create(_nextOffer(1));
+        assertEq(escrow.getOrder(id).sellerFee, 1 * U);
+    }
+
     function test_campaign_rateAboveBaseUsesBase_minFeeOff() public {
         _setCampaign(_c(block.timestamp, block.timestamp + 10 days, 500, 1, 0));
         EscrowConfig.Quote memory q = config.preview(1);
@@ -67,6 +75,8 @@ contract EscrowConfigTest is EscrowBase {
     }
 
     function test_campaign_gasSubsidyCountsOrders() public {
+        assertEq(config.preview(1).baseGas, 100_000); // no campaign: no subsidy
+        assertEq(config.preview(1).claimGas, 20_000);
         _setCampaign(_c(block.timestamp, block.timestamp + 10 days, 100, 3, 1));
         assertEq(config.preview(1).baseGas, 0);
         assertEq(config.preview(1).claimGas, 0);
@@ -108,14 +118,15 @@ contract EscrowConfigTest is EscrowBase {
     function test_campaign_lessGenerousVariantsQueued() public {
         EscrowConfig.Campaign memory cur = _c(block.timestamp, block.timestamp + 10 days, 50, 1, 5);
         _setCampaign(cur);
-        EscrowConfig.Campaign[5] memory worse = [
+        EscrowConfig.Campaign[6] memory worse = [
             _c(block.timestamp + 1, block.timestamp + 10 days, 50, 1, 5), // starts later
             _c(block.timestamp, block.timestamp + 9 days, 50, 1, 5), // ends earlier
             _c(block.timestamp, block.timestamp + 10 days, 51, 1, 5), // higher rate
             _c(block.timestamp, block.timestamp + 10 days, 50, 2, 5), // drops a scope
-            _c(block.timestamp, block.timestamp + 10 days, 50, 1, 4) // fewer subsidies
+            _c(block.timestamp, block.timestamp + 10 days, 50, 1, 4), // fewer subsidies
+            _c(block.timestamp, block.timestamp + 10 days, 50, 2, 4) // drops a scope and fewer subsidies
         ];
-        for (uint256 i; i < 5; i++) {
+        for (uint256 i; i < 6; i++) {
             _setCampaign(worse[i]);
             assertEq(config.campaign().rateBps, 50);
             assertEq(config.campaign().end, cur.end);
@@ -145,7 +156,7 @@ contract EscrowConfigTest is EscrowBase {
 
     function test_revert_campaign_bounds() public {
         uint256 t = block.timestamp;
-        EscrowConfig.Campaign[9] memory bad = [
+        EscrowConfig.Campaign[10] memory bad = [
             _c(t + 1, t + 1, 0, 1, 0), // end <= start
             _c(t, t + 90 days + 1, 0, 1, 0), // > 90 days
             _c(0, t, 0, 1, 0), // already over
@@ -154,9 +165,10 @@ contract EscrowConfigTest is EscrowBase {
             _c(t, t + 1 days, 0, 4, 0), // unknown scope
             _c(t, t + 1 days, 0, 1, 10_001), // subsidy above cap
             _c(1, 0, 0, 0, 0), // "none" must be all zero
-            _c(0, 0, 1, 0, 0)
+            _c(0, 0, 1, 0, 0),
+            _c(t, t + 1 days, 0, 4, 10_001) // unknown scope and subsidy above cap at once
         ];
-        for (uint256 i; i < 9; i++) {
+        for (uint256 i; i < 10; i++) {
             vm.prank(owner);
             vm.expectRevert(EscrowConfig.BadParams.selector);
             config.setCampaign(bad[i]);
@@ -174,6 +186,13 @@ contract EscrowConfigTest is EscrowBase {
 
     function test_token_whitelistQueued() public {
         FreezableUSDT usdc = new FreezableUSDT();
+        vm.expectEmit(address(config));
+        emit EscrowConfig.Queued(
+            config.queueKey(K_TOKEN, abi.encode(address(usdc))),
+            K_TOKEN,
+            abi.encode(address(usdc)),
+            uint64(block.timestamp + 72 hours)
+        );
         vm.prank(owner);
         config.queueToken(address(usdc));
         vm.expectRevert(EscrowConfig.TooEarly.selector);
@@ -198,6 +217,33 @@ contract EscrowConfigTest is EscrowBase {
         assertEq(usdc.balanceOf(feeRecipient), 1_100_000);
     }
 
+    /// A queued token is enabled once: after an (immediate) disable, enabling again needs a new 72-hour queue.
+    function test_token_reenableNeedsNewQueue() public {
+        FreezableUSDT usdc = new FreezableUSDT();
+        vm.prank(owner);
+        config.queueToken(address(usdc));
+        vm.warp(block.timestamp + 72 hours + 1 days); // any time after the delay
+        config.enableToken(address(usdc));
+        bytes32 key = config.queueKey(K_TOKEN, abi.encode(address(usdc)));
+        assertEq(config.queuedEta(key), 0);
+        vm.prank(owner);
+        config.disableToken(address(usdc));
+        vm.expectRevert(EscrowConfig.BadState.selector);
+        config.enableToken(address(usdc));
+    }
+
+    function test_market_queuedWithKind() public {
+        vm.expectEmit(address(config));
+        emit EscrowConfig.Queued(
+            config.queueKey(K_MARKET, abi.encode(stranger)),
+            K_MARKET,
+            abi.encode(stranger),
+            uint64(block.timestamp + 72 hours)
+        );
+        vm.prank(owner);
+        config.queueMarket(stranger);
+    }
+
     function test_token_disableImmediate_existingOrdersSettle() public {
         uint256 id = _createDefault();
         vm.prank(owner);
@@ -216,9 +262,12 @@ contract EscrowConfigTest is EscrowBase {
 
     function test_revert_token() public {
         Token18 t18 = new Token18();
+        Token5 t5 = new Token5();
         vm.startPrank(owner);
         vm.expectRevert(EscrowConfig.BadParams.selector);
         config.queueToken(address(t18));
+        vm.expectRevert(EscrowConfig.BadParams.selector); // fewer decimals are just as wrong
+        config.queueToken(address(t5));
         vm.expectRevert(EscrowConfig.BadParams.selector);
         config.queueToken(address(0));
         vm.stopPrank();

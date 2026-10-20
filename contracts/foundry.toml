@@ -11,6 +11,10 @@ via_ir = false
 # Arbitrum One (ArbOS 32+) supports Cancun opcodes (MCOPY, TSTORE/TLOAD); PUSH0 from Shanghai included.
 evm_version = "cancun"
 fs_permissions = [{ access = "read", path = "../test-vectors" }]
+# `new` in a test must stay a plain CREATE. With dynamic test linking it becomes a `vm.deployCode` cheatcode call, and
+# `vm.expectRevert(...); new X(...)` then ends the test at the first expected revert, silently skipping every later
+# check in it (found by mutation testing, docs/audit/freeze-checklist.md §7).
+dynamic_test_linking = false
 remappings = [
   "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
   "solady/=lib/solady/src/",

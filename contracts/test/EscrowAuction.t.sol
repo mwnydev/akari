@@ -119,8 +119,16 @@ contract EscrowAuctionTest is EscrowBase {
         p = _proof(a, winner, 80 * U);
         p.authHash = keccak256("another auction");
         _expectSettleRevert(a, p, Escrow.BadOffer.selector);
+        p.authHash = bytes32(0); // equality, not order: hashes and winners below and above the real ones
+        _expectSettleRevert(a, p, Escrow.BadOffer.selector);
+        p.authHash = bytes32(type(uint256).max);
+        _expectSettleRevert(a, p, Escrow.BadOffer.selector);
 
         p = _proof(a, stranger, 80 * U); // caller is not the winner
+        _expectSettleRevert(a, p, Escrow.BadOffer.selector);
+        p = _proof(a, address(1), 80 * U);
+        _expectSettleRevert(a, p, Escrow.BadOffer.selector);
+        p = _proof(a, address(type(uint160).max), 80 * U);
         _expectSettleRevert(a, p, Escrow.BadOffer.selector);
 
         p = _proof(a, winner, 50 * U - 1); // below reserve
@@ -133,6 +141,9 @@ contract EscrowAuctionTest is EscrowBase {
         Escrow.AuctionAuth memory expired = _auth();
         expired.expiry = uint64(block.timestamp - 1);
         _expectSettleRevert(expired, _proof(expired, winner, 80 * U), MarketBase.OfferUnavailable.selector);
+        p = _proof(expired, winner, 80 * U);
+        p.payDeadline = uint64(block.timestamp - 1); // both expired at once
+        _expectSettleRevert(expired, p, MarketBase.OfferUnavailable.selector);
 
         Escrow.AuctionAuth memory sellerBuys = _auth();
         sellerBuys.seller = winner; // signature check fails first: the winner is not `seller`'s key

@@ -160,6 +160,9 @@ jobs:
           awk -F'[:,]' '/^SF:/{f=$2} /^LF:/{lf=$2} /^LH:/{if (f ~ /^src\// && $2 != lf) {print "coverage < 100%: " f " " $2 "/" lf; bad=1}} END{exit bad}' lcov.info
       - uses: astral-sh/setup-uv@v6
       - run: uvx --from slither-analyzer==0.11.6 slither . --exclude-dependencies --filter-paths "lib/|test/" --fail-high
+      # 审计脚本（docs/audit/）。Halmos 与变异测试耗时远超 CI 预算，按 freeze-checklist.md 第 6、7 节手动跑
+      - run: shellcheck -S warning script/audit-bundle.sh script/halmos.sh script/mutation.sh
+      - run: script/audit-bundle.sh
 
   secrets:
     runs-on: ubuntu-24.04

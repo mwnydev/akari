@@ -6,6 +6,7 @@ import {EscrowConfig} from "../src/EscrowConfig.sol";
 import {MarketBase} from "../src/MarketBase.sol";
 import {StreamEscrow} from "../src/StreamEscrow.sol";
 import {FeeMath} from "../src/libraries/FeeMath.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {FeeOnTransferToken} from "./mocks/TestTokens.sol";
 import {MockAccountFactory} from "./mocks/MockAccount.sol";
 import {StreamBase} from "./StreamBase.sol";
@@ -80,8 +81,20 @@ contract StreamCreateTest is StreamBase {
         StreamEscrow.Offer memory o = _soffer(100 * U, FeeMath.Payer.Seller);
         o.buyer = stranger;
         _expectCreateRevert(o, StreamEscrow.BadOffer.selector);
+        o.buyer = address(1); // designated buyers below and above the caller alike
+        _expectCreateRevert(o, StreamEscrow.BadOffer.selector);
         o.buyer = buyer;
         _screate(o);
+    }
+
+    /// The self-dealing check compares addresses for equality only: any buyer other than the seller may fill.
+    function test_createAndFund_buyerAboveSeller() public {
+        address high = address(type(uint160).max);
+        _fund(high, 1000 * U);
+        StreamEscrow.Offer memory o = _soffer(100 * U, FeeMath.Payer.Seller);
+        bytes memory sig = _ssign(o, sellerKey);
+        vm.prank(high);
+        stream.createAndFund(o, sig);
     }
 
     function test_revert_offerUnavailable() public {
@@ -149,8 +162,9 @@ contract StreamCreateTest is StreamBase {
         o.amount = 100 * U;
         o.bond = 101 * U;
         _expectCreateRevert(o, StreamEscrow.BadOffer.selector);
+        o.lateSlashBps = 10_001; // two failed checks at once
+        _expectCreateRevert(o, StreamEscrow.BadOffer.selector);
         o.bond = 0;
-        o.lateSlashBps = 10_001;
         _expectCreateRevert(o, StreamEscrow.BadOffer.selector);
         o.lateSlashBps = 0;
         o.startWindow = 1 days - 1;
@@ -169,6 +183,15 @@ contract StreamCreateTest is StreamBase {
         o.interval = StreamEscrow.Interval.Hour;
         o.periods = 8761;
         _expectCreateRevert(o, StreamEscrow.BadOffer.selector);
+    }
+
+    function test_createAndFund_startWindowBounds() public {
+        StreamEscrow.Offer memory o = _soffer(100 * U, FeeMath.Payer.Seller);
+        o.startWindow = 1 days;
+        _screate(o);
+        o.startWindow = 7 days;
+        o.nonce = 2;
+        _screate(o);
     }
 
     function test_createAndFund_longestDurations() public {
@@ -212,6 +235,8 @@ contract StreamCreateTest is StreamBase {
         o = _soffer(100 * U, FeeMath.Payer.Seller);
         o.maxMinFee = 999_999;
         _expectCreateRevert(o, StreamEscrow.FeeLimit.selector);
+        o.maxClaimGas = 19_999; // two limits exceeded at once
+        _expectCreateRevert(o, StreamEscrow.FeeLimit.selector);
     }
 
     function test_revert_feesExceedAmount() public {
@@ -219,7 +244,8 @@ contract StreamCreateTest is StreamBase {
         p.minOrder = uint64(1 * U);
         vm.prank(owner);
         config.setParams(p); // loosening: immediate
-        _expectCreateRevert(_soffer(1 * U, FeeMath.Payer.Seller), StreamEscrow.FeesExceedAmount.selector);
+        // 1.1 USDT: seller-borne min fee 1 + gas 0.1 == amount leaves no principal to stream
+        _expectCreateRevert(_soffer(1_100_000, FeeMath.Payer.Seller), StreamEscrow.FeesExceedAmount.selector);
     }
 
     function test_revert_configGates() public {
@@ -360,11 +386,57 @@ contract StreamLifecycleTest is StreamBase {
         vm.prank(seller);
         vm.expectRevert(StreamEscrow.BadState.selector);
         stream.start(99);
+        vm.prank(seller);
+        vm.expectRevert(StreamEscrow.BadState.selector);
+        stream.proposeEnd(99, 0);
+    }
+
+    /// Access checks compare addresses for equality only: callers just below and above every party are rejected.
+    function test_revert_notParty_anyAddress() public {
+        address[2] memory others = [address(1), address(type(uint160).max)];
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = id;
+        for (uint256 i; i < 2; ++i) {
+            vm.startPrank(others[i]);
+            vm.expectRevert(StreamEscrow.NotParty.selector);
+            stream.start(id);
+            vm.expectRevert(StreamEscrow.NotParty.selector);
+            stream.claim(id);
+            vm.expectRevert(StreamEscrow.NotParty.selector);
+            stream.refund(id);
+            vm.expectRevert(StreamEscrow.NotParty.selector);
+            stream.proposeEnd(id, 0);
+            vm.expectRevert(StreamEscrow.NotParty.selector);
+            stream.acceptEnd(id, 0);
+            vm.expectRevert(StreamEscrow.NotParty.selector);
+            stream.dispute(id);
+            vm.expectRevert(StreamEscrow.NotParty.selector);
+            stream.disputeWithBond(id);
+            vm.expectRevert(StreamEscrow.NotParty.selector);
+            stream.resolve(id, 0, 0);
+            vm.expectRevert(StreamEscrow.NotParty.selector);
+            stream.extendDeadlines(ids, 1 days);
+            vm.stopPrank();
+        }
+    }
+
+    /// Orders without a bond never touch the bond pool (no BondLocked / BondReleased for the indexer to misread).
+    function test_noBond_noPoolCalls() public {
+        vm.recordLogs();
+        uint256 b = _screate(_nextOffer(2));
+        vm.prank(seller);
+        stream.refund(b);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].emitter != address(escrow), "no bond pool event");
+        }
     }
 
     // ── unlock & claim ──
 
     function test_unlockSchedule() public {
+        vm.warp(block.timestamp + 2 days);
+        assertEq(stream.unlocked(id), 0, "nothing unlocks before start");
         _start(id);
         uint256 t0 = block.timestamp;
         vm.warp(t0 + 1 days - 1);
@@ -413,7 +485,7 @@ contract StreamLifecycleTest is StreamBase {
     function test_claim_24hBetweenClaims() public {
         StreamEscrow.Offer memory o = _soffer(100 * U, FeeMath.Payer.Seller);
         o.interval = StreamEscrow.Interval.Hour;
-        o.periods = 48;
+        o.periods = 72;
         o.nonce = 2;
         uint256 h = _screate(o);
         _start(h);
@@ -426,8 +498,12 @@ contract StreamLifecycleTest is StreamBase {
         stream.claim(h);
         vm.warp(t0 + 1 hours + 24 hours);
         _claim(h);
-        assertEq(_order(h).claimed, uint256(NET) * 25 / 48);
+        assertEq(_order(h).claimed, uint256(NET) * 25 / 72);
         assertEq(_bal(feeRecipient), 2 * CLAIM_GAS);
+        vm.warp(t0 + 1 hours + 24 hours + 25 hours); // any time after the 24 hours, not only at the mark
+        _claim(h);
+        assertEq(_order(h).claimed, uint256(NET) * 50 / 72);
+        assertEq(_bal(feeRecipient), 3 * CLAIM_GAS);
     }
 
     function test_revert_claim_notMoreThanClaimGas() public {
@@ -449,12 +525,17 @@ contract StreamLifecycleTest is StreamBase {
         _start(id);
         vm.warp(block.timestamp + 3 days);
         _claim(id);
+        uint256 late = _screate(_nextOffer(2));
+        _start(late);
         vm.warp(block.timestamp + 7 days);
         uint256 s0 = _bal(seller);
         _claim(id); // stream over: settles, no claim gas
         assertEq(uint8(_order(id).state), uint8(StreamEscrow.State.Released));
         assertEq(_bal(seller) - s0, NET - 3 * PER_DAY);
         assertEq(_bal(feeRecipient), CLAIM_GAS + 1_100_000);
+        vm.warp(block.timestamp + 4 days); // well after the end, too
+        _claim(late);
+        assertEq(uint8(_order(late).state), uint8(StreamEscrow.State.Released));
         assertEq(_bal(address(stream)), 0);
         assertEq(config.totalLocked(), 0);
     }
@@ -482,13 +563,17 @@ contract StreamLifecycleTest is StreamBase {
         vm.warp(block.timestamp + 10 days - 1);
         vm.expectRevert(StreamEscrow.TooEarly.selector);
         stream.finalize(id);
-        vm.warp(block.timestamp + 1);
+        uint256 atEnd = _screate(_nextOffer(2));
+        _start(atEnd);
+        vm.warp(block.timestamp + 10 days);
+        stream.finalize(atEnd); // exactly at the end
+        vm.warp(block.timestamp + 1 days); // and any time later
         uint256 s0 = _bal(seller);
         vm.prank(stranger); // the platform worker
         stream.finalize(id);
         assertEq(uint8(_order(id).state), uint8(StreamEscrow.State.Released));
         assertEq(_bal(seller) - s0, NET);
-        assertEq(_bal(feeRecipient), 1_100_000);
+        assertEq(_bal(feeRecipient), 2 * 1_100_000);
         assertEq(_bal(address(stream)), 0);
 
         vm.expectRevert(StreamEscrow.BadState.selector);
@@ -554,6 +639,8 @@ contract StreamLifecycleTest is StreamBase {
         o.lateSlashBps = 5000;
         o.nonce = 2;
         uint256 b = _screate(o);
+        vm.expectRevert(StreamEscrow.TooEarly.selector);
+        stream.claimTimeout(b);
 
         vm.warp(block.timestamp + 3 days);
         vm.expectRevert(StreamEscrow.TooEarly.selector);
@@ -600,6 +687,9 @@ contract StreamLifecycleTest is StreamBase {
 
         vm.warp(d0 + 14 days);
         _start(id); // still in time
+        vm.prank(arbiter);
+        stream.extendDeadlines(ids, 1); // started and over the cap: still skipped
+        assertEq(_order(id).startDeadline, d0 + 14 days);
     }
 
     function test_revert_extendDeadlines() public {
@@ -636,6 +726,23 @@ contract StreamLifecycleTest is StreamBase {
         assertEq(_bal(feeRecipient), 500_000);
     }
 
+    function test_acceptEnd_atProposalExpiry() public {
+        vm.prank(buyer);
+        stream.proposeEnd(id, NET);
+        vm.warp(_order(id).proposalExpiry);
+        vm.prank(seller);
+        stream.acceptEnd(id, NET);
+    }
+
+    /// A proposal is a sponsored operation: the base gas is earned even if nobody accepts and the seller refunds.
+    function test_proposeEnd_earnsGas() public {
+        vm.prank(buyer);
+        stream.proposeEnd(id, NET);
+        vm.prank(seller);
+        stream.refund(id);
+        assertEq(_bal(feeRecipient), 100_000);
+    }
+
     function test_acceptEnd_beforeStart_earnsGas() public {
         vm.prank(seller);
         stream.proposeEnd(id, NET);
@@ -656,6 +763,8 @@ contract StreamLifecycleTest is StreamBase {
         vm.prank(buyer);
         vm.expectRevert(StreamEscrow.BadParams.selector); // more than the unclaimed principal
         stream.proposeEnd(id, NET - PER_DAY + 1);
+        vm.prank(buyer);
+        stream.proposeEnd(id, NET - PER_DAY); // all of the unclaimed principal is fine
     }
 
     function test_revert_acceptEnd() public {
@@ -690,6 +799,9 @@ contract StreamLifecycleTest is StreamBase {
         vm.prank(seller);
         vm.expectRevert(StreamEscrow.BadParams.selector);
         stream.acceptEnd(id, NET);
+        vm.prank(seller);
+        vm.expectRevert(StreamEscrow.BadParams.selector); // neither the proposal nor payable
+        stream.acceptEnd(id, NET + 1);
     }
 
     function test_revert_settledOrderIsFinal() public {
@@ -705,6 +817,11 @@ contract StreamLifecycleTest is StreamBase {
         vm.stopPrank();
         vm.expectRevert(StreamEscrow.BadState.selector);
         stream.claimTimeout(id);
+        vm.prank(arbiter);
+        vm.expectRevert(StreamEscrow.BadState.selector);
+        stream.resolve(id, 0, 0);
+        vm.expectRevert(StreamEscrow.BadState.selector);
+        stream.resolveTimeout(id);
     }
 
     function _nextOffer(uint256 nonce) internal view returns (StreamEscrow.Offer memory o) {
@@ -768,6 +885,20 @@ contract StreamDisputeTest is StreamBase {
         assertEq(_bal(address(stream)), 0);
     }
 
+    /// Unlocked principal exactly equal to the dispute fee is enough to pay it.
+    function test_dispute_seller_paysFromUnlocked_exactly() public {
+        StreamEscrow.Offer memory o = _soffer(100 * U, FeeMath.Payer.Buyer); // net 100, 100 days: 1 USDT a day
+        o.periods = 100;
+        o.nonce = 2;
+        uint256 b = _screate(o);
+        _start(b);
+        vm.warp(block.timestamp + 1 days);
+        assertEq(stream.unlocked(b), _order(b).disputeFee);
+        vm.prank(seller);
+        stream.dispute(b);
+        assertEq(uint8(_order(b).disputeSource), uint8(StreamEscrow.FeeSource.Unlocked));
+    }
+
     function test_dispute_seller_walletWhenUnlockedTooSmall() public {
         uint256 s0 = _bal(seller);
         _dispute(seller); // not started: nothing unlocked
@@ -814,6 +945,11 @@ contract StreamDisputeTest is StreamBase {
         stream.disputeWithBond(id);
     }
 
+    function test_dispute_atStartDeadline() public {
+        vm.warp(_order(id).startDeadline);
+        _dispute(buyer);
+    }
+
     function test_revert_dispute() public {
         vm.prank(stranger);
         vm.expectRevert(StreamEscrow.NotParty.selector);
@@ -828,6 +964,10 @@ contract StreamDisputeTest is StreamBase {
     function test_revert_dispute_afterEnd() public {
         _start(id);
         vm.warp(block.timestamp + 10 days);
+        vm.prank(buyer);
+        vm.expectRevert(StreamEscrow.TooLate.selector);
+        stream.dispute(id);
+        vm.warp(block.timestamp + 1 days);
         vm.prank(buyer);
         vm.expectRevert(StreamEscrow.TooLate.selector);
         stream.dispute(id);
@@ -862,6 +1002,19 @@ contract StreamDisputeTest is StreamBase {
         assertEq(config.totalLocked(), 0);
     }
 
+    /// Seller disputes and mostly loses: the retained 3/4 of the dispute fee exceeds the fee earned on the seller's
+    /// quarter, so the platform keeps base gas + the retained part and charges no platform fee.
+    function test_resolve_sellerDisputerMostlyLoses() public {
+        _start(id);
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(seller);
+        stream.dispute(id); // paid from the unlocked first day
+        vm.prank(arbiter);
+        stream.resolve(id, 7500, 0);
+        assertEq(_bal(feeRecipient), 100_000 + 750_000);
+        assertEq(_bal(address(stream)), 0);
+    }
+
     function test_resolve_slashesBond() public {
         _depositBond(50 * U);
         StreamEscrow.Offer memory o = _soffer(100 * U, FeeMath.Payer.Seller);
@@ -891,11 +1044,15 @@ contract StreamDisputeTest is StreamBase {
         stream.resolve(id, 10_001, 0);
         vm.expectRevert(StreamEscrow.BadParams.selector);
         stream.resolve(id, 0, 10_001);
+        vm.expectRevert(StreamEscrow.BadParams.selector);
+        stream.resolve(id, 10_001, 10_001);
         vm.stopPrank();
     }
 
     function test_resolveTimeout_notStarted_fullRefund() public {
         _dispute(buyer);
+        vm.expectRevert(StreamEscrow.TooEarly.selector);
+        stream.resolveTimeout(id);
         vm.warp(block.timestamp + 30 days);
         vm.expectRevert(StreamEscrow.TooEarly.selector);
         stream.resolveTimeout(id);

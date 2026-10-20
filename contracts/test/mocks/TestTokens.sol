@@ -48,9 +48,36 @@ contract FeeOnTransferToken is ERC20 {
     }
 }
 
+/// @dev Mints 1 extra unit to the receiver of every transfer, so the receiver gets more than `amount`.
+contract BonusToken is ERC20 {
+    constructor() ERC20("Bonus token", "BON") {}
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        super._update(from, to, value);
+        if (from != address(0) && to != address(0)) super._update(address(0), to, 1);
+    }
+}
+
 /// @dev 18-decimal token: must be rejected by the token whitelist (all amounts are in 6-decimal units).
 contract Token18 is ERC20 {
     constructor() ERC20("Eighteen", "E18") {}
+}
+
+/// @dev 5-decimal token: rejected like Token18.
+contract Token5 is ERC20 {
+    constructor() ERC20("Five", "E5") {}
+
+    function decimals() public pure override returns (uint8) {
+        return 5;
+    }
 }
 
 /// @dev Stand-in for StreamEscrow: a second market that locks and releases seller bonds in Escrow.

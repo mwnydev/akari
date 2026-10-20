@@ -9,6 +9,9 @@ import {FreezableUSDT} from "./mocks/TestTokens.sol";
 
 abstract contract EscrowBase is Test {
     uint256 internal constant U = 1e6;
+    /// A realistic timestamp with many low bits set, so `t + window` and `t | window` differ (forge's default
+    /// timestamp of 1 hides that mutation).
+    uint256 internal constant START_TIME = 1_799_999_999;
 
     FreezableUSDT internal usdt;
     EscrowConfig internal config;
@@ -25,6 +28,7 @@ abstract contract EscrowBase is Test {
     uint256 internal platformKey;
 
     function setUp() public virtual {
+        vm.warp(START_TIME);
         (seller, sellerKey) = makeAddrAndKey("seller");
         (platform, platformKey) = makeAddrAndKey("auctionSigner");
         usdt = new FreezableUSDT();

@@ -10,6 +10,7 @@ import {SimpleAccount} from "account-abstraction/samples/SimpleAccount.sol";
 import {SimpleAccountFactory} from "account-abstraction/samples/SimpleAccountFactory.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 contract FixedFeePaymasterTest is AATestBase {
     FixedFeePaymaster internal pm;
@@ -145,11 +146,17 @@ contract FixedFeePaymasterTest is AATestBase {
         assertEq(usdt.balanceOf(recipient), 0);
     }
 
+    /// A zero fee does not touch the token at all (no storage access that a public bundler could reject, ERC-7562).
     function test_zeroFee_noTransferNeeded() public {
         address owner = vm.addr(ownerKey);
         vm.prank(owner);
         account.execute(address(usdt), 0, abi.encodeCall(IERC20.approve, (address(pm), 0)));
+        vm.recordLogs();
         _handle(_validOp(_transferCall(1_000_000), 0));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != FixedFeePaymaster.FeeCharged.selector, "no FeeCharged for a zero fee");
+        }
         assertEq(usdt.balanceOf(address(pm)), 0);
         assertEq(usdt.balanceOf(recipient), 1_000_000);
     }
@@ -253,6 +260,9 @@ contract FixedFeePaymasterTest is AATestBase {
     function test_rejects_noExpiry_noFeeTaken() public {
         PackedUserOperation memory op = _op(_transferCall(1), 0, 0, FEE, FEE, signerKey);
         _expectFailedOp(op, "AA34 signature error");
+        // Also with a validAfter set: still a signature failure, never a revert.
+        op = _op(_transferCall(1), 0, uint48(block.timestamp), FEE, FEE, signerKey);
+        _expectFailedOp(op, "AA34 signature error");
         assertEq(usdt.balanceOf(address(pm)), 0);
     }
 
@@ -279,6 +289,14 @@ contract FixedFeePaymasterTest is AATestBase {
         uint48 start = uint48(block.timestamp);
         _handle(_op(_transferCall(1), start + 10 minutes, start, FEE, FEE, signerKey));
         assertEq(usdt.balanceOf(address(pm)), FEE);
+    }
+
+    /// Exactly the fixed fields with no signature bytes is a signature failure, not malformed data.
+    function test_rejects_missingSignature() public {
+        PackedUserOperation memory op = _baseOp(address(account), _transferCall(1));
+        op.paymasterAndData = _pmPrefix(uint48(block.timestamp + 120), uint48(block.timestamp), FEE);
+        op.signature = _signEthPrefixed(ownerKey, entryPoint.getUserOpHash(op));
+        _expectFailedOp(op, "AA34 signature error");
     }
 
     function test_rejects_shortPaymasterData() public {
