@@ -2,19 +2,23 @@
 pragma solidity 0.8.37;
 
 import {Test} from "forge-std/Test.sol";
+import {EntryPoint} from "account-abstraction/core/EntryPoint.sol";
 import {Deploy} from "../script/Deploy.s.sol";
 import {Escrow} from "../src/Escrow.sol";
 import {EscrowConfig} from "../src/EscrowConfig.sol";
 import {MockUSDT} from "../src/MockUSDT.sol";
 import {StreamEscrow} from "../src/StreamEscrow.sol";
+import {FixedFeePaymaster} from "../src/aa/FixedFeePaymaster.sol";
 import {MockSafe, NotASafe, ThresholdOnly} from "./mocks/MockSafe.sol";
 
 contract DeployTest is Test {
     address internal constant VERIFIER = 0x00007bd799e4A591FeA53f8A8a3E9f931626Ba7e;
+    address internal constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
     uint256 internal constant ARBITRUM_ONE = 42_161;
     Deploy internal script;
     address internal treasury;
     address internal arbiter;
+    address internal operations;
     address internal deployer = makeAddr("deployer");
 
     // Environment variables are process-wide and tests run in parallel, so every test sets the same values: the Safes
@@ -23,11 +27,15 @@ contract DeployTest is Test {
         script = new Deploy();
         treasury = _safe(_owners("siteOwnerDevice"), 2);
         arbiter = _safe(_owners("arbitrationSigner"), 2);
+        operations = _safe(_owners("siteOwnerDevice"), 1);
+        vm.etch(ENTRY_POINT, address(new EntryPoint()).code);
         vm.setEnv("TOKEN", vm.toString(address(new MockUSDT())));
         vm.setEnv("OWNER", vm.toString(treasury));
         vm.setEnv("ARBITER", vm.toString(arbiter));
         vm.setEnv("FEE_RECIPIENT", vm.toString(treasury));
         vm.setEnv("AUCTION_SIGNER", vm.toString(makeAddr("sponsor")));
+        vm.setEnv("PAYMASTER_SIGNER", vm.toString(makeAddr("paymasterSigner")));
+        vm.setEnv("PAYMASTER_OWNER", vm.toString(operations));
     }
 
     function _owners(string memory tag) internal returns (address[] memory o) {
@@ -44,7 +52,8 @@ contract DeployTest is Test {
     function test_deploy_testnet_deploysVerifier() public {
         vm.chainId(421_614);
         assertEq(VERIFIER.code.length, 0);
-        (EscrowConfig config, Escrow escrow, StreamEscrow stream) = script.run();
+        Deploy.Deployment memory d = script.run();
+        (EscrowConfig config, Escrow escrow, StreamEscrow stream) = (d.config, d.escrow, d.stream);
         assertGt(VERIFIER.code.length, 0);
         assertTrue(config.isMarket(address(escrow)));
         assertTrue(config.isMarket(address(stream)));
@@ -58,6 +67,67 @@ contract DeployTest is Test {
         assertEq(config.auctionSigner(), makeAddr("sponsor"));
         assertEq(config.params().orderCap, 200e6);
         assertEq(config.params().totalLockedCap, 5000e6);
+        assertTrue(config.tokenAllowed(d.token));
+        FixedFeePaymaster paymaster = d.paymaster;
+        assertEq(address(paymaster.entryPoint()), ENTRY_POINT);
+        assertEq(address(paymaster.token()), d.token);
+        assertEq(paymaster.treasury(), treasury);
+        assertEq(paymaster.signer(), makeAddr("paymasterSigner"));
+        assertEq(paymaster.owner(), operations);
+    }
+
+    function _inputs() internal returns (Deploy.Inputs memory) {
+        return Deploy.Inputs({
+            token: address(0),
+            owner: treasury,
+            arbiter: arbiter,
+            feeRecipient: treasury,
+            auctionSigner: address(0),
+            entryPoint: ENTRY_POINT,
+            paymasterSigner: makeAddr("paymasterSigner"),
+            paymasterOwner: operations
+        });
+    }
+
+    function test_deploy_testnet_deploysMockTokenWhenUnset() public {
+        vm.chainId(421_614);
+        Deploy.Deployment memory d = script.deploy(_inputs());
+        assertEq(MockUSDT(d.token).decimals(), 6);
+        assertTrue(d.config.tokenAllowed(d.token));
+        assertEq(address(d.paymaster.token()), d.token);
+    }
+
+    function test_deploy_withoutPaymasterSigner_skipsPaymaster() public {
+        vm.chainId(421_614);
+        Deploy.Inputs memory c = _inputs();
+        c.paymasterSigner = address(0);
+        assertEq(address(script.deploy(c).paymaster), address(0));
+    }
+
+    function test_deploy_paymasterNeedsOwnerAndEntryPoint() public {
+        Deploy.Inputs memory c = _inputs();
+        c.paymasterOwner = address(0);
+        vm.expectRevert(bytes("PAYMASTER_OWNER required with PAYMASTER_SIGNER"));
+        script.deploy(c);
+        c = _inputs();
+        c.entryPoint = makeAddr("noEntryPoint");
+        vm.expectRevert(bytes("EntryPoint missing"));
+        script.deploy(c);
+    }
+
+    function test_deploy_mainnet_requiresToken() public {
+        vm.chainId(ARBITRUM_ONE);
+        vm.expectRevert(bytes("TOKEN required on Arbitrum One"));
+        script.deploy(_inputs());
+    }
+
+    function test_deploy_mainnet_paymasterOwnerMustBeContract() public {
+        vm.chainId(ARBITRUM_ONE);
+        vm.expectRevert(bytes("PAYMASTER_OWNER has no code (an EOA is not allowed on Arbitrum One)"));
+        script.requireMainnetPaymasterOwner(deployer, makeAddr("opsEoa"));
+        vm.expectRevert(bytes("PAYMASTER_OWNER must not be the deployer"));
+        script.requireMainnetPaymasterOwner(deployer, deployer);
+        script.requireMainnetPaymasterOwner(deployer, operations);
     }
 
     function test_deploy_mainnet_requiresVerifier() public {
@@ -69,10 +139,11 @@ contract DeployTest is Test {
     function test_deploy_mainnet_withSafes() public {
         vm.chainId(ARBITRUM_ONE);
         vm.etch(VERIFIER, hex"00");
-        (EscrowConfig config, Escrow escrow, StreamEscrow stream) = script.run();
-        assertEq(config.owner(), treasury);
-        assertEq(escrow.arbiter(), arbiter);
-        assertEq(stream.feeRecipient(), treasury);
+        Deploy.Deployment memory d = script.run();
+        assertEq(d.config.owner(), treasury);
+        assertEq(d.escrow.arbiter(), arbiter);
+        assertEq(d.stream.feeRecipient(), treasury);
+        assertEq(d.paymaster.owner(), operations);
     }
 
     function test_deploy_mainnet_checksSafesBeforeDeploying() public {

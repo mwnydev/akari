@@ -25,6 +25,7 @@ COMPOSE=(docker compose -p "${AA_PROJECT:-akari-dev}" -f "$HERE/compose.yaml" --
 export PATH="$HOME/.foundry/bin:$PATH"
 export NO_PROXY="127.0.0.1,localhost" no_proxy="127.0.0.1,localhost"
 RPC="http://127.0.0.1:$ANVIL_PORT"
+export ETH_RPC_URL=$RPC
 BUNDLER="http://127.0.0.1:$BUNDLER_PORT"
 CHAIN_ID=31337
 
@@ -38,14 +39,6 @@ AUCTION_ADDR=0x66A9EF9f3699A02056f0abd5D26Eb7EA4b3ce9B3                         
 EXECUTOR_ADDR=0x19d6319D75788D0fc7f71f3b49fa11863412c804                         # akari-dev-only:bundler-executor
 UTILITY_ADDR=0x685bb2D07a60B63Bd337a0a67b02Ee7749a4Ade3                          # akari-dev-only:bundler-utility
 
-# 已在 Arbitrum Sepolia 上用 eth_getCode 核对过（2026-10-19，README-aa.md 有表）；fork 后必须仍然有代码。
-ENTRY_POINT=0x0000000071727De22E5E9d8BAf0edAc6f37da032
-KERNEL_IMPL=0xd6CEDDe84be40893d153Be9d467CD6aD37875b28
-KERNEL_FACTORY=0x2577507b78c2008Ff367261CB6285d44ba5eF2E9
-KERNEL_META_FACTORY=0xd703aaE79538628d27099B8c4f621bE4CCd142d5
-WEBAUTHN_VALIDATOR=0x7ab16Ff354AcB328452F1D445b3Ddee9a91e9e69 # gitleaks:allow 公开合约地址
-ERC6492_VERIFIER=0x00007bd799e4A591FeA53f8A8a3E9f931626Ba7e
-
 PAYMASTER_DEPOSIT=10ether
 PAYMASTER_STAKE=1ether
 PAYMASTER_UNSTAKE_DELAY=86400
@@ -53,28 +46,14 @@ PAYMASTER_UNSTAKE_DELAY=86400
 SPONSOR_PORT=${AA_SPONSOR_PORT:-8090}
 SPONSOR_API_TOKEN=dev-only-sponsor-token-change-me-0123456789
 
-log() { printf '\033[1;34m[aa]\033[0m %s\n' "$*" >&2; }
-die() { printf '\033[1;31m[aa]\033[0m %s\n' "$*" >&2; exit 1; }
-
-wait_for() { # wait_for <描述> <命令…>
-  local what=$1; shift
-  for _ in $(seq 1 90); do
-    if "$@" >/dev/null 2>&1; then return 0; fi
-    sleep 1
-  done
-  die "$what 没有在 90 秒内就绪"
-}
+LOG_TAG=aa
+# shellcheck source-path=SCRIPTDIR source=../lib.sh
+source "$ROOT/deploy/lib.sh" # EntryPoint / Kernel 等链上现成合约地址、log / die / wait_for / check_code
 
 bundler_up() {
   curl -sf -X POST -H 'content-type: application/json' \
     --data '{"jsonrpc":"2.0","id":1,"method":"eth_supportedEntryPoints","params":[]}' "$BUNDLER" |
     grep -qi "${ENTRY_POINT#0x}"
-}
-
-check_code() {
-  local name=$1 addr=$2
-  [[ "$(cast code "$addr" --rpc-url "$RPC")" != "0x" ]] || die "$name $addr 在 fork 上没有代码"
-  log "  ✓ $name $addr"
 }
 
 up() {
@@ -90,10 +69,7 @@ up() {
   check_code Kernel-v3.3-meta-factory "$KERNEL_META_FACTORY"
   check_code WebAuthn-validator-0.0.3 "$WEBAUTHN_VALIDATOR"
   check_code ERC-6492-verifier "$ERC6492_VERIFIER"
-  # P-256 预编译自检：RIP-7212 规范里的有效签名测试向量，返回 1 才算可用
-  [[ "$(cast call 0x0000000000000000000000000000000000000100 --rpc-url "$RPC" \
-    --data 0x4cee90eb86eaa050036147a12d49004b6b9c72bd725d39d4785011fe190f0b4da73bd4903f0ce3b639bbbf6e8e80d16931ff4bcf5993d58468e8fb19086e8cac36dbcd03009df8c59286b162af3bd7fcc0450c9aa81be5d10d312af6c66b1d604aebd3099c618202fcfe16ae7770b0c49ab5eadf74b754204a3bb6060e44eff37618b065f9832de4ca6ca971a7a1adc826d0f7c00181a5fb2ddf79ae00b4e10e)" == *1 ]] ||
-    die "secp256r1 预编译（0x100）不可用，anvil 需要 --hardfork osaka"
+  p256_ok || die "secp256r1 预编译（0x100）不可用，anvil 需要 --hardfork osaka"
   log "  ✓ secp256r1 预编译 0x100"
 
   local deployer
@@ -108,20 +84,21 @@ up() {
   (cd "$CONTRACTS" && forge build --quiet)
   local start_block usdt config escrow stream paymaster
   start_block=$(cast block-number --rpc-url "$RPC")
-  usdt=$(cd "$CONTRACTS" && forge create src/MockUSDT.sol:MockUSDT --broadcast --json \
-    --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" | jq -r .deployedTo)
-  (cd "$CONTRACTS" && TOKEN=$usdt OWNER=$deployer ARBITER=$deployer FEE_RECIPIENT=$deployer AUCTION_SIGNER=$AUCTION_ADDR \
+  # TOKEN 不设：脚本先部署 MockUSDT（nonce 0），再 EscrowConfig / Escrow / StreamEscrow（1–3）与 Paymaster（4）。
+  (cd "$CONTRACTS" && OWNER=$deployer ARBITER=$deployer FEE_RECIPIENT=$deployer AUCTION_SIGNER=$AUCTION_ADDR \
+    PAYMASTER_SIGNER=$SPONSOR_ADDR PAYMASTER_OWNER=$deployer \
     forge script script/Deploy.s.sol --broadcast --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" --silent)
+  usdt=$(cast compute-address "$deployer" --nonce 0 | awk '{print $NF}')
   config=$(cast compute-address "$deployer" --nonce 1 | awk '{print $NF}')
   escrow=$(cast compute-address "$deployer" --nonce 2 | awk '{print $NF}')
   stream=$(cast compute-address "$deployer" --nonce 3 | awk '{print $NF}')
+  paymaster=$(cast compute-address "$deployer" --nonce 4 | awk '{print $NF}')
   [[ "$(cast call "$escrow" 'config()(address)' --rpc-url "$RPC")" == "$config" ]] ||
     die "Escrow / EscrowConfig 地址与预期不符"
   [[ "$(cast call "$stream" 'escrow()(address)' --rpc-url "$RPC")" == "$escrow" ]] ||
     die "StreamEscrow 地址与预期不符"
-  paymaster=$(cd "$CONTRACTS" && forge create src/aa/FixedFeePaymaster.sol:FixedFeePaymaster --broadcast --json \
-    --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" \
-    --constructor-args "$ENTRY_POINT" "$usdt" "$deployer" "$SPONSOR_ADDR" "$deployer" | jq -r .deployedTo)
+  [[ "$(cast call "$paymaster" 'token()(address)' --rpc-url "$RPC")" == "$usdt" ]] ||
+    die "FixedFeePaymaster / MockUSDT 地址与预期不符"
 
   log "Paymaster 押金 $PAYMASTER_DEPOSIT、质押 $PAYMASTER_STAKE"
   cast send "$paymaster" 'deposit()' --value "$PAYMASTER_DEPOSIT" \

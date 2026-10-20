@@ -70,11 +70,11 @@ fork 来的状态（EntryPoint、Kernel 工厂等）不受影响。
 
 | 合约              | 地址                                         | 说明                                              |
 | ----------------- | -------------------------------------------- | ------------------------------------------------- |
-| MockUSDT          | `0x8c313D0eC280837325fA5aB05AC04Be31F46AbBC` | 任何人可 `mint`                                   |
+| MockUSDT          | `0x8c313D0eC280837325fA5aB05AC04Be31F46AbBC` | `Deploy.s.sol`（`TOKEN` 不设时先部署）；任何人可 `mint` |
 | EscrowConfig      | `0x5b8A58E060327C720Db5FCb1a2BB7C217B292c89` | `contracts/script/Deploy.s.sol`，默认参数         |
 | Escrow            | `0xFb3ca740dac6A93a5110a0F8d9cc584ACE80940C` | 同上                                              |
 | StreamEscrow      | `0x6022875397e11A32BbAEB91d80258CBF4AA6F4A8` | 同上                                              |
-| FixedFeePaymaster | `0x3dd2Fe1Ec5Cfe2EE0ABe62c1e3D81e3d18ee4E1e` | `forge create`；押金 10 ETH、质押 1 ETH（1 天）   |
+| FixedFeePaymaster | `0x3dd2Fe1Ec5Cfe2EE0ABe62c1e3D81e3d18ee4E1e` | `Deploy.s.sol`；押金 10 ETH、质押 1 ETH（1 天）   |
 
 | 开发账户        | 地址                                         | 用途                                                        |
 | --------------- | -------------------------------------------- | ----------------------------------------------------------- |

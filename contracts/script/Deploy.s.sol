@@ -2,9 +2,13 @@
 pragma solidity 0.8.37;
 
 import {Script, console} from "forge-std/Script.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 import {Escrow} from "../src/Escrow.sol";
 import {EscrowConfig} from "../src/EscrowConfig.sol";
+import {MockUSDT} from "../src/MockUSDT.sol";
 import {StreamEscrow} from "../src/StreamEscrow.sol";
+import {FixedFeePaymaster} from "../src/aa/FixedFeePaymaster.sol";
 
 /// @dev The two Safe getters the mainnet checks read.
 interface ISafe {
@@ -12,16 +16,38 @@ interface ISafe {
     function getThreshold() external view returns (uint256);
 }
 
-/// @notice Deploys EscrowConfig + Escrow + StreamEscrow (both markets registered at construction). Env:
-///   TOKEN           USD₮0 on Arbitrum One (MockUSDT on testnet)
-///   OWNER           treasury Safe (config owner; it must `acceptOwnership` only if transferred later)
-///   ARBITER         arbitration Safe (2/3)
-///   FEE_RECIPIENT   treasury Safe
-///   AUCTION_SIGNER  forum-sponsor auction key (optional; unset = auctions off)
-/// On Arbitrum One OWNER, ARBITER and FEE_RECIPIENT must be 2-of-3 Safes (ADR 0013 §5, plan §9); testnets and local
-/// chains may use EOAs.
-/// Usage: forge script script/Deploy.s.sol --rpc-url arbitrum_sepolia --broadcast --verify
+/// @notice Deploys EscrowConfig + Escrow + StreamEscrow (both markets registered at construction) and, when
+///         PAYMASTER_SIGNER is set, FixedFeePaymaster. Env:
+///   TOKEN             USD₮0 on Arbitrum One; unset on testnets / local chains = deploy MockUSDT first
+///   OWNER             treasury Safe (config owner; it must `acceptOwnership` only if transferred later)
+///   ARBITER           arbitration Safe (2/3)
+///   FEE_RECIPIENT     treasury Safe (also the paymaster's immutable fee treasury)
+///   AUCTION_SIGNER    forum-sponsor auction key (optional; unset = auctions off)
+///   PAYMASTER_SIGNER  forum-sponsor paymaster key (optional; unset = no paymaster)
+///   PAYMASTER_OWNER   operations Safe (paymaster owner: stake, signer rotation, deposit withdrawal)
+/// On Arbitrum One OWNER, ARBITER and FEE_RECIPIENT must be 2-of-3 Safes (ADR 0013 §5, plan §9) and PAYMASTER_OWNER a
+/// contract; testnets and local chains may use EOAs.
+/// Usage: forge script script/Deploy.s.sol --rpc-url arbitrum_sepolia --broadcast --verify (or deploy/testnet/testnet.sh)
 contract Deploy is Script {
+    struct Inputs {
+        address token;
+        address owner;
+        address arbiter;
+        address feeRecipient;
+        address auctionSigner;
+        address entryPoint;
+        address paymasterSigner;
+        address paymasterOwner;
+    }
+
+    struct Deployment {
+        address token;
+        EscrowConfig config;
+        Escrow escrow;
+        StreamEscrow stream;
+        FixedFeePaymaster paymaster; // zero when PAYMASTER_SIGNER is unset
+    }
+
     address internal constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
     /// Solady's reverting ERC-6492 verifier; `SignatureCheckerLib.isValidERC6492SignatureNow` calls it to check
     /// signatures from smart accounts that are not deployed yet.
@@ -29,6 +55,8 @@ contract Deploy is Script {
     bytes32 internal constant VERIFIER_SALT = 0x000000000000000000000000000000000000000068f35e1510740001fd13984a;
     bytes internal constant VERIFIER_INITCODE =
         hex"6040600b3d3960403df3fe36383d373d3d6020515160208051013d3d515af160203851516084018038385101606037303452813582523838523490601c34355afa34513060e01b141634fd";
+    /// EntryPoint v0.7 (ADR 0003), the same address on every chain.
+    address internal constant ENTRY_POINT = 0x0000000071727De22E5E9d8BAf0edAc6f37da032;
     uint256 internal constant ARBITRUM_ONE = 42_161;
     uint256 internal constant U = 1e6;
     uint256 internal constant SAFE_THRESHOLD = 2;
@@ -50,32 +78,58 @@ contract Deploy is Script {
         });
     }
 
-    function run() external returns (EscrowConfig config, Escrow escrow, StreamEscrow stream) {
-        address token = vm.envAddress("TOKEN");
-        address owner = vm.envAddress("OWNER");
-        address arbiter = vm.envAddress("ARBITER");
-        address feeRecipient = vm.envAddress("FEE_RECIPIENT");
-        address auctionSigner = vm.envOr("AUCTION_SIGNER", address(0));
+    function run() external returns (Deployment memory) {
+        return deploy(
+            Inputs({
+                token: vm.envOr("TOKEN", address(0)),
+                owner: vm.envAddress("OWNER"),
+                arbiter: vm.envAddress("ARBITER"),
+                feeRecipient: vm.envAddress("FEE_RECIPIENT"),
+                auctionSigner: vm.envOr("AUCTION_SIGNER", address(0)),
+                entryPoint: ENTRY_POINT,
+                paymasterSigner: vm.envOr("PAYMASTER_SIGNER", address(0)),
+                paymasterOwner: vm.envOr("PAYMASTER_OWNER", address(0))
+            })
+        );
+    }
+
+    function deploy(Inputs memory c) public returns (Deployment memory d) {
+        bool withPaymaster = c.paymasterSigner != address(0);
+        require(!withPaymaster || c.paymasterOwner != address(0), "PAYMASTER_OWNER required with PAYMASTER_SIGNER");
+        require(!withPaymaster || c.entryPoint.code.length > 0, "EntryPoint missing");
 
         vm.startBroadcast();
         (, address deployer,) = vm.readCallers();
-        requireMainnetSafes(deployer, owner, arbiter, feeRecipient);
+        requireMainnetSafes(deployer, c.owner, c.arbiter, c.feeRecipient);
+        if (withPaymaster) requireMainnetPaymasterOwner(deployer, c.paymasterOwner);
+        if (c.token == address(0)) {
+            require(block.chainid != ARBITRUM_ONE, "TOKEN required on Arbitrum One");
+            c.token = address(new MockUSDT());
+        }
+        d.token = c.token;
         _ensureVerifier();
         uint256 nonce = vm.getNonce(deployer);
         address[] memory markets = new address[](2);
         markets[0] = vm.computeCreateAddress(deployer, nonce + 1);
         markets[1] = vm.computeCreateAddress(deployer, nonce + 2);
-        config = new EscrowConfig(owner, defaultParams(), token, auctionSigner, markets);
-        escrow = new Escrow(config, arbiter, feeRecipient);
-        stream = new StreamEscrow(escrow);
+        d.config = new EscrowConfig(c.owner, defaultParams(), c.token, c.auctionSigner, markets);
+        d.escrow = new Escrow(d.config, c.arbiter, c.feeRecipient);
+        d.stream = new StreamEscrow(d.escrow);
+        if (withPaymaster) {
+            d.paymaster = new FixedFeePaymaster(
+                IEntryPoint(c.entryPoint), IERC20(c.token), c.feeRecipient, c.paymasterSigner, c.paymasterOwner
+            );
+        }
         vm.stopBroadcast();
 
-        require(address(escrow) == markets[0], "escrow address mismatch");
-        require(address(stream) == markets[1], "stream address mismatch");
-        console.log("EscrowConfig", address(config));
-        console.log("Escrow      ", address(escrow));
-        console.log("StreamEscrow", address(stream));
-        console.log("verifier    ", ERC6492_VERIFIER);
+        require(address(d.escrow) == markets[0], "escrow address mismatch");
+        require(address(d.stream) == markets[1], "stream address mismatch");
+        console.log("Token            ", d.token);
+        console.log("EscrowConfig     ", address(d.config));
+        console.log("Escrow           ", address(d.escrow));
+        console.log("StreamEscrow     ", address(d.stream));
+        console.log("FixedFeePaymaster", address(d.paymaster));
+        console.log("verifier         ", ERC6492_VERIFIER);
     }
 
     /// Arbitrum One: a typo'd address or a personal EOA here would hand the escrowed funds' arbitration or the fee
@@ -87,6 +141,14 @@ contract Deploy is Script {
         _requireSafe("ARBITER", arbiter, deployer);
         _requireSafe("OWNER", owner, deployer);
         _requireSafe("FEE_RECIPIENT", feeRecipient, deployer);
+    }
+
+    /// Arbitrum One: the paymaster owner (operations Safe, plan §9: the site owner executes alone) can withdraw the
+    /// ETH deposit and rotate the sponsor key, so it must be a contract and not the deployer's key.
+    function requireMainnetPaymasterOwner(address deployer, address paymasterOwner) public view {
+        if (block.chainid != ARBITRUM_ONE) return;
+        require(paymasterOwner != deployer, "PAYMASTER_OWNER must not be the deployer");
+        require(paymasterOwner.code.length > 0, "PAYMASTER_OWNER has no code (an EOA is not allowed on Arbitrum One)");
     }
 
     function _requireSafe(string memory name, address safe, address deployer) internal view {

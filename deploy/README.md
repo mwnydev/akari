@@ -8,6 +8,8 @@
 | `ansible/` | 服务器初始化：base、cloudflared、firewall、postgresql、valkey、caddy、app 七个角色 |
 | `install-release.sh` | 安装 / 回滚版本；部署账号经 sudoers 只能执行它 |
 | `check-origin-exposure.sh` | 从外部主机检查源站 IP 是否暴露；每次部署、改 DNS 或换 IP 后运行 |
+| `testnet/` | Arbitrum Sepolia 合约部署、Safe 交易文件、链上核对与链配置生成（[docs/runbooks/testnet-deploy.md](../docs/runbooks/testnet-deploy.md)） |
+| `lib.sh` | 部署脚本共用的链上现成合约地址与检查函数（`dev/aa.sh`、`testnet/*.sh`） |
 
 ## 初始化一台服务器
 

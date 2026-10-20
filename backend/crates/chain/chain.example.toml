@@ -1,6 +1,7 @@
 # 链配置示例（单链 Arbitrum One）。RPC 地址带密钥，留空并用环境变量提供：
 #   CHAIN_RPC_PRIMARY_HTTP / CHAIN_RPC_PRIMARY_WS / CHAIN_RPC_BACKUP_HTTP / CHAIN_RPC_BACKUP_WS
 # forum-indexer、forum-api 与 forum-sponsor 用 CHAIN_CONFIG=<本文件路径> 指定。
+# Arbitrum Sepolia 的实际配置由 deploy/testnet/testnet.sh emit-config 从部署记录生成（docs/runbooks/testnet-deploy.md）。
 chain_id = 42161
 name = "Arbitrum One"
 

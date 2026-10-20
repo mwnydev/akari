@@ -3,7 +3,8 @@ import local from "./chain.local.json" with { type: "json" };
 
 /**
  * 一条链上钱包需要的全部地址。本地链读入库的 chain.local.json（地址固定、URL 用默认端口；deploy/dev/aa.sh up
- * 只核对不改写，见 README-aa.md）；测试网 / 主网配置接入时按同一形状加。
+ * 只核对不改写，见 README-aa.md）。Arbitrum Sepolia 的 chain.arbitrum-sepolia.json 由 deploy/testnet/testnet.sh emit-config
+ * 生成（同一形状，`walletInitVersions` 直接写在文件里），钱包按 NEXT_PUBLIC_WALLET_CHAIN 选链时接入。
  */
 export interface ChainConfig {
   chainId: number;
