@@ -59,6 +59,12 @@ jobs:
           psql "$DATABASE_URL" -c "ALTER SYSTEM SET random_page_cost = 1.1" -c "ALTER SYSTEM SET effective_io_concurrency = 200" -c "SELECT pg_reload_conf()"
       - run: sqlx migrate run --source crates/db/migrations
       - run: SQLX_OFFLINE=false cargo sqlx prepare --workspace --check -- --all-targets
+      # anvil / forge 集成测试（代付、拍卖、indexer、ABI 与字节码新鲜度）找不到工具会自行跳过，CI 必须装上
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.8.3
+      - run: forge build
+        working-directory: contracts
       # 测试只跑一遍（插桩构建），顺带产出行覆盖率；合约绑定（sol! 宏）与测试代码不计入
       # 门槛：全部 ≥ 88%（引入时 89.8% 减 1 个百分点取整），core 与 db 层各 ≥ 80%（plan 第 14 节）
       - run: >-
