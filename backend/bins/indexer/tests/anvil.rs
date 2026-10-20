@@ -902,23 +902,29 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
     indexer.stop().await;
 
     // 同一条链只允许一个 indexer（第二个等待 10 秒后放弃）。
-    let lock_holder = Running::start(&pool, w.config(&anvil, 200));
-    eventually("first indexer holds the lock", || async {
-        (count(
-            &pool,
-            // 只看本测试库：同一 PostgreSQL 上别的库里跑着的 indexer 也持有同名锁
-            "SELECT count(*) FROM pg_locks l JOIN pg_database d ON d.oid = l.database \
-             WHERE l.locktype = 'advisory' AND l.granted AND d.datname = current_database()",
-        )
-        .await
-            == 1)
-            .then_some(())
+    // 只看本测试库：同一 PostgreSQL 上别的库里跑着的 indexer 也持有同名锁。
+    // 先等刚停的 indexer 的锁会话结束，否则下面数到的 1 把锁可能还是它的，第二个就会抢到锁一直跑下去。
+    const LOCKS: &str = "SELECT count(*) FROM pg_locks l JOIN pg_database d ON d.oid = l.database \
+         WHERE l.locktype = 'advisory' AND l.granted AND d.datname = current_database()";
+    eventually("stopped indexer releases the lock", || async {
+        (count(&pool, LOCKS).await == 0).then_some(())
     })
     .await;
+    let lock_holder = Running::start(&pool, w.config(&anvil, 200));
+    eventually("first indexer holds the lock", || async {
+        (count(&pool, LOCKS).await == 1).then_some(())
+    })
+    .await;
+    // 第二个 indexer 是另一个进程：用自己的连接池，免得在测试池被第一个占满时卡在取连接上
+    let second_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .expect("second pool");
     let second = tokio::time::timeout(
         Duration::from_secs(20),
         forum_indexer::run(
-            pool.clone(),
+            second_pool,
             w.config(&anvil, 200),
             None,
             CancellationToken::new(),
