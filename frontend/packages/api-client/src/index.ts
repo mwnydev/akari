@@ -88,6 +88,18 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   CHAT_CHAIN_BROKEN: "订单聊天记录校验失败（可能被改动），暂停裁决并已记录，请联系站长",
   REPORT_RESOLVED: "这条举报已经处理过了",
   RULING_MISMATCH: "提交的裁决与 Passkey 确认的内容不一致，请重新确认",
+  AUCTIONS_DISABLED: "拍卖功能暂未开放",
+  AUCTION_UNAVAILABLE: "拍卖当前状态不能进行这项操作",
+  AUCTION_DURATION_INVALID: "拍卖时长超出允许的范围",
+  AUCTION_INCREMENT_TOO_LOW: "加价幅度不能低于 1 USDT，也不能低于起拍价的 1%",
+  AUCTION_SIGN_EXPIRED: "签名已超时，请重新发起签名",
+  AUCTION_SIGNATURE_INVALID: "拍卖授权签名无效，请重新签名",
+  AUCTION_HAS_BIDS: "已经有人出价，不能取消拍卖",
+  BID_TOO_LOW: "出价低于当前最低出价，请刷新后重试",
+  BID_BY_SELLER: "卖家本人及关联账号不能出价",
+  BID_ALREADY_LEADING: "你已是最高出价者",
+  BID_NEW_ACCOUNT_CAP: "新注册账号单场出价有上限（默认注册满 7 天后解除）",
+  BID_BALANCE_INSUFFICIENT: "钱包 USDT 余额未达到卖家要求的出价资格",
   INTERNAL: "服务暂时不可用，请稍后再试",
 };
 

@@ -17,6 +17,13 @@ pub const HOT_WALLET: Credential = Credential {
     dev_env: "SPONSOR_DEV_HOT_WALLET_KEY",
 };
 
+/// 拍卖成交证明签名私钥（`EscrowConfig.auctionSigner`；只能签成交证明，见 [`crate::auction`]）。可选：没有时不签证明，
+/// 拍卖无法成交（`createFromAuction` 也不会被代付）。
+pub const AUCTION_SIGNER: Credential = Credential {
+    name: "auction-signer",
+    dev_env: "SPONSOR_DEV_AUCTION_KEY",
+};
+
 /// 生产链：这里绝不接受环境变量里的开发密钥。
 const MAINNETS: [u64; 1] = [42_161];
 
@@ -43,6 +50,30 @@ impl Credential {
             std::env::var(self.dev_env).ok(),
             chain_id,
         )
+    }
+
+    /// 同 [`Self::load`]，但凭据与开发变量都没有时返回空（可选的私钥）。
+    pub fn load_optional(&self, chain_id: u64) -> anyhow::Result<Option<PrivateKeySigner>> {
+        self.load_optional_from(
+            std::env::var_os("CREDENTIALS_DIRECTORY")
+                .as_deref()
+                .map(Path::new),
+            std::env::var(self.dev_env).ok(),
+            chain_id,
+        )
+    }
+
+    fn load_optional_from(
+        &self,
+        dir: Option<&Path>,
+        dev: Option<String>,
+        chain_id: u64,
+    ) -> anyhow::Result<Option<PrivateKeySigner>> {
+        let dev = dev.filter(|v| !v.is_empty());
+        if dev.is_none() && !dir.is_some_and(|d| d.join(self.name).exists()) {
+            return Ok(None);
+        }
+        self.load_from(dir, dev, chain_id).map(Some)
     }
 
     fn load_from(
@@ -113,6 +144,34 @@ mod tests {
                 .is_err()
         );
         assert!(HOT_WALLET.load_from(None, None, 31_337).is_err());
+    }
+
+    #[test]
+    fn auction_signer_is_optional_but_still_guarded() {
+        assert!(
+            AUCTION_SIGNER
+                .load_optional_from(None, None, 42_161)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            AUCTION_SIGNER
+                .load_optional_from(None, Some(String::new()), 31_337)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            AUCTION_SIGNER
+                .load_optional_from(None, Some(KEY.into()), 31_337)
+                .unwrap()
+                .is_some()
+        );
+        // 主网上开发私钥照样拒绝
+        assert!(
+            AUCTION_SIGNER
+                .load_optional_from(None, Some(KEY.into()), 42_161)
+                .is_err()
+        );
     }
 
     #[test]

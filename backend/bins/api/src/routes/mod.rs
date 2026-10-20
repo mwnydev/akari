@@ -3,6 +3,7 @@ pub mod admin;
 pub mod admin_auth;
 pub mod admin_forums;
 pub mod arbitration;
+pub mod auctions;
 pub mod auth;
 pub mod chain;
 pub mod floor;

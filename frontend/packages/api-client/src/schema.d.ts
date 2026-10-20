@@ -330,6 +330,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/admin/settings/auction": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 拍卖参数与上线开关（plan 第 9 节「拍卖」「拍卖风控」）。 */
+    get: operations["get_auction_settings"];
+    /** 修改拍卖参数或开关（必须在上下限内）。只影响之后挂拍、出价与结算：已签的拍卖授权里的期限不变。 */
+    put: operations["put_auction_settings"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/admin/settings/moderation": {
     parameters: {
       query?: never;
@@ -740,6 +758,131 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/auctions/params": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 挂拍表单需要的参数：开关、时长范围、出价资格档位、订单上下限。 */
+    get: operations["auction_params"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auctions/{id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["get_auction"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auctions/{id}/bids": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 出价记录（新的在前，每页 50 条），公开可查，出价人打码。 */
+    get: operations["list_bids"];
+    put?: never;
+    /** 出价。点出价就生效、不花 gas（plan 第 7 节「拍卖模式」）。 */
+    post: operations["place_bid"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auctions/{id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 卖家取消：草稿随时可以；进行中只能在第一口出价之前。 */
+    post: operations["cancel_auction"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auctions/{id}/finish": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 挂拍第三步：验签（与合约相同的规则，经链上读节点），通过后发拍卖帖、开始计时。 */
+    post: operations["finish_auction"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auctions/{id}/payment": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * 中标者付款需要的数据：卖家授权与签名、平台成交证明与签名、应付 USDT。只有当前这份证明的中标者能取，
+     *     且在付款截止时间之前。
+     */
+    get: operations["auction_payment"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auctions/{id}/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * 挂拍第二步：按当前参数生成拍卖授权，返回给卖家钱包签名的 EIP-712 typed data。
+     *     需要 5 分钟内的钱包 Passkey 验证；可以重复调用（换一份新的授权，旧的作废）。
+     */
+    post: operations["start_auction"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/auth/email/start": {
     parameters: {
       query?: never;
@@ -959,6 +1102,23 @@ export interface paths {
     get: operations["list"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/forums/{slug}/auctions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 挂拍第一步：校验条件并保存草稿（还不发帖）。需要已开通交易、没被封号或禁拍，板块允许交易帖。 */
+    post: operations["create_auction"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1692,6 +1852,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/topics/{id}/auction": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 拍卖帖主题对应的拍卖（主题页用）。 */
+    get: operations["topic_auction"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/topics/{id}/moderation": {
     parameters: {
       query?: never;
@@ -2250,8 +2427,187 @@ export interface components {
       /** @description 缺人：裁决中在岗的仲裁员不够，或申诉后还没有复核人（全部回避或已参与时需要站长复核）。 */
       unstaffed: boolean;
     };
-    /** @description 拍卖帖的信息行（拍卖上线时填写，ADR 0011）。 */
+    /**
+     * @description 与 `Escrow.AuctionAuth` 字段一一对应、同序：卖家挂拍时签一次的拍卖授权（plan 第 6 节、ADR 0011）。
+     *     JSON 字段名与 EIP-712 typed data 的 `message` 相同（驼峰）。
+     */
+    AuctionAuth: {
+      /** @description 站内拍卖 ID（与卖家地址一起决定链上「只能成交一次」的键）。 */
+      auctionId: string;
+      /**
+       * Format: int32
+       * @description 人民币拍卖的卖家汇率（4 位小数定点数）；USDT 拍卖为 0。
+       */
+      cnyPerUsdt: number;
+      /** Format: int32 */
+      confirmWindow: number;
+      /**
+       * Format: int32
+       * @description 0 = USDT、1 = 人民币。
+       */
+      currency: number;
+      /**
+       * Format: int64
+       * @description Unix 秒；成交证明的付款截止时间不能晚于它。
+       */
+      expiry: number;
+      /** Format: int32 */
+      feePayer: number;
+      instant: boolean;
+      listingHash: string;
+      maxBaseGas: string;
+      /** Format: int32 */
+      maxFeeBps: number;
+      maxMinFee: string;
+      /** @description 拍卖币种的最小单位（USDT 最小单位或分）。 */
+      reservePrice: string;
+      seller: string;
+      /** Format: int32 */
+      shipWindow: number;
+      token: string;
+    };
+    AuctionParams: {
+      /** @description 卖家可选的余额比例档位（%）。 */
+      eligibility_percents: number[];
+      /** @description 订单金额上下限（USDT 最小单位）：起拍价折合 USDT 不能低于下限，出价折合 USDT 不能超过上限。 */
+      min_order: string;
+      order_cap: string;
+      /** @description 站长设置的拍卖参数（含开关）。 */
+      settings: components["schemas"]["AuctionSettings"];
+      /**
+       * Format: int32
+       * @description 开始签名后多少秒内必须提交签名。
+       */
+      sign_window_secs: number;
+    };
+    AuctionPayment: {
+      /** @description 订单金额（USDT 最小单位）：人民币按卖家汇率向上取整，与合约换算一致。 */
+      amount: string;
+      /** Format: int64 */
+      auction_id: number;
+      auth: components["schemas"]["AuctionAuth"];
+      buyer_fee: string;
+      buyer_gas: string;
+      /** @description 按当前收费估算：需要 `approve` 并转入的总额 = 金额 + 买家手续费 + 买家 gas 费（以链上建单时为准）。 */
+      buyer_pays: string;
+      /** @description 付款必须从这个地址发起（成交证明里的赢家）。 */
+      buyer_wallet: string;
+      /** Format: int64 */
+      chain_id: number;
+      /** Format: int32 */
+      cny_per_usdt?: number | null;
+      currency: components["schemas"]["Currency"];
+      /** @description `createFromAuction(auth, sellerSig, proof, platformSig)` 的合约地址与链。 */
+      escrow: string;
+      /** Format: date-time */
+      pay_deadline: string;
+      platform_signature: string;
+      /** @description 成交价（拍卖币种最小单位）。 */
+      price: string;
+      proof: components["schemas"]["SettlementProof"];
+      /**
+       * Format: int32
+       * @description 第几份成交证明（1 = 赢家，2、3 = 递补）。
+       */
+      round: number;
+      seller_signature: string;
+    };
+    /**
+     * @description 站长在后台调整的拍卖参数（plan 第 9 节「拍卖」「拍卖风控」）；`enabled` 是上线开关（第 24–26 周开放）。
+     *     缺字段按默认值；库里的值越界时收回到上下限内。
+     */
+    AuctionSettings: {
+      /**
+       * Format: int32
+       * @description 违约禁拍时长（秒）。
+       * @default 2592000
+       */
+      default_ban_secs: number;
+      /**
+       * @description 拍卖开关：关闭时不能挂拍、出价（已结束的拍卖照常结算，赢家照常付款）。
+       * @default false
+       */
+      enabled: boolean;
+      /**
+       * Format: int32
+       * @description 累计顺延上限（秒）。
+       * @default 86400
+       */
+      extension_cap_secs: number;
+      /**
+       * Format: int32
+       * @default 604800
+       */
+      max_duration_secs: number;
+      /**
+       * Format: int32
+       * @description 卖家可选的拍卖时长范围（秒）。
+       * @default 86400
+       */
+      min_duration_secs: number;
+      /**
+       * Format: int32
+       * @description 新账号单场出价上限（整 USDT）。
+       * @default 100
+       */
+      new_account_cap_usdt: number;
+      /**
+       * Format: int32
+       * @description 注册不满这么多天的账号单场出价有上限。
+       * @default 7
+       */
+      new_account_days: number;
+      /**
+       * Format: int32
+       * @description 赢家付款期（秒）。
+       * @default 172800
+       */
+      pay_window_secs: number;
+      /**
+       * Format: int32
+       * @description 次高出价者递补的付款期（秒）。
+       * @default 86400
+       */
+      runner_up_window_secs: number;
+      /**
+       * Format: int32
+       * @description 每次顺延多少秒。
+       * @default 900
+       */
+      snipe_extension_secs: number;
+      /**
+       * Format: int32
+       * @description 结束前多少秒内的新出价触发顺延。
+       * @default 900
+       */
+      snipe_window_secs: number;
+    };
+    AuctionSettingsView: {
+      defaults: components["schemas"]["AuctionSettings"];
+      max: components["schemas"]["AuctionSettings"];
+      /** @description 每项允许的最小值与最大值（`enabled` 无意义）。 */
+      min: components["schemas"]["AuctionSettings"];
+      settings: components["schemas"]["AuctionSettings"];
+    };
+    AuctionSigning: {
+      /** Format: int64 */
+      auction_id: number;
+      /** @description `hashAuction(auth)`：签名的摘要。 */
+      auth_hash: string;
+      /**
+       * Format: date-time
+       * @description 这个时间之前提交签名（`POST /auctions/{id}/finish`），否则重新开始。
+       */
+      sign_deadline: string;
+      typed_data: components["schemas"]["AuctionTypedData"];
+    };
+    /** @enum {string} */
+    AuctionState:
+      "draft" | "live" | "ended" | "awaiting_payment" | "settled" | "unsold" | "cancelled";
+    /** @description 拍卖帖的信息行（ADR 0011）。 */
     AuctionSummary: {
+      /** Format: int64 */
+      auction_id: number;
       /** Format: int32 */
       bids: number;
       /**
@@ -2266,19 +2622,109 @@ export interface components {
       /** Format: date-time */
       ends_at: string;
       reserve_met: boolean;
+      /** @description `live` / `ended` / `awaiting_payment` / `settled` / `unsold` / `cancelled`（同 `AuctionView.state`）。 */
+      state: string;
     };
-    /** @description 拍卖成交（ADR 0011）：付款页显示拍卖币种成交价、卖家汇率与应付 USDT（订单 `amount`）。 */
-    AuctionView: {
-      auction_id: string;
+    /** @description 成交后的担保条款（与 `AuctionAuth` 里的同名字段一致）。 */
+    AuctionTerms: {
+      /** Format: int32 */
+      confirm_window: number;
       /**
        * Format: int32
-       * @description 卖家签名的固定汇率（每 1 USDT 合多少元，4 位小数定点数，7.2000 = 72000）；USDT 拍卖为空。
+       * @description 0 = 卖家、1 = 买家、2 = 各半。
+       */
+      fee_payer?: number;
+      instant?: boolean;
+      /** Format: int32 */
+      ship_window: number;
+    };
+    /** @description EIP-712 typed data（`signTypedData` 的参数）。`types` 不含 `EIP712Domain`（由 `domain` 推出）。 */
+    AuctionTypedData: {
+      domain: components["schemas"]["Eip712Domain"];
+      message: components["schemas"]["AuctionAuth"];
+      primaryType: string;
+      types: {
+        [key: string]: components["schemas"]["TypedField"][];
+      };
+    };
+    AuctionView: {
+      /** Format: int32 */
+      bid_count: number;
+      /**
+       * Format: int32
+       * @description 人民币拍卖的卖家汇率（每 1 USDT 合多少元的 4 位小数定点数）。
        */
       cny_per_usdt?: number | null;
-      /** @description `usdt` 或 `cny`。 */
-      currency: string;
-      /** @description 成交价，拍卖币种的最小单位：USDT 6 位小数或人民币分（十进制字符串）。 */
-      price: string;
+      currency: components["schemas"]["Currency"];
+      /** @description 当前价：最高出价，还没有出价时为起拍价。 */
+      current_price: string;
+      /** @description 当前价按卖家汇率折合的 USDT（最小单位，向上取整，与合约换算一致）。 */
+      current_usdt: string;
+      /**
+       * Format: int32
+       * @description 拍卖时长（秒，不含顺延）：已顺延 = `ends_at - starts_at - duration_secs`。
+       */
+      duration_secs: number;
+      eligibility: components["schemas"]["Eligibility"];
+      /**
+       * Format: date-time
+       * @description 结束时间（含防狙击顺延）。
+       */
+      ends_at?: string | null;
+      /** Format: int32 */
+      extension_cap_secs?: number | null;
+      /** Format: int32 */
+      forum_id: number;
+      /** Format: int64 */
+      id: number;
+      increment: string;
+      /** @description 下一口最低出价。 */
+      min_next_bid: string;
+      my?: components["schemas"]["MyAuctionStatus"] | null;
+      /**
+       * Format: int64
+       * @description 成交后的站内订单。
+       */
+      order_id?: number | null;
+      /**
+       * Format: date-time
+       * @description 当前一份成交证明的付款截止时间。
+       */
+      pay_deadline?: string | null;
+      reserve_met: boolean;
+      /** @description 保留价只给卖家；其他人只看到是否已达到。 */
+      reserve_price?: string | null;
+      /**
+       * Format: int32
+       * @description 已发出的成交证明份数（1 = 赢家，2、3 = 递补）。
+       */
+      round: number;
+      /** Format: int64 */
+      seller_id: number;
+      /**
+       * Format: date-time
+       * @description 服务器当前时间：倒计时按它校正本机时钟偏差。
+       */
+      server_time: string;
+      /** Format: int32 */
+      snipe_extension_secs?: number | null;
+      /**
+       * Format: int32
+       * @description 防狙击：结束前这么多秒内的出价把结束时间顺延 `snipe_extension_secs`，累计不超过 `extension_cap_secs`
+       *     （开始签名时取自站长设置，之后不变；草稿还没开始签名时为空）。
+       */
+      snipe_window_secs?: number | null;
+      /** @description 以下金额均为拍卖币种最小单位（USDT 最小单位或分），十进制字符串。 */
+      start_price: string;
+      /** Format: date-time */
+      starts_at?: string | null;
+      state: components["schemas"]["AuctionState"];
+      terms: components["schemas"]["AuctionTerms"];
+      /**
+       * Format: int64
+       * @description 上线后的拍卖帖主题。
+       */
+      topic_id?: number | null;
     };
     AuditEntryView: {
       action: string;
@@ -2333,6 +2779,32 @@ export interface components {
        * @description 滚动 24 小时内还能代付提币几次（每天最多 3 次，与剩余次数取小者才是实际可用次数）。
        */
       withdraws_left_today: number;
+    };
+    BidPage: {
+      bids: components["schemas"]["BidView"][];
+      /**
+       * Format: int64
+       * @description 还有更早的出价时为下一页的 `before`。
+       */
+      next_cursor?: number | null;
+    };
+    BidRequest: {
+      /** @description 拍卖币种最小单位（USDT 最小单位或分），十进制字符串。 */
+      amount: string;
+    };
+    BidView: {
+      /** @description 拍卖币种最小单位，十进制字符串。 */
+      amount: string;
+      /** @description 打码的出价人。 */
+      bidder: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: int64 */
+      id: number;
+      /** @description 出价人与本场其他出价人是关联账号（同设备）。 */
+      linked: boolean;
+      /** @description 是我出的价。 */
+      mine: boolean;
     };
     BoardResponse: {
       forum: components["schemas"]["ForumView"];
@@ -2549,6 +3021,11 @@ export interface components {
       /** Format: int64 */
       topic_id: number;
     };
+    /**
+     * @description 拍卖币种（`AuctionAuth.currency`）。
+     * @enum {string}
+     */
+    Currency: "usdt" | "cny";
     Deadlines: {
       /**
        * Format: date-time
@@ -2603,6 +3080,23 @@ export interface components {
       verifyingContract?: string | null;
       version: string;
     };
+    /** @description 出价资格（卖家挂拍时选，plan 第 9 节「拍卖默认」）：不要求 / 钱包 USDT 余额 ≥ 出价的 10% / 50% / 100% / 固定金额。 */
+    Eligibility:
+      | {
+          /** @enum {string} */
+          kind: "none";
+        }
+      | {
+          /** @enum {string} */
+          kind: "percent";
+          /** Format: int32 */
+          percent: number;
+        }
+      | {
+          /** @enum {string} */
+          kind: "fixed";
+          usdt: string;
+        };
     ErrorBody: {
       code: components["schemas"]["ErrorCode"];
       message: string;
@@ -2676,6 +3170,18 @@ export interface components {
       | "CHAT_CHAIN_BROKEN"
       | "REPORT_RESOLVED"
       | "RULING_MISMATCH"
+      | "AUCTIONS_DISABLED"
+      | "AUCTION_UNAVAILABLE"
+      | "AUCTION_DURATION_INVALID"
+      | "AUCTION_INCREMENT_TOO_LOW"
+      | "AUCTION_SIGN_EXPIRED"
+      | "AUCTION_SIGNATURE_INVALID"
+      | "AUCTION_HAS_BIDS"
+      | "BID_TOO_LOW"
+      | "BID_BY_SELLER"
+      | "BID_ALREADY_LEADING"
+      | "BID_NEW_ACCOUNT_CAP"
+      | "BID_BALANCE_INSUFFICIENT"
       | "INTERNAL";
     /** @description 一条链上待执行的全部裁决，合成一个 Safe 批量交易文件（每天合并一笔执行）。 */
     ExecutionBatch: {
@@ -2684,6 +3190,10 @@ export interface components {
       chain_id: number;
       safe?: string | null;
       transaction_builder: Record<string, unknown>;
+    };
+    FinishAuctionRequest: {
+      /** @description 卖家对 `auth_hash` 的签名（`0x` 十六进制；智能账户为 ERC-1271 / ERC-6492 格式）。 */
+      signature: string;
     };
     /** @description 楼层下的一条评论。`body` 是纯文本（服务端已去掉控制字符），客户端必须按文本渲染，不能当 HTML。 */
     FloorComment: {
@@ -2967,12 +3477,45 @@ export interface components {
       min: components["schemas"]["ModerationSettings"];
       settings: components["schemas"]["ModerationSettings"];
     };
+    /** @description 访问者自己在这场拍卖里的情况。 */
+    MyAuctionStatus: {
+      /** @description 我的最高出价（拍卖币种最小单位）。 */
+      best_bid?: string | null;
+      /** @description 我是当前最高出价者。 */
+      leading: boolean;
+      /** @description 我出过价、但已被超过。 */
+      outbid: boolean;
+      seller: boolean;
+      /** @description 当前这份成交证明是给我的（待付款时用 `GET /auctions/{id}/payment` 取付款数据）。 */
+      winner: boolean;
+    };
     /** @description 私信报价生成的订单：谈判会话与付款上链时的最后一条消息（`GET /api/v1/orders/{id}/negotiation` 读取）。 */
     NegotiationRef: {
       /** Format: int64 */
       conversation_id: number;
       /** Format: int64 */
       last_message_id: number;
+    };
+    NewAuctionRequest: components["schemas"]["NewTopicRequest"] & {
+      /**
+       * Format: int32
+       * @description 人民币拍卖必填：每 1 USDT 合多少元，4 位小数定点数（7.2000 = 72000），范围 50000–100000。
+       */
+      cny_per_usdt?: number | null;
+      currency: components["schemas"]["Currency"];
+      /**
+       * Format: int32
+       * @description 拍卖时长（秒），在站长设定的范围内。
+       */
+      duration_secs: number;
+      eligibility?: components["schemas"]["Eligibility"];
+      /** @description 加价幅度：不低于 1 USDT（人民币按卖家汇率折算）与起拍价的 1%。 */
+      increment: string;
+      /** @description 保留价：不低于起拍价；最高出价达到它才成交。 */
+      reserve_price: string;
+      /** @description 以下金额为拍卖币种最小单位（USDT 最小单位或分），十进制字符串。 */
+      start_price: string;
+      terms: components["schemas"]["AuctionTerms"];
     };
     NewCommentRequest: {
       /** @description 纯文本，1–500 字（换行与控制字符换成空格）；`@用户名` 会通知对方。 */
@@ -3085,7 +3628,7 @@ export interface components {
       created_at: string;
       /** Format: int64 */
       id: number;
-      /** @description `reply` / `mention` / `comment` / `like` / `message` / `order` / `offer` / `system`。 */
+      /** @description `reply` / `mention` / `comment` / `like` / `message` / `order` / `offer` / `auction` / `system`。 */
       kind: string;
       /**
        * @description 按类型：reply / mention 为 `{topic_id, post_id, floor}`（评论里的 @ 另有 `comment_id`）；
@@ -3093,6 +3636,8 @@ export interface components {
        *     like 为 `{topic_id, post_id, floor, count, likers}`（合并窗口内新增的赞数与最近几位，新的在前）；
        *     message 为 `{conversation_id, message_id}`；
        *     offer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；
+       *     auction 为 `{auction_id, topic_id, event, …}`（`event`：`outbid` 被超价、`won` 中标、`runner_up` 递补中标、
+       *     `sold` / `unsold` 卖家的成交（待付款）与流拍、`defaulted` 逾期违约，见 `forum_db::auctions`）；
        *     system 为发件箱原样内容（含 `event`）。
        */
       payload: Record<string, unknown>;
@@ -3184,6 +3729,19 @@ export interface components {
       /** Format: int64 */
       user_id: number;
     };
+    /** @description 拍卖成交（ADR 0011）：付款页显示拍卖币种成交价、卖家汇率与应付 USDT（订单 `amount`）。 */
+    OrderAuction: {
+      auction_id: string;
+      /**
+       * Format: int32
+       * @description 卖家签名的固定汇率（每 1 USDT 合多少元，4 位小数定点数，7.2000 = 72000）；USDT 拍卖为空。
+       */
+      cny_per_usdt?: number | null;
+      /** @description `usdt` 或 `cny`。 */
+      currency: string;
+      /** @description 成交价，拍卖币种的最小单位：USDT 6 位小数或人民币分（十进制字符串）。 */
+      price: string;
+    };
     /** @description 下单时固定的费用（下单区块 `getOrder` 快照；快照缺失时为空）。 */
     OrderFees: {
       bond?: string | null;
@@ -3232,7 +3790,7 @@ export interface components {
     };
     /** @description 订单的来源：卖家签名的报价（站内卡片 `GET /api/v1/offers/{id}`）与交易帖内容哈希（下单时锁定的版本）。 */
     OrderSource: {
-      auction?: components["schemas"]["AuctionView"] | null;
+      auction?: components["schemas"]["OrderAuction"] | null;
       listing_hash: string;
       /** Format: int64 */
       listing_id?: number | null;
@@ -3841,8 +4399,11 @@ export interface components {
       active: boolean;
       /** Format: date-time */
       created_at: string;
-      /** Format: int64 */
-      created_by: number;
+      /**
+       * Format: int64
+       * @description 处罚人；系统自动的处罚（拍卖违约禁拍）为空。
+       */
+      created_by?: number | null;
       /**
        * Format: date-time
        * @description 为空表示永久。
@@ -3891,6 +4452,18 @@ export interface components {
     SendMessage: {
       /** @description 文字，≤ 2000 字（图片消息在图片上传上线后支持）。 */
       body: string;
+    };
+    /** @description 与 `Escrow.SettlementProof` 字段一一对应、同序：forum-sponsor 签的成交证明。 */
+    SettlementProof: {
+      authHash: string;
+      /**
+       * Format: int64
+       * @description Unix 秒。
+       */
+      payDeadline: number;
+      /** @description 成交价，拍卖币种的最小单位。 */
+      price: string;
+      winner: string;
     };
     SettlementView: {
       to_buyer?: string | null;
@@ -4068,7 +4641,7 @@ export interface components {
       id: number;
       /**
        * Format: int32
-       * @description 0=普通、1=交易、2=争议。
+       * @description 0=普通、1=交易、2=争议、3=拍卖。
        */
       kind: number;
       /**
@@ -4170,6 +4743,10 @@ export interface components {
        * @description 剩余库存：仍有效的公开报价还能成交的次数。没有公开报价时为空；只在主题列表里给出。
        */
       stock?: number | null;
+    };
+    TypedField: {
+      name: string;
+      type: string;
     };
     UnreadCount: {
       /**
@@ -5125,6 +5702,88 @@ export interface operations {
         };
       };
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  get_auction_settings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuctionSettingsView"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  put_auction_settings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AuctionSettings"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuctionSettingsView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
         headers: {
           [name: string]: unknown;
         };
@@ -6392,6 +7051,399 @@ export interface operations {
       };
     };
   };
+  auction_params: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuctionParams"];
+        };
+      };
+    };
+  };
+  get_auction: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuctionView"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  list_bids: {
+    parameters: {
+      query?: {
+        /** @description 上一页最后一条的 ID。 */
+        before?: number | null;
+      };
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BidPage"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  place_bid: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BidRequest"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuctionView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  cancel_auction: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuctionView"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  finish_auction: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FinishAuctionRequest"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuctionView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  auction_payment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuctionPayment"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  start_auction: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuctionSigning"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
   start: {
     parameters: {
       query?: never;
@@ -7081,6 +8133,71 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ForumView"][];
+        };
+      };
+    };
+  };
+  create_auction: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        slug: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["NewAuctionRequest"];
+      };
+    };
+    responses: {
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuctionView"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
         };
       };
     };
@@ -9286,6 +10403,35 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  topic_auction: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuctionView"];
         };
       };
       404: {

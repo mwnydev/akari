@@ -1,10 +1,11 @@
 //! 发件箱投递（邮件、站内通知与实时推送、管理员群 Telegram 告警）、浏览数回写、报价卡片过期、通知分区维护、
-//! 发帖经验、每日信誉校对、图片转换、仲裁分配与期限。
+//! 发帖经验、每日信誉校对、图片转换、仲裁分配与期限、拍卖结算。
 //!
 //! 现在是最小实现：轮询 `outbox`，`FOR UPDATE SKIP LOCKED` 锁一批、投递、标记，失败按指数退避重试。
 //! 发薪、超时处理等关键任务按 plan 第 2 节接入 apalis（PostgreSQL 队列）时，发件箱改为向 apalis 入队，这里只保留转发。
 
 pub mod arbitration;
+pub mod auctions;
 pub mod exp;
 pub mod images;
 pub mod stats;
@@ -178,7 +179,8 @@ fn order_updated(payload: &Value) -> Result<InSite, RenderError> {
 
 /// 把发件箱消息渲染成投递动作。新增消息类型时在这里加分支。
 ///
-/// 站内通知：`notify.reply` / `notify.mention` / `notify.comment` / `notify.message` / `notify.offer` 各成同名通知；
+/// 站内通知：`notify.reply` / `notify.mention` / `notify.comment` / `notify.message` / `notify.offer` /
+/// `notify.auction` 各成同名通知；
 /// `notify.likes` 在投递时合并成一条 `like` 通知（见 [`forum_db::floor::take_like_digest`]）；
 /// `notify.system` 与其他 `notify.*`（如提币地址提醒）成为 `system` 通知（`event` = 去掉前缀的类型）。
 pub fn render(msg: &outbox::Message) -> Result<Delivery, RenderError> {
@@ -193,6 +195,7 @@ pub fn render(msg: &outbox::Message) -> Result<Delivery, RenderError> {
         },
         "notify.message" => notice(notifications::KIND_MESSAGE, p, None)?,
         "notify.offer" => notice(notifications::KIND_OFFER, p, None)?,
+        forum_db::auctions::NOTIFY => notice(notifications::KIND_AUCTION, p, None)?,
         "order.updated" => order_updated(p)?,
         "push.message" => InSite {
             push: Some(Push::Message(serde_json::from_value::<Id>(p.clone())?.id)),

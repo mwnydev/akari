@@ -2,6 +2,8 @@
 //!
 //! - `POST /rpc`：JSON-RPC 2.0（单个请求，不支持批量）。必须带 `Authorization: Bearer <SPONSOR_API_TOKEN>` 与
 //!   forum-api 校验过会话后填入的 `x-forum-user-id`。监听 127.0.0.1，令牌防的是本机其他进程冒充 forum-api。
+//! - `POST /auction/proof`：forum-worker 请求拍卖成交证明（[`crate::auction`]），同样要带令牌；成功返回证明与签名，
+//!   拒绝时 409 `{code, reason}`，没有配置拍卖签名私钥时 503。
 //! - `GET /healthz`：代发器是否健康，以及两种签前模拟方法各用了多少次（[`crate::sim::Router`]）。
 
 use std::sync::Arc;
@@ -13,8 +15,9 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::routing::{get, post};
 use serde_json::{Value, json};
 
+use crate::auction::{AuctionSigner, ProofRequest};
 use crate::bundler::Bundler;
-use crate::jsonrpc::{self, INVALID_REQUEST, Request, RpcError};
+use crate::jsonrpc::{self, Error, INVALID_REQUEST, Request, RpcError};
 
 pub const USER_HEADER: &str = "x-forum-user-id";
 const BODY_LIMIT: usize = 128 * 1024;
@@ -22,6 +25,7 @@ const BODY_LIMIT: usize = 128 * 1024;
 #[derive(Clone)]
 struct AppState {
     bundler: Arc<Bundler>,
+    auction: Option<Arc<AuctionSigner>>,
     token: Arc<str>,
 }
 
@@ -61,6 +65,46 @@ async fn rpc(
     Ok(Json(s.bundler.handle(user_id, req).await))
 }
 
+async fn auction_proof(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let fail = |status: StatusCode, v: Value| (status, Json(v));
+    if !authorized(&headers, &s.token) {
+        return Err(fail(StatusCode::UNAUTHORIZED, Value::Null));
+    }
+    let Some(signer) = &s.auction else {
+        return Err(fail(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({"code": forum_core::ErrorCode::SponsorUnavailable}),
+        ));
+    };
+    let req: ProofRequest = serde_json::from_slice(&body).map_err(|_| {
+        fail(
+            StatusCode::BAD_REQUEST,
+            json!({"code": forum_core::ErrorCode::InvalidParameter}),
+        )
+    })?;
+    match signer.issue(req).await {
+        Ok(p) => Ok(Json(json!(p))),
+        Err(Error::Reject(r)) => {
+            tracing::warn!(auction = req.auction_id, round = req.round, code = ?r.code, reason = %r.reason, "auction proof refused");
+            Err(fail(
+                StatusCode::CONFLICT,
+                json!({"code": r.code, "reason": r.reason}),
+            ))
+        }
+        Err(Error::Internal(e)) => {
+            tracing::error!(auction = req.auction_id, error = %e, "auction proof failed");
+            Err(fail(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({"code": forum_core::ErrorCode::Internal}),
+            ))
+        }
+    }
+}
+
 async fn healthz(State(s): State<AppState>) -> Json<Value> {
     Json(json!({
         "relayer": s.bundler.relayer.healthy(),
@@ -69,13 +113,15 @@ async fn healthz(State(s): State<AppState>) -> Json<Value> {
     }))
 }
 
-pub fn router(bundler: Arc<Bundler>, token: &str) -> Router {
+pub fn router(bundler: Arc<Bundler>, auction: Option<Arc<AuctionSigner>>, token: &str) -> Router {
     Router::new()
         .route("/rpc", post(rpc))
+        .route("/auction/proof", post(auction_proof))
         .route("/healthz", get(healthz))
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .with_state(AppState {
             bundler,
+            auction,
             token: Arc::from(token),
         })
 }

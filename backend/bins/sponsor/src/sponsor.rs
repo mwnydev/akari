@@ -1,6 +1,7 @@
 //! 代付签名（ERC-7677 `pm_getPaymasterStubData` / `pm_getPaymasterData`）与 gas 估算。
 //!
-//! 签名前依次检查：目标 EntryPoint 与链 → sender 是本人钱包 → 部署工厂在白名单 → callData 白名单（含提币地址）→
+//! 签名前依次检查：目标 EntryPoint 与链 → sender 是本人钱包 → 部署工厂在白名单 → callData 白名单（含提币地址、
+//! 拍卖付款的成交证明）→
 //! 暂停 / 待上链 / 每单额度 / 代付提币次数 → gas 上限 → 模拟。签名 2 分钟有效（`validAfter` = 当前时间），绑定这一笔操作。
 //! 额度、待上链与提币次数检查、写入签名记录与扣提币次数在同一事务里、按账户、用户和订单加咨询锁，
 //! 并发请求不会多拿免费次数。
@@ -13,7 +14,9 @@ use alloy::signers::local::PrivateKeySigner;
 use forum_chain::aa::{SponsorTerms, UserOperation};
 use forum_chain::config::AaConfig;
 use forum_core::ErrorCode;
+use forum_core::eip712::Domain;
 use forum_db::PgPool;
+use forum_db::auctions;
 use forum_db::credits::{self, Nonce};
 use forum_db::sponsor::{self as db, FreeCalls, NewCall, NewSponsorship, SponsorshipStatus};
 use serde::Serialize;
@@ -24,7 +27,7 @@ use crate::chain::Chain;
 use crate::config::{MAX_SPONSOR_FEE, Policy, VALIDITY_SECS};
 use crate::jsonrpc::{Reject, Result};
 use crate::kernel;
-use crate::policy::{self, Action, Contracts, DAY_SECS, Facts, Priced, Tier};
+use crate::policy::{self, Action, AuctionPayment, Contracts, DAY_SECS, Facts, Priced, Tier};
 use crate::sim::{self, GasEstimate, Limits, PM_POST_OP_GAS, PM_VERIFICATION_GAS, Sponsored};
 
 /// 占位签名：估算阶段用，合约验签失败只返回 SIG_VALIDATION_FAILED，不收费。
@@ -284,6 +287,41 @@ impl Sponsor {
         Ok(())
     }
 
+    /// 拍卖付款只代付当前这份成交证明的中标者：调用里的授权哈希、证明与平台签名必须与库里这场拍卖最新一轮的
+    /// 证明逐项相同，付款人就是证明里的赢家，付款截止时间未过，拍卖仍在等这一轮付款（plan 第 6 节）。
+    async fn check_auction_payment(&self, sender: Address, p: &AuctionPayment) -> Result<()> {
+        let refuse = |why: &str| Reject::not_allowed(format!("auction payment: {why}"));
+        let domain = Domain {
+            chain_id: self.chain_id(),
+            verifying_contract: forum_core::eip712::Address(self.contracts.escrow.into_array()),
+        };
+        let auth_hash = p.core_auth().hash(&domain);
+        if auth_hash.0 != p.proof.authHash.0 {
+            return Err(refuse("proof is bound to another authorization").into());
+        }
+        let Some(row) = auctions::latest_proof_by_auth(&self.db, &auth_hash.0).await? else {
+            return Err(refuse("no settlement proof was issued").into());
+        };
+        let current = auctions::by_id(&self.db, row.auction_id)
+            .await?
+            .is_some_and(|a| a.state == auctions::STATE_AWAITING_PAYMENT && a.round == row.round);
+        let deadline = u64::try_from(row.pay_deadline.unix_timestamp()).ok();
+        let same = row.winner.as_slice() == p.proof.winner.as_slice()
+            && row.price == p.proof.price.to_string()
+            && deadline == Some(p.proof.payDeadline)
+            && row.signature.as_slice() == p.platform_sig.as_ref();
+        if !current || !same {
+            return Err(refuse("not the current settlement proof").into());
+        }
+        if sender != p.proof.winner {
+            return Err(refuse("sender is not the winner").into());
+        }
+        if p.proof.payDeadline <= now_secs() {
+            return Err(refuse("payment window closed").into());
+        }
+        Ok(())
+    }
+
     /// 白名单 + 额度定价（只读）。
     async fn evaluate(&self, user_id: i64, op: &UserOperation) -> Result<Evaluated> {
         self.check_wallet(user_id, op.sender).await?;
@@ -291,6 +329,11 @@ impl Sponsor {
         let calls = kernel::decode(&op.call_data)?;
         let withdraw_to = self.withdraw_addresses(user_id).await?;
         let actions = policy::classify(&calls, op.sender, &self.contracts, &withdraw_to)?;
+        for a in &actions {
+            if let Action::AuctionPayment(p) = a {
+                self.check_auction_payment(op.sender, p).await?;
+            }
+        }
         let delivered = self.delivered(&actions).await?;
         let mut conn = self.db.acquire().await?;
         self.check_account(&mut conn, user_id, op).await?;

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT amount::text AS \"amount!\" FROM auction_bids WHERE auction_id = $1 AND bidder_id = $2\n           ORDER BY amount DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3e30d3dcb4f073a266e744f1873328b8b5db847cc24414764706efdeff6709b5"
+}

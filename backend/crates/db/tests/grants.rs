@@ -150,20 +150,27 @@ fn db_functions() -> BTreeMap<String, BTreeMap<String, DbFn>> {
                 }
             }
             let code = strip_comments(body);
-            for (i, _) in code.match_indices("crate::") {
-                let m = ident_at(&code, i + 7);
-                let rest = i + 7 + m.len();
-                if code[rest..].starts_with("::") {
-                    let f = ident_at(&code, rest + 2);
+            // 别的模块的函数 `crate::m::f`，或 `use crate::{m, …}` 之后的 `m::f`：按模块名认，
+            // 是不是 forum-db 的模块、有没有这个函数在 service_queries 里查（认错了只会多算）
+            for (i, _) in code.match_indices("::") {
+                let m_start = code[..i].rfind(|c: char| !is_ident(c)).map_or(0, |j| j + 1);
+                let m = &code[m_start..i];
+                let nested =
+                    code[..m_start].ends_with("::") && !code[..m_start].ends_with("crate::");
+                if m.is_empty() || m == "crate" || nested {
+                    continue;
+                }
+                let f = ident_at(&code, i + 2);
+                if !f.is_empty() {
                     entry.calls.insert((m.to_owned(), f.to_owned()));
                 }
             }
-            // 同一模块里的直接调用 `name(`（方法调用 `.name(` 与路径 `x::name(` 除外）
+            // 同一模块里的直接调用 `name(` 或 `name::<T>(`（方法调用 `.name(` 与路径 `x::name(` 除外）
             for &(_, callee) in &starts {
                 for (i, _) in code.match_indices(callee) {
                     let before = code[..i].chars().last();
                     let after = &code[i + callee.len()..];
-                    if after.starts_with('(')
+                    if (after.starts_with('(') || after.starts_with("::<"))
                         && !before.is_some_and(|c| is_ident(c) || c == '.' || c == ':')
                         && !code[..i].ends_with("fn ")
                     {
@@ -413,6 +420,12 @@ fn static_analysis_finds_known_calls() {
             .contains(&("posts".to_owned(), "by_id".to_owned()))
     );
     assert!(fns["reports"]["create"].queries.len() == 2);
+    // 带类型参数的同模块调用 `get::<T>(`，与 `use crate::{…}` 导入的模块 `sanctions::create`
+    let auction_settings = &fns["settings"]["auction"].calls;
+    assert!(auction_settings.contains(&("settings".to_owned(), "get".to_owned())));
+    let default = &fns["auctions"]["record_default"].calls;
+    assert!(default.contains(&("sanctions".to_owned(), "create".to_owned())));
+    assert!(default.contains(&("audit".to_owned(), "append".to_owned())));
     let worker = service_calls("worker", &fns);
     assert!(worker.contains(&("floor".to_owned(), "take_like_digest".to_owned())));
     assert!(worker.contains(&("hot".to_owned(), "refresh".to_owned())));

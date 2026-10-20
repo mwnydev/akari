@@ -61,6 +61,12 @@ const ALLOWED: &[(&str, &str, usize, &str)] = &[
         "RPC provider WebSocket (CHAIN_RPC_*_WS)",
     ),
     (
+        "bins/worker/src/auctions.rs",
+        "Client::builder(",
+        1,
+        "local forum-sponsor auction proofs (loopback)",
+    ),
+    (
         "bins/worker/src/telegram.rs",
         "Client::builder(",
         1,

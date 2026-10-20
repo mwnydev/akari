@@ -1,4 +1,4 @@
-//! forum-sponsor 程序入口：读配置与私钥、核对链上 Paymaster、启动代发器并监听本机端口。
+//! forum-sponsor 程序入口：读配置与私钥、核对链上 Paymaster 与拍卖签名者、启动代发器并监听本机端口。
 
 use forum_sponsor::config::Config;
 use forum_sponsor::{App, keys};
@@ -11,9 +11,13 @@ async fn main() -> anyhow::Result<()> {
     let cfg = Config::from_env()?;
     let paymaster_signer = keys::PAYMASTER_SIGNER.load(cfg.chain.chain_id)?;
     let hot_wallet = keys::HOT_WALLET.load(cfg.chain.chain_id)?;
+    let auction_signer = keys::AUCTION_SIGNER.load_optional(cfg.chain.chain_id)?;
+    if auction_signer.is_none() {
+        tracing::warn!("credential auction-signer not set: auction settlement proofs disabled");
+    }
     let db = forum_db::connect(&cfg.database_url, 4).await?;
     let listen = cfg.listen;
-    let app = App::new(cfg, db, paymaster_signer, hot_wallet)?;
+    let app = App::new(cfg, db, paymaster_signer, hot_wallet, auction_signer)?;
     app.verify_onchain().await?;
     let tasks = app.spawn_background(&shutdown);
 

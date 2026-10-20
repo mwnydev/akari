@@ -15,8 +15,8 @@ use forum_chain::config::WalletInitVersion;
 use forum_core::cny::check_cny_per_usdt;
 use forum_core::eip712::{Address, B256, DOMAIN_NAME, DOMAIN_VERSION, Offer, U256, keccak256};
 use forum_core::trade::{
-    MAX_OFFER_TTL_SECS, MAX_WINDOW, MIN_OFFER_TTL_SECS, MIN_WINDOW, check_bond, check_offer,
-    check_windows,
+    MAX_OFFER_TTL_SECS, MAX_WINDOW, MIN_OFFER_TTL_SECS, MIN_WINDOW, TradeLimits, check_bond,
+    check_offer, check_windows,
 };
 use forum_core::{ErrorCode, FeeParams, FeePayer, Usdt};
 use forum_db::trade::{self as db, NewListing, NewOffer, OfferRow, OfferStatus};
@@ -51,7 +51,7 @@ const CARD_MODIFIED: &str = "modified";
 const CARD_REJECTED: &str = "rejected";
 const CARD_CANCELLED: &str = "cancelled";
 
-fn fee_payer_of(code: u8) -> ApiResult<FeePayer> {
+pub(crate) fn fee_payer_of(code: u8) -> ApiResult<FeePayer> {
     Ok(match code {
         0 => FeePayer::Seller,
         1 => FeePayer::Buyer,
@@ -60,7 +60,7 @@ fn fee_payer_of(code: u8) -> ApiResult<FeePayer> {
     })
 }
 
-fn usdt_of(s: &str) -> ApiResult<Usdt> {
+pub(crate) fn usdt_of(s: &str) -> ApiResult<Usdt> {
     let v: U256 = s
         .parse()
         .map_err(|_| ApiError(ErrorCode::InvalidParameter))?;
@@ -516,7 +516,7 @@ pub struct NewOfferRequest {
     pub signature: String,
 }
 
-fn parse_signature(s: &str) -> ApiResult<Vec<u8>> {
+pub(crate) fn parse_signature(s: &str) -> ApiResult<Vec<u8>> {
     let bad = || ApiError(ErrorCode::InvalidParameter);
     let sig = hex::decode(s.strip_prefix("0x").ok_or_else(bad)?).map_err(|_| bad())?;
     if sig.is_empty() || sig.len() > MAX_SIGNATURE_BYTES {
@@ -860,6 +860,26 @@ pub struct PaymentData {
     pub buyer_wallet: String,
 }
 
+/// 按当前收费估算买家建单时要付的金额（链上以建单时的参数为准；免费活动期间实际更少）。
+pub(crate) fn buyer_quote(
+    l: &TradeLimits,
+    amount: Usdt,
+    fee_payer: u8,
+) -> ApiResult<forum_core::FeeQuote> {
+    Ok(forum_core::quote(
+        amount,
+        fee_payer_of(fee_payer)?,
+        &FeeParams {
+            fee_bps: l.fee_bps.into(),
+            min_fee: l.min_fee,
+            campaign: false,
+            base_gas: l.base_gas,
+            // 建单不收争议费，这里用不到。
+            dispute_mul_bps: 0,
+        },
+    )?)
+}
+
 /// 买家接受卡片：返回付款需要的数据。状态不变——买家付款上链即确认，indexer 看到建单事件后标为已付款。
 #[utoipa::path(
     post, path = "/api/v1/offers/{id}/accept", tag = "trade",
@@ -893,19 +913,7 @@ pub async fn accept_offer(
         .to_u128()
         .map(Usdt)
         .ok_or_else(|| ApiError::internal("stored amount exceeds u128"))?;
-    let l = &state.wallet.limits;
-    let quote = forum_core::quote(
-        amount,
-        fee_payer_of(offer.fee_payer)?,
-        &FeeParams {
-            fee_bps: l.fee_bps.into(),
-            min_fee: l.min_fee,
-            campaign: false,
-            base_gas: l.base_gas,
-            // 建单不收争议费，这里用不到。
-            dispute_mul_bps: 0,
-        },
-    )?;
+    let quote = buyer_quote(&state.wallet.limits, amount, offer.fee_payer)?;
     Ok(Json(PaymentData {
         offer_id: row.id,
         escrow: hex0x(&row.verifying_contract),

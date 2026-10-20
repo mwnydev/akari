@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auctions SET auth = $3, auth_hash = $4, sign_deadline = $5, snipe_window_secs = $6,\n                snipe_extension_secs = $7, extension_cap_secs = $8, updated_at = now()\n         WHERE id = $1 AND seller_id = $2 AND state = 0",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Jsonb",
+        "Bytea",
+        "Timestamptz",
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3e9dd1d10cf02c796bdda44a3e48bd8483e12b1e8edcc550006f0a575ca6c2c9"
+}

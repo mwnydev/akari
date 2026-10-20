@@ -1,5 +1,5 @@
 //! forum-worker：后台任务：发件箱投递（邮件、站内通知、实时推送）、浏览数回写、报价卡片过期、通知分区维护、
-//! 发帖经验、每日信誉校对、图片转换、仲裁分配与期限、热门排名；之后接入 apalis 队列（超时处理、发薪）。
+//! 发帖经验、每日信誉校对、图片转换、仲裁分配与期限、热门排名、拍卖结算；之后接入 apalis 队列（超时处理、发薪）。
 
 use std::time::Duration;
 
@@ -39,6 +39,7 @@ async fn main() -> anyhow::Result<()> {
     let kv = forum_kv::pool(&env("VALKEY_URL")?)?;
     let ns = forum_kv::namespace_from_env()?;
     let cache = forum_kv::ForumCache::new(kv.clone(), ns.as_str());
+    let guest = forum_kv::GuestCache::new(kv.clone(), ns.as_str());
     let realtime = forum_kv::Realtime::new(kv, ns);
     let from = env("MAIL_FROM")?;
     // 主备通道可在配置里一键互换（plan 第 9 节）：生产 MAIL_PRIMARY=resend MAIL_BACKUP=postmark。
@@ -107,6 +108,35 @@ async fn main() -> anyhow::Result<()> {
         shutdown.clone(),
         |db, _| async move { forum_db::hot::refresh(&db).await },
     ));
+    let auctions = match forum_worker::auctions::Live::from_env()? {
+        Some(live) => {
+            let cfg = forum_worker::auctions::Config::from_env()?;
+            let live = std::sync::Arc::new(live);
+            let notify = std::sync::Arc::new(forum_worker::auctions::Notify {
+                realtime: realtime.clone(),
+                guest,
+            });
+            Some(tokio::spawn(periodic(
+                "auctions",
+                forum_worker::auctions::INTERVAL,
+                (db.clone(), cache.clone()),
+                shutdown.clone(),
+                move |db, _| {
+                    let (live, notify) = (live.clone(), notify.clone());
+                    async move {
+                        forum_worker::auctions::run_once(&db, live.as_ref(), cfg, Some(&notify))
+                            .await
+                    }
+                },
+            )))
+        }
+        None => {
+            tracing::warn!(
+                "CHAIN_CONFIG / SPONSOR_URL / SPONSOR_API_TOKEN not set: auction settlement disabled"
+            );
+            None
+        }
+    };
     let views = tokio::spawn(view_flusher(db.clone(), cache, shutdown.clone()));
     let offers = tokio::spawn(offer_expirer(db.clone(), shutdown.clone()));
     let partitions = tokio::spawn(partition_keeper(db.clone(), shutdown.clone()));
@@ -137,6 +167,7 @@ async fn main() -> anyhow::Result<()> {
     ]
     .into_iter()
     .chain(images.map(|t| ("image worker", t)))
+    .chain(auctions.map(|t| ("auctions", t)))
     {
         if let Err(e) = task.await {
             tracing::error!(error = %e, task = name, "task panicked");

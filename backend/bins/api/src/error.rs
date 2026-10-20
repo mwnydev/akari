@@ -79,6 +79,10 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::Muted
         | ErrorCode::AccountBanned
         | ErrorCode::AuctionBanned
+        | ErrorCode::AuctionsDisabled
+        | ErrorCode::BidBySeller
+        | ErrorCode::BidNewAccountCap
+        | ErrorCode::BidBalanceInsufficient
         | ErrorCode::AccessBanned
         | ErrorCode::AdminReverifyRequired
         | ErrorCode::TradeNotAllowed => StatusCode::FORBIDDEN,
@@ -91,7 +95,12 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::EvidenceWindowOpen
         | ErrorCode::EvidenceWindowClosed
         | ErrorCode::ChatChainBroken
-        | ErrorCode::ReportResolved => StatusCode::CONFLICT,
+        | ErrorCode::ReportResolved
+        | ErrorCode::AuctionUnavailable
+        | ErrorCode::AuctionSignExpired
+        | ErrorCode::AuctionHasBids
+        | ErrorCode::BidTooLow
+        | ErrorCode::BidAlreadyLeading => StatusCode::CONFLICT,
         ErrorCode::SponsorUnavailable
         | ErrorCode::ChainUnavailable
         | ErrorCode::UploadsUnavailable => StatusCode::SERVICE_UNAVAILABLE,
@@ -127,7 +136,10 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::WithdrawAddressForbidden
         | ErrorCode::WithdrawAddressLimit
         | ErrorCode::SanctionTooLong
-        | ErrorCode::RulingMismatch => StatusCode::BAD_REQUEST,
+        | ErrorCode::RulingMismatch
+        | ErrorCode::AuctionDurationInvalid
+        | ErrorCode::AuctionIncrementTooLow
+        | ErrorCode::AuctionSignatureInvalid => StatusCode::BAD_REQUEST,
     }
 }
 

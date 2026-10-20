@@ -56,6 +56,46 @@ impl AddressVerifier for FakeVerifier {
     }
 }
 
+/// 假的拍卖链上读取：签名等于 [`VALID_AUCTION_SIGNATURE`] 才有效（真实验签见 forum-sponsor 的 auction 用例）；
+/// 余额按 [`FakeAuctionChain::set_balance`] 设置，没设置的为 0。
+#[derive(Default)]
+pub struct FakeAuctionChain {
+    balances: std::sync::Mutex<std::collections::HashMap<String, u128>>,
+}
+
+pub const VALID_AUCTION_SIGNATURE: &str = "0x5167";
+
+impl FakeAuctionChain {
+    pub fn set_balance(&self, wallet: &str, usdt: u128) {
+        self.balances
+            .lock()
+            .unwrap()
+            .insert(wallet.to_lowercase(), usdt);
+    }
+}
+
+#[async_trait::async_trait]
+impl forum_api::wallet::AuctionChain for FakeAuctionChain {
+    async fn signature_valid(
+        &self,
+        _: &forum_core::eip712::Address,
+        _: &forum_core::eip712::B256,
+        signature: &[u8],
+    ) -> Result<bool, forum_chain::ChainError> {
+        Ok(format!("0x{}", hex::encode(signature)) == VALID_AUCTION_SIGNATURE)
+    }
+
+    async fn usdt_balance(
+        &self,
+        wallet: &forum_core::eip712::Address,
+    ) -> Result<forum_core::Usdt, forum_chain::ChainError> {
+        let b = self.balances.lock().unwrap();
+        Ok(forum_core::Usdt(
+            b.get(&wallet.to_string()).copied().unwrap_or(0),
+        ))
+    }
+}
+
 pub fn admin_state() -> forum_api::admin::AdminState {
     let origin = Url::parse(ADMIN_ORIGIN).unwrap();
     forum_api::admin::AdminState {
@@ -83,6 +123,7 @@ pub fn wallet_state() -> WalletState {
         verifier: Arc::new(FakeVerifier),
         sponsor: None,
         rpc: None,
+        auction_chain: Arc::new(FakeAuctionChain::default()),
     }
 }
 
@@ -421,6 +462,18 @@ pub async fn enable_trading(
     cookies: &[String],
     address: &str,
 ) -> SoftAuth {
+    enable_trading_on(app, db, user_id, cookies, address, CHAIN_ID).await
+}
+
+/// 同 [`enable_trading`]，钱包登记在 `chain_id`（应用状态配置的链）上。
+pub async fn enable_trading_on(
+    app: &Router,
+    db: &PgPool,
+    user_id: i64,
+    cookies: &[String],
+    address: &str,
+    chain_id: u64,
+) -> SoftAuth {
     set_username(db, user_id, &format!("u{user_id}")).await;
     reverify(app, db, cookies).await;
     let mut auth = soft_passkey();
@@ -430,7 +483,7 @@ pub async fn enable_trading(
         app,
         "POST",
         "/api/v1/wallet/account",
-        Some(json!({"chain_id": CHAIN_ID, "address": address, "init_version": 1})),
+        Some(json!({"chain_id": chain_id, "address": address, "init_version": 1})),
         cookies,
     )
     .await;

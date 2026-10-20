@@ -6,12 +6,13 @@ use axum::extract::{FromRef, FromRequestParts};
 use axum::http::header;
 use axum::http::request::Parts;
 use forum_auth::passkey::{UserHandles, webauthn::Webauthn};
+use forum_chain::ChainError;
 use forum_chain::config::WalletInitVersion;
 use forum_chain::kernel::{AddressResolver, PasskeyPublicKey};
 use forum_chain::rpc::FailoverRpc;
-use forum_core::ErrorCode;
-use forum_core::eip712::{Address, Domain};
+use forum_core::eip712::{Address, B256, Domain};
 use forum_core::trade::TradeLimits;
+use forum_core::{ErrorCode, Usdt};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tower_sessions::Session;
@@ -73,6 +74,61 @@ impl AddressVerifier for NoChainVerifier {
     }
 }
 
+/// 拍卖用到的链上读取：卖家授权的验签（与合约相同的 ECDSA / ERC-1271 / ERC-6492 规则）与出价资格的 USDT 余额。
+/// 生产实现是 [`RpcAuctionChain`]；测试用假实现，不连链。
+#[async_trait::async_trait]
+pub trait AuctionChain: Send + Sync {
+    async fn signature_valid(
+        &self,
+        signer: &Address,
+        hash: &B256,
+        signature: &[u8],
+    ) -> Result<bool, ChainError>;
+
+    async fn usdt_balance(&self, wallet: &Address) -> Result<Usdt, ChainError>;
+}
+
+/// 经链上读节点（主备）：验签用 `forum_chain::sig` 的无部署调用，余额读本链 USDT。
+pub struct RpcAuctionChain {
+    pub rpc: Arc<FailoverRpc>,
+    pub token: Address,
+}
+
+#[async_trait::async_trait]
+impl AuctionChain for RpcAuctionChain {
+    async fn signature_valid(
+        &self,
+        signer: &Address,
+        hash: &B256,
+        signature: &[u8],
+    ) -> Result<bool, ChainError> {
+        forum_chain::sig::signature_valid_on(&self.rpc, signer.0.into(), hash.0.into(), signature)
+            .await
+    }
+
+    async fn usdt_balance(&self, wallet: &Address) -> Result<Usdt, ChainError> {
+        let v =
+            forum_chain::auction::token_balance(&self.rpc, self.token.0.into(), wallet.0.into())
+                .await?;
+        // 余额超过 u128 只可能是假代币；按最大值处理（只用于「余额是否足够」）。
+        Ok(Usdt(u128::try_from(v).unwrap_or(u128::MAX)))
+    }
+}
+
+/// 没有链配置时：拍卖的验签与余额检查都返回 `CHAIN_UNAVAILABLE`。
+pub struct NoAuctionChain;
+
+#[async_trait::async_trait]
+impl AuctionChain for NoAuctionChain {
+    async fn signature_valid(&self, _: &Address, _: &B256, _: &[u8]) -> Result<bool, ChainError> {
+        Err(ChainError::Config("auctions need CHAIN_CONFIG".into()))
+    }
+
+    async fn usdt_balance(&self, _: &Address) -> Result<Usdt, ChainError> {
+        Err(ChainError::Config("auctions need CHAIN_CONFIG".into()))
+    }
+}
+
 pub struct WalletState {
     pub webauthn: Webauthn,
     /// 钱包页面的 Origin（与请求头逐字比较）。
@@ -86,6 +142,8 @@ pub struct WalletState {
     pub sponsor: Option<SponsorProxy>,
     /// 链上读节点（主备，取自 `CHAIN_CONFIG`）；未配置时链上读代理与余额返回 `CHAIN_UNAVAILABLE`。
     pub rpc: Option<Arc<FailoverRpc>>,
+    /// 拍卖的验签与余额读取。
+    pub auction_chain: Arc<dyn AuctionChain>,
 }
 
 impl WalletState {

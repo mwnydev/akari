@@ -26,7 +26,7 @@ const LOCK_WAIT: Duration = Duration::from_secs(10);
 const LIVE_BUFFER: usize = 1024;
 
 /// 运行到 `shutdown`。同一条链已有 indexer 在运行（等待 [`LOCK_WAIT`] 仍未释放）时返回 [`IndexerError::Locked`]。
-/// `cache` 用于订单最终确认后失效用户名片。
+/// `cache` 用于订单最终确认后失效用户名片，以及拍卖成交或回滚后失效游客缓存里的列表（同一个 Valkey）。
 pub async fn run(
     pool: PgPool,
     cfg: ChainConfig,

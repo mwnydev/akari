@@ -133,12 +133,12 @@ pub struct OrderSource {
     pub listing_id: Option<i64>,
     pub listing_topic_id: Option<i64>,
     /// 拍卖成交的订单。
-    pub auction: Option<AuctionView>,
+    pub auction: Option<OrderAuction>,
 }
 
 /// 拍卖成交（ADR 0011）：付款页显示拍卖币种成交价、卖家汇率与应付 USDT（订单 `amount`）。
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AuctionView {
+pub struct OrderAuction {
     pub auction_id: String,
     /// `usdt` 或 `cny`。
     pub currency: &'static str,
@@ -148,7 +148,7 @@ pub struct AuctionView {
     pub price: String,
 }
 
-impl AuctionView {
+impl OrderAuction {
     fn from_row(
         auction_id: Option<String>,
         currency: Option<i16>,
@@ -296,7 +296,7 @@ impl OrderView {
                 listing_hash: hex0x(&r.listing_hash),
                 listing_id: r.listing_id,
                 listing_topic_id: r.listing_topic_id,
-                auction: AuctionView::from_row(
+                auction: OrderAuction::from_row(
                     r.auction_id,
                     r.auction_currency,
                     r.auction_cny_per_usdt,

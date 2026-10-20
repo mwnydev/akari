@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 
+use forum_core::auction::{Currency, Pricing};
 use forum_core::cny::{MAX_CNY_PER_USDT, MIN_CNY_PER_USDT};
 use forum_core::{
     FeeParams, FeePayer, Usdt, claim, cny_fen_to_usdt, dispute_fee, quote, stream_net,
@@ -187,4 +188,17 @@ fn cny_vectors() {
         let got = usdt_to_cny_fen(u(&c.usdt), c.cny_per_usdt).unwrap();
         assert_eq!(got, c.expect_fen.parse::<u128>().unwrap(), "{}", c.name);
     }
+}
+
+/// 拍卖结算的换算（成交价、新账号上限、出价资格都用它）与合约 `createFromAuction` 用同一份向量。
+#[test]
+fn auction_pricing_follows_the_cny_vectors() {
+    let v = load().cny;
+    for c in &v.to_usdt {
+        let pricing = Pricing::new(Currency::Cny, Some(c.cny_per_usdt)).unwrap();
+        let got = pricing.to_usdt(c.price_fen.parse().unwrap()).unwrap();
+        assert_eq!(got, u(&c.expect), "{}", c.name);
+    }
+    let usdt = Pricing::new(Currency::Usdt, None).unwrap();
+    assert_eq!(usdt.to_usdt(45_000_000).unwrap(), Usdt(45_000_000));
 }

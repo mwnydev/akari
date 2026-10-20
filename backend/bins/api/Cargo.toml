@@ -51,6 +51,12 @@ forum-chain = { workspace = true, features = ["anvil"] }
 webauthn-authenticator-rs.workspace = true
 redis.workspace = true
 tower.workspace = true
+# 拍卖端到端（tests/auction_e2e.rs）：真实的 forum-sponsor、forum-worker 结算与 forum-indexer。
+alloy = { workspace = true, features = ["signer-local", "network"] }
+forum-indexer = { path = "../indexer" }
+forum-sponsor = { path = "../sponsor" }
+forum-worker = { path = "../worker" }
+tokio-util.workspace = true
 
 [lints]
 workspace = true

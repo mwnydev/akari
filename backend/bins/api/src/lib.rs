@@ -121,6 +121,18 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(routes::trade::reject_offer))
         .routes(routes!(routes::trade::cancel_offer))
         .routes(routes!(routes::trade::accept_offer))
+        .routes(routes!(routes::auctions::auction_params))
+        .routes(routes!(routes::auctions::create_auction))
+        .routes(routes!(routes::auctions::get_auction))
+        .routes(routes!(routes::auctions::topic_auction))
+        .routes(routes!(routes::auctions::start_auction))
+        .routes(routes!(routes::auctions::finish_auction))
+        .routes(routes!(routes::auctions::cancel_auction))
+        .routes(routes!(
+            routes::auctions::list_bids,
+            routes::auctions::place_bid
+        ))
+        .routes(routes!(routes::auctions::auction_payment))
         .routes(routes!(routes::orders::list))
         .routes(routes!(routes::orders::get))
         .routes(routes!(routes::orders::by_offer))
@@ -173,6 +185,10 @@ pub fn router() -> (Router<AppState>, utoipa::openapi::OpenApi) {
         .routes(routes!(
             routes::admin::get_settings,
             routes::admin::put_settings
+        ))
+        .routes(routes!(
+            routes::admin::get_auction_settings,
+            routes::admin::put_auction_settings
         ))
         .routes(routes!(routes::admin::list_suspensions))
         .routes(routes!(routes::admin::reinstate))

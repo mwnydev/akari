@@ -68,7 +68,7 @@ pub struct TopicSummary {
     pub forum_id: i32,
     pub author_id: i64,
     pub title: String,
-    /// 0=普通、1=交易、2=争议。
+    /// 0=普通、1=交易、2=争议、3=拍卖。
     pub kind: i16,
     pub flags: TopicFlags,
     /// 回复数（楼层数 − 1）。
@@ -85,7 +85,7 @@ pub struct TopicSummary {
     pub participants: Vec<i64>,
     /// 交易帖的信息行；普通主题为空。
     pub trade: Option<TradeSummary>,
-    /// 拍卖帖的信息行（当前价、出价次数、剩余时间等）。拍卖还没上线，现在总是空。
+    /// 拍卖帖的信息行（当前价、出价次数、结束时间等）；只在主题列表里给出，主题页用 `GET /api/v1/topics/{id}/auction`。
     pub auction: Option<AuctionSummary>,
 }
 
@@ -103,9 +103,12 @@ pub struct TradeSummary {
     pub stock: Option<i64>,
 }
 
-/// 拍卖帖的信息行（拍卖上线时填写，ADR 0011）。
+/// 拍卖帖的信息行（ADR 0011）。
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AuctionSummary {
+    pub auction_id: i64,
+    /// `live` / `ended` / `awaiting_payment` / `settled` / `unsold` / `cancelled`（同 `AuctionView.state`）。
+    pub state: String,
     /// `usdt` 或 `cny`。
     pub currency: String,
     /// 当前价：USDT 时为最小单位，人民币时为分（十进制字符串）。

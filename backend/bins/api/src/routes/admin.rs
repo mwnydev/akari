@@ -1,4 +1,4 @@
-//! 站长后台的管理功能（ADR 0013）：任免管理员与版主、限速与异常阈值、恢复被暂停的管理权限、
+//! 站长后台的管理功能（ADR 0013）：任免管理员与版主、限速与异常阈值、拍卖参数与开关、恢复被暂停的管理权限、
 //! 一键撤销某账号某时间段的管理操作、审计日志，以及仲裁总览与 Safe 批量执行文件。全部要求后台会话（[`AdminSession`]，只有站长），
 //! 改动类操作还要求 5 分钟内用后台 Passkey 再验证；每次改动写审计日志并推送管理员群。
 
@@ -6,6 +6,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use forum_core::ErrorCode;
+use forum_core::auction::AuctionSettings;
 use forum_core::staff::{ModerationSettings, Permission, Role};
 use forum_db::{arbitration as arb, audit, outbox, staff};
 use serde::{Deserialize, Serialize};
@@ -286,6 +287,83 @@ pub async fn put_settings(
         max,
         defaults: ModerationSettings::default(),
     }))
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AuctionSettingsView {
+    pub settings: AuctionSettings,
+    /// 每项允许的最小值与最大值（`enabled` 无意义）。
+    pub min: AuctionSettings,
+    pub max: AuctionSettings,
+    pub defaults: AuctionSettings,
+}
+
+fn auction_settings_view(settings: AuctionSettings) -> AuctionSettingsView {
+    let (min, max) = AuctionSettings::bounds();
+    AuctionSettingsView {
+        settings,
+        min,
+        max,
+        defaults: AuctionSettings::default(),
+    }
+}
+
+/// 拍卖参数与上线开关（plan 第 9 节「拍卖」「拍卖风控」）。
+#[utoipa::path(
+    get, path = "/api/v1/admin/settings/auction", tag = "admin",
+    responses((status = 200, body = AuctionSettingsView), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody))
+)]
+pub async fn get_auction_settings(
+    State(state): State<AppState>,
+    admin: AdminSession,
+) -> ApiResult<Json<AuctionSettingsView>> {
+    admin.require(Permission::ManageSettings)?;
+    Ok(Json(auction_settings_view(
+        forum_db::settings::auction(&state.db).await?,
+    )))
+}
+
+/// 修改拍卖参数或开关（必须在上下限内）。只影响之后挂拍、出价与结算：已签的拍卖授权里的期限不变。
+#[utoipa::path(
+    put, path = "/api/v1/admin/settings/auction", tag = "admin",
+    request_body = AuctionSettings,
+    responses(
+        (status = 200, body = AuctionSettingsView),
+        (status = 400, body = ErrorBody), (status = 401, body = ErrorBody), (status = 403, body = ErrorBody)
+    )
+)]
+pub async fn put_auction_settings(
+    State(state): State<AppState>,
+    admin: AdminSession,
+    Json(req): Json<AuctionSettings>,
+) -> ApiResult<Json<AuctionSettingsView>> {
+    sensitive(&admin, Permission::ManageSettings)?;
+    if !req.is_valid() {
+        return Err(ApiError(ErrorCode::InvalidParameter));
+    }
+    let mut tx = state.db.begin().await?;
+    let old = forum_db::settings::auction(&mut *tx).await?;
+    forum_db::settings::set_auction(&mut *tx, &req, admin.user_id).await?;
+    audit::append(
+        &mut *tx,
+        admin.user_id,
+        "settings.auction",
+        Some("settings:auction"),
+        None,
+        &json!({ "old": old, "new": req }),
+    )
+    .await?;
+    outbox::staff_alert(
+        &mut *tx,
+        "settings.auction",
+        &format!(
+            "站长修改了拍卖参数：{}",
+            serde_json::to_string(&req).map_err(ApiError::internal)?
+        ),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(auction_settings_view(req)))
 }
 
 #[derive(Debug, Serialize, ToSchema)]

@@ -1,0 +1,423 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 一场拍卖的全部字段。$1 id\nSELECT id, seller_id, forum_id, topic_id, chain_id, verifying_contract, seller, currency, cny_per_usdt,\n       start_price::text AS \"start_price!\", increment::text AS \"increment!\", reserve_price::text AS \"reserve_price!\",\n       duration_secs, eligibility, eligibility_value::text AS \"eligibility_value?\", terms, content_hash, draft, auth,\n       auth_hash, sign_deadline, seller_signature, snipe_window_secs, snipe_extension_secs, extension_cap_secs, state,\n       starts_at, ends_at, max_ends_at, top_amount::text AS \"top_amount?\", top_bidder_id, bid_count, round,\n       pay_deadline, order_id, created_at\nFROM auctions\nWHERE id = $1\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "seller_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "seller_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "forum_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "forum_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "topic_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "topic_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "chain_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "chain_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "verifying_contract",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "verifying_contract"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "seller",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "seller"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "currency",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "currency"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "cny_per_usdt",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "cny_per_usdt"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "start_price!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "increment!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "reserve_price!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "duration_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "duration_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "eligibility",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "eligibility"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "eligibility_value?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "terms",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "terms"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "content_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "content_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "draft",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "draft"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "auth",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "auth"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "auth_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "auth_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "sign_deadline",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "sign_deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "seller_signature",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "seller_signature"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "snipe_window_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "snipe_window_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "snipe_extension_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "snipe_extension_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "extension_cap_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "extension_cap_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "state",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 26,
+        "name": "starts_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "starts_at"
+          }
+        }
+      },
+      {
+        "ordinal": 27,
+        "name": "ends_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "ends_at"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "max_ends_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "max_ends_at"
+          }
+        }
+      },
+      {
+        "ordinal": 29,
+        "name": "top_amount?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 30,
+        "name": "top_bidder_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "top_bidder_id"
+          }
+        }
+      },
+      {
+        "ordinal": 31,
+        "name": "bid_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "bid_count"
+          }
+        }
+      },
+      {
+        "ordinal": 32,
+        "name": "round",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "round"
+          }
+        }
+      },
+      {
+        "ordinal": 33,
+        "name": "pay_deadline",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "pay_deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 34,
+        "name": "order_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "order_id"
+          }
+        }
+      },
+      {
+        "ordinal": 35,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      false,
+      false,
+      null,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      null,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "644ad3fa315019f467c2eccdd0395d6d1de0a7949109997fd3acfa061a73258e"
+}

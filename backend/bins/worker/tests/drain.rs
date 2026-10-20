@@ -148,12 +148,21 @@ async fn in_site_notifications_are_stored_not_emailed(pool: PgPool) {
     )
     .await
     .unwrap();
+    // 拍卖通知（forum_db::auctions::notify 写的形状）
+    outbox::enqueue(
+        &pool,
+        forum_db::auctions::NOTIFY,
+        &json!({"to": 1, "auction_id": 7, "topic_id": 3, "event": "outbid", "amount": "130000"}),
+        0,
+    )
+    .await
+    .unwrap();
     let mailer = Recorder::default();
     assert_eq!(
         forum_worker::drain_once(&pool, &mailer, None, None)
             .await
             .unwrap(),
-        3
+        4
     );
     assert!(mailer.sent.lock().unwrap().is_empty());
     let sent: Option<time::OffsetDateTime> =
@@ -180,6 +189,11 @@ async fn in_site_notifications_are_stored_not_emailed(pool: PgPool) {
                 "system".into(),
                 None,
                 json!({"address": "0xabc", "event": "withdraw_address_added"})
+            ),
+            (
+                "auction".into(),
+                None,
+                json!({"auction_id": 7, "topic_id": 3, "event": "outbid", "amount": "130000"})
             ),
         ]
     );

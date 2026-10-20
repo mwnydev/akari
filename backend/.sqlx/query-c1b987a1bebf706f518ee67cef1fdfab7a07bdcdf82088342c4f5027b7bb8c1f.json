@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auctions SET state = 1, seller_signature = $3, topic_id = $4, draft = NULL, starts_at = now(),\n                ends_at = now() + make_interval(secs => duration_secs),\n                max_ends_at = now() + make_interval(secs => duration_secs + extension_cap_secs),\n                updated_at = now()\n         WHERE id = $1 AND state = 0 AND auth_hash = $2 AND sign_deadline > now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c1b987a1bebf706f518ee67cef1fdfab7a07bdcdf82088342c4f5027b7bb8c1f"
+}

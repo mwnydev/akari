@@ -10,6 +10,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use forum_content::Cleaned;
 use forum_core::ErrorCode;
+use forum_core::auction::Currency;
 use forum_db::topics::{self, FLAG_HIDDEN, FLAG_PINNED, Topic};
 use forum_db::users::Actor;
 use forum_kv::forum_cache::{self, BOARD_CAP};
@@ -25,9 +26,10 @@ use crate::error::{ApiError, ApiResult, ErrorBody};
 use crate::guest::{self, Entry};
 use crate::middleware::ClientIp;
 use crate::posting::{self, TOPIC_RATE, after_commit, micros};
+use crate::routes::auctions::AuctionState;
 use crate::routes::hot::{self, TopicSort};
 use crate::state::AppState;
-use crate::views::{BoardResponse, CreatedTopic, ForumView, TopicSummary};
+use crate::views::{AuctionSummary, BoardResponse, CreatedTopic, ForumView, TopicSummary};
 
 /// 每页主题数：前 200 页 × 50 = 有序集合上限 1 万。
 pub const TOPICS_PER_PAGE: usize = 50;
@@ -226,13 +228,25 @@ pub(crate) async fn respond(
     })
 }
 
-/// 列表行：主题摘要，交易帖补上剩余库存（本页的交易帖一次查询）。
+/// 列表行：主题摘要，交易帖补上剩余库存、拍卖帖补上当前价与结束时间（本页的交易帖、拍卖帖各一次查询）。
 pub async fn summaries(state: &AppState, topics: &[Topic]) -> ApiResult<Vec<TopicSummary>> {
     let listings: Vec<i64> = topics.iter().filter_map(|t| t.listing_id).collect();
     let stock: HashMap<i64, i64> = topics::listing_stock(&state.db, &listings)
         .await?
         .into_iter()
         .collect();
+    let auction_topics: Vec<i64> = topics
+        .iter()
+        .filter(|t| t.kind == topics::KIND_AUCTION)
+        .map(|t| t.id)
+        .collect();
+    let now = OffsetDateTime::now_utc();
+    let mut auctions: HashMap<i64, AuctionSummary> =
+        forum_db::auctions::summaries(&state.db, &auction_topics)
+            .await?
+            .into_iter()
+            .filter_map(|a| Some((a.topic_id, auction_summary(a, now)?)))
+            .collect();
     Ok(topics
         .iter()
         .map(|t| {
@@ -240,9 +254,26 @@ pub async fn summaries(state: &AppState, topics: &[Topic]) -> ApiResult<Vec<Topi
             if let Some(trade) = &mut s.trade {
                 trade.stock = stock.get(&trade.listing_id).copied();
             }
+            s.auction = auctions.remove(&t.id);
             s
         })
         .collect())
+}
+
+fn auction_summary(a: forum_db::auctions::Summary, now: OffsetDateTime) -> Option<AuctionSummary> {
+    let currency = Currency::from_code(a.currency)?;
+    Some(AuctionSummary {
+        auction_id: a.id,
+        state: AuctionState::of(a.state, Some(a.ends_at), now)
+            .as_str()
+            .to_owned(),
+        currency: currency.as_str().to_owned(),
+        current: a.current,
+        cny_per_usdt: (a.cny_per_usdt != 0).then_some(a.cny_per_usdt),
+        bids: a.bid_count,
+        ends_at: a.ends_at,
+        reserve_met: a.reserve_met,
+    })
 }
 
 /// 主题列表里出现的作者、最后回复者与参与者头像。
@@ -315,7 +346,7 @@ pub async fn create_topic(
     ))
 }
 
-/// 通过发帖检查（权限、过滤、限流）的新主题；交易帖与普通主题共用。
+/// 通过发帖检查（权限、过滤、限流）的新主题；交易帖、拍卖帖与普通主题共用。
 pub struct PreparedTopic {
     pub actor: Actor,
     pub forum_id: i32,
@@ -352,7 +383,7 @@ impl PreparedTopic {
     }
 }
 
-/// 发主题前的检查：登录、板块权限（交易帖只能发在允许交易的板块）、标题与内容过滤、新用户人机验证与限制、限流。
+/// 发主题前的检查：登录、板块权限（交易帖与拍卖帖只能发在允许交易的板块）、标题与内容过滤、新用户人机验证与限制、限流。
 pub async fn prepare_topic(
     state: &AppState,
     session: &Session,
@@ -376,7 +407,7 @@ pub async fn prepare_topic(
         }
     }
     posting::check_sanctions(state, actor.id, Some(forum.id)).await?;
-    if kind == topics::KIND_TRADE && !forum.allow_trade {
+    if matches!(kind, topics::KIND_TRADE | topics::KIND_AUCTION) && !forum.allow_trade {
         return Err(ApiError(ErrorCode::TradeNotAllowed));
     }
     let title = forum_content::clean_title(&req.title)?;

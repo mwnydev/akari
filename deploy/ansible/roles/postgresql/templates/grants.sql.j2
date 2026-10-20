@@ -18,29 +18,34 @@ REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM forum_api, forum_worker, forum
 -- ---------------------------------------------------------------------------------------------------------------
 GRANT SELECT, INSERT, UPDATE ON users, user_devices, user_levels, posts, post_sources, topics, floor_comments,
   post_counters, conversations, notification_reads, order_message_reads, passkeys, offers, uploads,
-  sanctions, staff_suspensions, site_settings, report_cases TO forum_api;
+  sanctions, staff_suspensions, site_settings, report_cases, auctions TO forum_api;
 GRANT SELECT, INSERT, DELETE ON post_likes, user_blocks, staff_roles TO forum_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON post_hides TO forum_api;
 GRANT SELECT, INSERT ON post_edits, reports, messages, order_messages, trade_listings, wallets, exp_ledger,
-  admin_audit_logs, arbitration_rulings, arbitration_statements, withdraw_credit_ledger TO forum_api;
+  admin_audit_logs, arbitration_rulings, arbitration_statements, withdraw_credit_ledger, auction_bids TO forum_api;
 GRANT SELECT, INSERT ON withdraw_addresses TO forum_api;
 GRANT UPDATE (revoked_at) ON withdraw_addresses TO forum_api;
 GRANT SELECT, UPDATE ON arbitration_cases, arbitration_assignments TO forum_api;
 GRANT SELECT ON forums TO forum_api;
 GRANT UPDATE (name, description, color, position, allow_trade) ON forums TO forum_api;
 GRANT SELECT ON chains, escrow_orders, order_negotiations, notifications, level_thresholds, user_trade_stats,
-  sponsorships, withdraw_credits, hot_topics TO forum_api;
+  sponsorships, withdraw_credits, hot_topics, auction_proofs TO forum_api;
 GRANT INSERT ON outbox TO forum_api;
 GRANT SELECT (id, dedupe_key, created_at) ON outbox TO forum_api;
 -- 回帖与发主题在一条语句里先取楼层 ID（nextval），其余表的 identity 列插入不需要序列权限
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO forum_api;
 
 -- ---------------------------------------------------------------------------------------------------------------
--- forum_worker：发件箱投递、浏览数回写、报价过期、经验与信誉校对、图片转换、仲裁分配与期限、热门排名。
+-- forum_worker：发件箱投递、浏览数回写、报价过期、经验与信誉校对、图片转换、仲裁分配与期限、热门排名、
+-- 拍卖结算（结束、违约禁拍与审计、递补；成交证明由 forum-sponsor 写入）。
 -- ---------------------------------------------------------------------------------------------------------------
-GRANT SELECT ON outbox TO forum_worker;
+GRANT SELECT, INSERT ON outbox TO forum_worker;
 GRANT UPDATE (attempts, last_error, next_attempt_at, failed_at, payload, sent_at) ON outbox TO forum_worker;
-GRANT SELECT, INSERT ON notifications, exp_ledger, arbitration_assignments TO forum_worker;
+GRANT SELECT, INSERT ON notifications, exp_ledger, arbitration_assignments, sanctions, auction_passes,
+  auction_defaults TO forum_worker;
+GRANT INSERT, SELECT (id) ON admin_audit_logs TO forum_worker;
+GRANT SELECT ON auctions TO forum_worker;
+GRANT UPDATE (state, round, pay_deadline, updated_at) ON auctions TO forum_worker;
 GRANT UPDATE (ended_at, ended_reason) ON arbitration_assignments TO forum_worker;
 GRANT SELECT ON arbitration_cases TO forum_worker;
 GRANT UPDATE (status, ready_at, stalled_alerted_at, timeout_alerted_at, updated_at) ON arbitration_cases TO forum_worker;
@@ -55,29 +60,37 @@ GRANT SELECT ON post_counters TO forum_worker;
 GRANT UPDATE (like_notify_pending, likes_notified_at) ON post_counters TO forum_worker;
 GRANT SELECT, INSERT, DELETE ON hot_topics TO forum_worker;
 GRANT SELECT ON posts, post_likes, users, staff_roles, arbitration_rulings, level_thresholds, messages,
-  conversations, order_messages, escrow_orders, chains TO forum_worker;
+  conversations, order_messages, escrow_orders, chains, wallets, site_settings, auction_bids, auction_proofs TO forum_worker;
 
 -- ---------------------------------------------------------------------------------------------------------------
--- forum_indexer：链上事件 → 订单（唯一能写订单、链上事件、交易信誉的账号）；订单聊天与仲裁建案随订单状态写入。
+-- forum_indexer：链上事件 → 订单（唯一能写订单、链上事件、交易信誉的账号）；订单聊天、仲裁建案（含审计日志）、
+-- 交易经验与拍卖成交随订单状态写入。
 -- ---------------------------------------------------------------------------------------------------------------
 GRANT SELECT, INSERT, UPDATE, DELETE ON escrow_events, indexer_checkpoints TO forum_indexer;
 GRANT SELECT, INSERT, UPDATE ON chains, escrow_orders, indexer_cursors, user_trade_stats,
   arbitration_cases TO forum_indexer;
-GRANT SELECT, INSERT ON messages, order_messages, order_negotiations, withdraw_credit_ledger TO forum_indexer;
+GRANT SELECT, INSERT ON messages, order_messages, order_negotiations, withdraw_credit_ledger, exp_ledger TO forum_indexer;
+GRANT SELECT, INSERT ON user_levels TO forum_indexer;
+GRANT UPDATE (exp, level, updated_at) ON user_levels TO forum_indexer;
+GRANT INSERT, SELECT (id) ON admin_audit_logs TO forum_indexer;
+GRANT SELECT ON auctions TO forum_indexer;
+GRANT UPDATE (state, order_id, updated_at) ON auctions TO forum_indexer;
 GRANT SELECT ON conversations TO forum_indexer;
 GRANT UPDATE (last_message_id, low_read_id, high_read_id) ON conversations TO forum_indexer;
 GRANT SELECT ON offers TO forum_indexer;
 GRANT UPDATE (status, updated_at) ON offers TO forum_indexer;
-GRANT SELECT ON wallets, users, staff_roles, arbitration_rulings TO forum_indexer;
+GRANT SELECT ON wallets, users, staff_roles, arbitration_rulings, level_thresholds TO forum_indexer;
 GRANT INSERT ON outbox TO forum_indexer;
 GRANT SELECT (id, dedupe_key, created_at) ON outbox TO forum_indexer;
 
 -- ---------------------------------------------------------------------------------------------------------------
--- forum_sponsor：代付签名与代发；只给本人已生效的提币地址代付。
+-- forum_sponsor：代付签名与代发；只给本人已生效的提币地址代付；拍卖成交证明（核对拍卖与出价后签名，唯一能写证明的账号）。
 -- ---------------------------------------------------------------------------------------------------------------
 GRANT SELECT, INSERT, UPDATE ON sponsorships, sponsor_accounts TO forum_sponsor;
 GRANT SELECT, INSERT ON sponsored_calls, withdraw_credit_ledger TO forum_sponsor;
-GRANT SELECT ON wallets, withdraw_addresses, withdraw_credits TO forum_sponsor;
+GRANT SELECT ON wallets, withdraw_addresses, withdraw_credits, site_settings, auctions, auction_bids,
+  auction_passes, auction_defaults TO forum_sponsor;
+GRANT SELECT, INSERT ON auction_proofs TO forum_sponsor;
 GRANT INSERT ON outbox TO forum_sponsor;
 GRANT SELECT (id, dedupe_key, created_at) ON outbox TO forum_sponsor;
 

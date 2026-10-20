@@ -1,0 +1,85 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 出价记录翻页（新的在前），带出价人用户名（接口层打码）。$1 auction_id, $2 before（不含）, $3 limit\nSELECT b.id, b.bidder_id, u.username, b.amount::text AS \"amount!\", b.linked, b.created_at\nFROM auction_bids b\nJOIN users u ON u.id = b.bidder_id\nWHERE b.auction_id = $1 AND b.id < $2\nORDER BY b.id DESC\nLIMIT $3\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auction_bids",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "bidder_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auction_bids",
+            "name": "bidder_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "linked",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "auction_bids",
+            "name": "linked"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auction_bids",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "efa0439d36cf2035b42aead27083e768819c540e47f0ca8be372d390319c527d"
+}

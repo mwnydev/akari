@@ -14,7 +14,10 @@ name = "forum-worker"
 path = "src/main.rs"
 
 [dependencies]
+alloy.workspace = true
 anyhow.workspace = true
+async-trait.workspace = true
+forum-chain.workspace = true
 forum-core.workspace = true
 forum-db.workspace = true
 forum-kv.workspace = true

@@ -1287,6 +1287,50 @@ async fn owner_manages_staff_settings_and_suspensions(db: PgPool) {
     let saved = forum_db::settings::moderation(&db).await.unwrap();
     assert_eq!((saved.anomaly_deletes, saved.rate_delete), (7, 99));
 
+    // 拍卖参数与上线开关：默认关闭；越界拒绝；缺的字段取默认值。
+    let r = admin_call(
+        &app,
+        "GET",
+        "/api/v1/admin/settings/auction",
+        None,
+        &o.admin,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.body["settings"]["enabled"], false);
+    assert_eq!(r.body["defaults"]["pay_window_secs"], 48 * 3600);
+    assert_eq!(r.body["min"]["snipe_window_secs"], 60);
+    let put_auction = |body: Value| {
+        let (app, c) = (app.clone(), o.admin.clone());
+        async move {
+            admin_call(
+                &app,
+                "PUT",
+                "/api/v1/admin/settings/auction",
+                Some(body),
+                &c,
+            )
+            .await
+        }
+    };
+    assert_eq!(
+        put_auction(json!({"snipe_window_secs": 30})).await.status,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        put_auction(json!({"min_duration_secs": 7 * DAY, "max_duration_secs": DAY}))
+            .await
+            .status,
+        StatusCode::BAD_REQUEST
+    );
+    let r = put_auction(json!({"enabled": true, "pay_window_secs": 7200})).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(r.body["settings"]["enabled"], true);
+    assert_eq!(r.body["settings"]["snipe_window_secs"], 900);
+    let saved = forum_db::settings::auction(&db).await.unwrap();
+    assert!(saved.enabled);
+    assert_eq!(saved.pay_window_secs, 7200);
+
     // 恢复被暂停的管理权限
     let sid = staff::suspend(&db, u, "anomaly", &json!({}))
         .await
@@ -1317,6 +1361,7 @@ async fn owner_manages_staff_settings_and_suspensions(db: PgPool) {
             "staff.appoint",
             "staff.remove",
             "settings.moderation",
+            "settings.auction",
             "staff.reinstate"
         ]
     );
@@ -1324,7 +1369,7 @@ async fn owner_manages_staff_settings_and_suspensions(db: PgPool) {
         .fetch_one(&db)
         .await
         .unwrap();
-    assert_eq!(alerts, 5);
+    assert_eq!(alerts, 6);
     let r = admin_call(
         &app,
         "GET",
@@ -1333,7 +1378,7 @@ async fn owner_manages_staff_settings_and_suspensions(db: PgPool) {
         &o.admin,
     )
     .await;
-    assert_eq!(r.body["entries"].as_array().unwrap().len(), 5);
+    assert_eq!(r.body["entries"].as_array().unwrap().len(), 6);
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]

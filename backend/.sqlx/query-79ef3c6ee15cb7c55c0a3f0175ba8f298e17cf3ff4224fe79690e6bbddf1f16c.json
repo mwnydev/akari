@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auctions a SET state = CASE WHEN o.state <> 0 THEN 3 ELSE 2 END,\n                order_id = CASE WHEN o.state <> 0 THEN o.id END, updated_at = now()\n         FROM escrow_orders o\n         WHERE o.id = $1 AND o.auction_id IS NOT NULL AND a.auth_hash = o.offer_hash AND a.chain_id = o.chain_id\n           AND a.verifying_contract = o.contract\n           AND ((o.state <> 0 AND a.order_id IS DISTINCT FROM o.id) OR (o.state = 0 AND a.order_id = o.id))\n         RETURNING a.id AS auction_id, a.topic_id, a.forum_id, a.state",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "auction_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "topic_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "topic_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "forum_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "forum_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "state",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "state"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "79ef3c6ee15cb7c55c0a3f0175ba8f298e17cf3ff4224fe79690e6bbddf1f16c"
+}

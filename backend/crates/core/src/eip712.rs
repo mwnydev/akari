@@ -1,7 +1,9 @@
-//! 卖家报价的 EIP-712 哈希，与 `contracts/src/Escrow.sol` 的 `hashOffer` 逐字节一致。
+//! 卖家报价、拍卖授权与平台成交证明的 EIP-712 哈希，与 `contracts/src/Escrow.sol` 的 `hashOffer` /
+//! `hashAuction` / `hashProof` 逐字节一致。
 //!
-//! 报价结构只含静态类型，`abi.encode` 即每个字段左补零成 32 字节；`bytes32` 原样。
-//! 交叉校验向量由 `contracts/test/OfferHashVector.t.sol` 产生，见本文件测试。
+//! 三个结构都只含静态类型，`abi.encode` 即每个字段左补零成 32 字节；`bytes32` 原样。
+//! 报价的交叉校验向量由 `contracts/test/OfferHashVector.t.sol` 产生；拍卖授权与成交证明的向量来自部署在 anvil 上的
+//! `Escrow`（`bins/sponsor/tests/auction.rs` 每次都与链上 `hashAuction` / `hashProof` 再比一次），见本文件测试。
 
 use std::fmt;
 use std::str::FromStr;
@@ -250,6 +252,11 @@ const DOMAIN_TYPE: &str =
     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
 /// 与 `Escrow.OFFER_TYPEHASH` 的原文相同。
 pub const OFFER_TYPE: &str = "Offer(address seller,address buyer,address token,uint256 amount,uint8 feePayer,uint16 maxFeeBps,uint256 maxBaseGas,uint256 maxMinFee,uint256 bond,uint16 lateSlashBps,bool instant,uint32 shipWindow,uint32 confirmWindow,bytes32 listingHash,uint64 expiry,uint32 maxFills,uint256 nonce)";
+/// 与 `Escrow.AUCTION_TYPEHASH` 的原文相同。
+pub const AUCTION_TYPE: &str = "AuctionAuth(address seller,address token,uint256 auctionId,uint256 reservePrice,uint8 currency,uint32 cnyPerUsdt,uint8 feePayer,uint16 maxFeeBps,uint256 maxBaseGas,uint256 maxMinFee,bool instant,uint32 shipWindow,uint32 confirmWindow,bytes32 listingHash,uint64 expiry)";
+/// 与 `Escrow.PROOF_TYPEHASH` 的原文相同。
+pub const PROOF_TYPE: &str =
+    "SettlementProof(bytes32 authHash,address winner,uint256 price,uint64 payDeadline)";
 
 fn word_u64(v: u64) -> [u8; 32] {
     U256::from_u128(u128::from(v)).0
@@ -262,6 +269,15 @@ fn word_addr(a: &Address) -> [u8; 32] {
 }
 
 impl Domain {
+    /// `keccak256(0x1901 ‖ domainSeparator ‖ structHash)`：签名的摘要。
+    pub fn digest(&self, struct_hash: &[u8; 32]) -> B256 {
+        let mut buf = [0u8; 66];
+        buf[..2].copy_from_slice(b"\x19\x01");
+        buf[2..34].copy_from_slice(&self.separator());
+        buf[34..].copy_from_slice(struct_hash);
+        B256(keccak256(&buf))
+    }
+
     pub fn separator(&self) -> [u8; 32] {
         let mut buf = Vec::with_capacity(32 * 5);
         buf.extend_from_slice(&keccak256(DOMAIN_TYPE.as_bytes()));
@@ -299,13 +315,109 @@ impl Offer {
         keccak256(words.as_flattened())
     }
 
-    /// `Escrow.hashOffer`：`keccak256(0x1901 ‖ domainSeparator ‖ structHash)`，即卖家签名的摘要。
+    /// `Escrow.hashOffer`：卖家签名的摘要。
     pub fn hash(&self, domain: &Domain) -> B256 {
-        let mut buf = [0u8; 66];
-        buf[..2].copy_from_slice(b"\x19\x01");
-        buf[2..34].copy_from_slice(&domain.separator());
-        buf[34..].copy_from_slice(&self.struct_hash());
-        B256(keccak256(&buf))
+        domain.digest(&self.struct_hash())
+    }
+}
+
+/// 与 `Escrow.AuctionAuth` 字段一一对应、同序：卖家挂拍时签一次的拍卖授权（plan 第 6 节、ADR 0011）。
+/// JSON 字段名与 EIP-712 typed data 的 `message` 相同（驼峰）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AuctionAuth {
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub seller: Address,
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub token: Address,
+    /// 站内拍卖 ID（与卖家地址一起决定链上「只能成交一次」的键）。
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub auction_id: U256,
+    /// 拍卖币种的最小单位（USDT 最小单位或分）。
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub reserve_price: U256,
+    /// 0 = USDT、1 = 人民币。
+    pub currency: u8,
+    /// 人民币拍卖的卖家汇率（4 位小数定点数）；USDT 拍卖为 0。
+    pub cny_per_usdt: u32,
+    pub fee_payer: u8,
+    pub max_fee_bps: u16,
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub max_base_gas: U256,
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub max_min_fee: U256,
+    pub instant: bool,
+    pub ship_window: u32,
+    pub confirm_window: u32,
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub listing_hash: B256,
+    /// Unix 秒；成交证明的付款截止时间不能晚于它。
+    pub expiry: u64,
+}
+
+impl AuctionAuth {
+    /// `keccak256(abi.encode(AUCTION_TYPEHASH, auth))`
+    pub fn struct_hash(&self) -> [u8; 32] {
+        let words: [[u8; 32]; 16] = [
+            keccak256(AUCTION_TYPE.as_bytes()),
+            word_addr(&self.seller),
+            word_addr(&self.token),
+            self.auction_id.0,
+            self.reserve_price.0,
+            word_u64(self.currency.into()),
+            word_u64(self.cny_per_usdt.into()),
+            word_u64(self.fee_payer.into()),
+            word_u64(self.max_fee_bps.into()),
+            self.max_base_gas.0,
+            self.max_min_fee.0,
+            word_u64(self.instant.into()),
+            word_u64(self.ship_window.into()),
+            word_u64(self.confirm_window.into()),
+            self.listing_hash.0,
+            word_u64(self.expiry),
+        ];
+        keccak256(words.as_flattened())
+    }
+
+    /// `Escrow.hashAuction`：卖家签名的摘要，也是成交证明里的 `authHash`。
+    pub fn hash(&self, domain: &Domain) -> B256 {
+        domain.digest(&self.struct_hash())
+    }
+}
+
+/// 与 `Escrow.SettlementProof` 字段一一对应、同序：forum-sponsor 签的成交证明。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SettlementProof {
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub auth_hash: B256,
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub winner: Address,
+    /// 成交价，拍卖币种的最小单位。
+    #[cfg_attr(feature = "openapi", schema(value_type = String))]
+    pub price: U256,
+    /// Unix 秒。
+    pub pay_deadline: u64,
+}
+
+impl SettlementProof {
+    /// `keccak256(abi.encode(PROOF_TYPEHASH, proof))`
+    pub fn struct_hash(&self) -> [u8; 32] {
+        let words: [[u8; 32]; 5] = [
+            keccak256(PROOF_TYPE.as_bytes()),
+            self.auth_hash.0,
+            word_addr(&self.winner),
+            self.price.0,
+            word_u64(self.pay_deadline),
+        ];
+        keccak256(words.as_flattened())
+    }
+
+    /// `Escrow.hashProof`：平台签名的摘要（`auctionSigner` 是 EOA，直接对它做 ECDSA）。
+    pub fn hash(&self, domain: &Domain) -> B256 {
+        domain.digest(&self.struct_hash())
     }
 }
 
@@ -437,6 +549,76 @@ mod tests {
         assert_eq!(json["listingHash"].as_str().unwrap().len(), 66);
         let back: Offer = serde_json::from_value(json).unwrap();
         assert_eq!(back, offer);
+    }
+
+    /// 拍卖授权与成交证明的向量：与报价向量同一签名域，用 `cast keccak` / `cast abi-encode` 独立按 EIP-712 算出
+    /// （不经过本文件的实现）；部署在 anvil 上的合约每次端到端测试再比一次（`bins/api/tests/auction_e2e.rs`）。
+    fn auction_vector() -> AuctionAuth {
+        AuctionAuth {
+            seller: "0x1111111111111111111111111111111111111111"
+                .parse()
+                .unwrap(),
+            token: "0x3333333333333333333333333333333333333333"
+                .parse()
+                .unwrap(),
+            auction_id: U256::from_u128(42),
+            reserve_price: U256::from_u128(57_600),
+            currency: 1,
+            cny_per_usdt: 72_000,
+            fee_payer: 2,
+            max_fee_bps: 150,
+            max_base_gas: U256::from_u128(100_000),
+            max_min_fee: U256::from_u128(1_000_000),
+            instant: true,
+            ship_window: 259_200,
+            confirm_window: 604_800,
+            listing_hash: "0xabababababababababababababababababababababababababababababababab"
+                .parse()
+                .unwrap(),
+            expiry: 1_800_000_000,
+        }
+    }
+
+    #[test]
+    fn auction_and_proof_hashes_match_eip712() {
+        let (_, domain) = vector();
+        assert_eq!(
+            B256(keccak256(AUCTION_TYPE.as_bytes())).to_string(),
+            "0xea9c5a4f91f4a8a732e9b6a2556974b71ca1b91be7a7a3b5469eb993efaf1486"
+        );
+        assert_eq!(
+            B256(keccak256(PROOF_TYPE.as_bytes())).to_string(),
+            "0x8726f4b29d40eabed5e222923493cbbc201c7ff07ebc52f650b1284463883821"
+        );
+        let auth = auction_vector();
+        let auth_hash = auth.hash(&domain);
+        assert_eq!(
+            auth_hash.to_string(),
+            "0xadcb9a67ffc1d376d0d4836fbb834e06372580719c341b7b6255b53b790bc5b2"
+        );
+        let proof = SettlementProof {
+            auth_hash,
+            winner: "0x2222222222222222222222222222222222222222"
+                .parse()
+                .unwrap(),
+            price: U256::from_u128(61_000),
+            pay_deadline: 1_800_172_800,
+        };
+        assert_eq!(
+            proof.hash(&domain).to_string(),
+            "0xb2faf99cee710792e68a8297b1b0b69623f9ea0a3cf2594e40fadb60a5f75093"
+        );
+        // JSON 即 typed data 的 message（驼峰、金额为十进制字符串）
+        let json = serde_json::to_value(auth).unwrap();
+        assert_eq!(json["reservePrice"], "57600");
+        assert_eq!(json["cnyPerUsdt"], 72_000);
+        assert_eq!(serde_json::from_value::<AuctionAuth>(json).unwrap(), auth);
+        let json = serde_json::to_value(proof).unwrap();
+        assert_eq!(json["payDeadline"], 1_800_172_800);
+        assert_eq!(
+            serde_json::from_value::<SettlementProof>(json).unwrap(),
+            proof
+        );
     }
 
     const VECTOR_TYPEHASH: &str =

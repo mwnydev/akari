@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 下一位成交候选：达到保留价、还没拿过成交证明、没被跳过的出价人里出价最高的一口（同价先出的优先）。\n-- 出价只会越来越高，所以每人只看最高的那口也就是排在最前的那口。$1 auction_id\nSELECT b.id AS bid_id, b.bidder_id, b.amount::text AS \"amount!\", b.amount_usdt::text AS \"amount_usdt!\"\nFROM auction_bids b\nJOIN auctions a ON a.id = b.auction_id\nWHERE b.auction_id = $1 AND b.amount >= a.reserve_price AND b.bidder_id <> a.seller_id\n  AND NOT EXISTS (SELECT 1 FROM auction_proofs p WHERE p.auction_id = $1 AND p.bidder_id = b.bidder_id)\n  AND NOT EXISTS (SELECT 1 FROM auction_passes s WHERE s.auction_id = $1 AND s.bidder_id = b.bidder_id)\nORDER BY b.amount DESC, b.id\nLIMIT 1\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "bid_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auction_bids",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "bidder_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auction_bids",
+            "name": "bidder_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "amount!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "amount_usdt!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "8ea836cdf8070386360de97f0d3cf0141f1b1d6961e1bf9ad27e5f1d19674049"
+}

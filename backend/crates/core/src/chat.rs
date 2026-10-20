@@ -74,7 +74,7 @@ pub struct OrderMessage {
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Notification {
     pub id: i64,
-    /// `reply` / `mention` / `comment` / `like` / `message` / `order` / `offer` / `system`。
+    /// `reply` / `mention` / `comment` / `like` / `message` / `order` / `offer` / `auction` / `system`。
     pub kind: String,
     /// 触发者（回复、@、评论的作者，最近点赞的人，报价的对方）；系统通知为空。
     pub actor_id: Option<i64>,
@@ -83,6 +83,8 @@ pub struct Notification {
     /// like 为 `{topic_id, post_id, floor, count, likers}`（合并窗口内新增的赞数与最近几位，新的在前）；
     /// message 为 `{conversation_id, message_id}`；
     /// offer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；
+    /// auction 为 `{auction_id, topic_id, event, …}`（`event`：`outbid` 被超价、`won` 中标、`runner_up` 递补中标、
+    /// `sold` / `unsold` 卖家的成交（待付款）与流拍、`defaulted` 逾期违约，见 `forum_db::auctions`）；
     /// system 为发件箱原样内容（含 `event`）。
     #[cfg_attr(feature = "openapi", schema(value_type = Object))]
     pub payload: Value,
@@ -155,6 +157,27 @@ pub enum Event {
         conversation_id: Option<i64>,
         order_id: Option<i64>,
         user_id: i64,
+    },
+    /// 订阅了拍卖帖主题页的连接：新出价。金额为拍卖币种最小单位（十进制字符串），出价人已打码。
+    AuctionBid {
+        topic_id: i64,
+        auction_id: i64,
+        bid_id: i64,
+        amount: String,
+        bidder: String,
+        /// 出价人与本场其他出价人是关联账号（同设备），提示其他用户。
+        linked: bool,
+        bids: i32,
+        /// 顺延后的结束时间。
+        #[serde(with = "time::serde::rfc3339")]
+        ends_at: OffsetDateTime,
+        reserve_met: bool,
+    },
+    /// 订阅了拍卖帖主题页的连接：拍卖状态变化（结束、成交、流拍……）；详情用 `GET /api/v1/auctions/{id}` 取。
+    AuctionState {
+        topic_id: i64,
+        auction_id: i64,
+        state: String,
     },
 }
 

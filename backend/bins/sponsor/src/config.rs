@@ -132,6 +132,16 @@ impl Config {
     pub fn entry_point(&self) -> Address {
         self.aa.entry_point
     }
+
+    /// 拍卖授权与成交证明的 EIP-712 签名域（本链 + Escrow）。
+    pub fn domain(&self) -> forum_core::eip712::Domain {
+        forum_core::eip712::Domain {
+            chain_id: self.chain.chain_id,
+            verifying_contract: forum_core::eip712::Address(
+                self.chain.contracts.escrow.into_array(),
+            ),
+        }
+    }
 }
 
 impl Default for RelayerConfig {

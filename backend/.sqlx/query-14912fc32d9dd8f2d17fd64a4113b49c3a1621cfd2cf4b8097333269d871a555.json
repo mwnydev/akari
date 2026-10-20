@@ -1,0 +1,119 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT auction_id, round, bid_id, bidder_id, auth_hash, winner, price::text AS \"price!\", pay_deadline,\n                  signature\n           FROM auction_proofs WHERE auth_hash = $1 ORDER BY round DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "auction_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auction_proofs",
+            "name": "auction_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "round",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "auction_proofs",
+            "name": "round"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "bid_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auction_proofs",
+            "name": "bid_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "bidder_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auction_proofs",
+            "name": "bidder_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "auth_hash",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "auction_proofs",
+            "name": "auth_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "winner",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "auction_proofs",
+            "name": "winner"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "price!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "pay_deadline",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auction_proofs",
+            "name": "pay_deadline"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "signature",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "auction_proofs",
+            "name": "signature"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "14912fc32d9dd8f2d17fd64a4113b49c3a1621cfd2cf4b8097333269d871a555"
+}

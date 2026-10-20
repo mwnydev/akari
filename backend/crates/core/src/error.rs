@@ -140,6 +140,30 @@ pub enum ErrorCode {
     ReportResolved,
     #[error("ruling differs from the signed one")]
     RulingMismatch,
+    #[error("auctions are not open")]
+    AuctionsDisabled,
+    #[error("action not allowed in the current auction state")]
+    AuctionUnavailable,
+    #[error("auction duration out of range")]
+    AuctionDurationInvalid,
+    #[error("auction increment too low")]
+    AuctionIncrementTooLow,
+    #[error("auction signing window expired")]
+    AuctionSignExpired,
+    #[error("invalid auction signature")]
+    AuctionSignatureInvalid,
+    #[error("auction already has bids")]
+    AuctionHasBids,
+    #[error("bid below the minimum")]
+    BidTooLow,
+    #[error("seller or linked account cannot bid")]
+    BidBySeller,
+    #[error("already the highest bidder")]
+    BidAlreadyLeading,
+    #[error("bid above the new account cap")]
+    BidNewAccountCap,
+    #[error("wallet balance below the bid requirement")]
+    BidBalanceInsufficient,
     #[error("internal error")]
     Internal,
 }
@@ -220,6 +244,18 @@ impl ErrorCode {
             }
             Self::ReportResolved => "这条举报已经处理过了",
             Self::RulingMismatch => "提交的裁决与 Passkey 确认的内容不一致，请重新确认",
+            Self::AuctionsDisabled => "拍卖功能暂未开放",
+            Self::AuctionUnavailable => "拍卖当前状态不能进行这项操作",
+            Self::AuctionDurationInvalid => "拍卖时长超出允许的范围",
+            Self::AuctionIncrementTooLow => "加价幅度不能低于 1 USDT，也不能低于起拍价的 1%",
+            Self::AuctionSignExpired => "签名已超时，请重新发起签名",
+            Self::AuctionSignatureInvalid => "拍卖授权签名无效，请重新签名",
+            Self::AuctionHasBids => "已经有人出价，不能取消拍卖",
+            Self::BidTooLow => "出价低于当前最低出价，请刷新后重试",
+            Self::BidBySeller => "卖家本人及关联账号不能出价",
+            Self::BidAlreadyLeading => "你已是最高出价者",
+            Self::BidNewAccountCap => "新注册账号单场出价有上限（默认注册满 7 天后解除）",
+            Self::BidBalanceInsufficient => "钱包 USDT 余额未达到卖家要求的出价资格",
             Self::Internal => "服务暂时不可用，请稍后再试",
         }
     }

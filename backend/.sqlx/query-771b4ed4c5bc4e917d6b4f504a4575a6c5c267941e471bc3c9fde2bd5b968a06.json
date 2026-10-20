@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auctions SET state = 5, updated_at = now()\n         WHERE id = $1 AND seller_id = $2 AND (state = 0 OR (state = 1 AND bid_count = 0 AND ends_at > now()))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "771b4ed4c5bc4e917d6b4f504a4575a6c5c267941e471bc3c9fde2bd5b968a06"
+}

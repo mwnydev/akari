@@ -19,7 +19,8 @@ pub struct Sanction {
     pub ip: Option<String>,
     pub ends_at: Option<OffsetDateTime>,
     pub reason: String,
-    pub created_by: i64,
+    /// 处罚人；系统自动的处罚（拍卖违约禁拍）为空。
+    pub created_by: Option<i64>,
     pub created_at: OffsetDateTime,
     pub revoked_at: Option<OffsetDateTime>,
     pub revoked_by: Option<i64>,
@@ -39,7 +40,8 @@ pub struct NewSanction<'a> {
     pub forum_id: Option<i32>,
     pub ends_at: Option<OffsetDateTime>,
     pub reason: &'a str,
-    pub created_by: i64,
+    /// 处罚人；系统自动的处罚为空。
+    pub created_by: Option<i64>,
 }
 
 pub async fn create(db: impl PgExecutor<'_>, s: NewSanction<'_>) -> Result<i64, sqlx::Error> {

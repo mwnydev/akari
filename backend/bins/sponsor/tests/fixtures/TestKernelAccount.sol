@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.37;
 
-// 集成测试用（backend/bins/sponsor/tests/relay.rs），不部署到任何真实网络。
+// 集成测试用（backend/bins/sponsor/tests/relay.rs、backend/bins/api/tests/auction_e2e.rs），不部署到任何真实网络。
 // 用 ECDSA 所有者代替 Passkey，但 callData 入口与 Kernel v3.3 相同：ERC-7579 execute(bytes32 mode, bytes)。
 
 // 只为让 forge 一并编译 EntryPoint v0.7：测试从产物里取它的字节码。
@@ -40,6 +40,12 @@ contract TestKernelAccount is IAccount {
         }
         (address r,,) = ECDSA.tryRecover(MessageHashUtils.toEthSignedMessageHash(hash), op.signature);
         return r == owner ? 0 : 1;
+    }
+
+    /// ERC-1271：所有者对摘要的 ECDSA 签名（拍卖授权用，`backend/bins/api/tests/auction_e2e.rs`）。
+    function isValidSignature(bytes32 hash, bytes calldata sig) external view returns (bytes4) {
+        (address r,,) = ECDSA.tryRecover(hash, sig);
+        return r == owner ? bytes4(0x1626ba7e) : bytes4(0xffffffff);
     }
 
     function execute(bytes32 mode, bytes calldata data) external payable {

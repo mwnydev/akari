@@ -22,7 +22,9 @@ async fn main() -> anyhow::Result<()> {
             forum_kv::namespace_from_env()?,
         )),
         _ => {
-            tracing::warn!("VALKEY_URL not set: user cards refresh only when their cache expires");
+            tracing::warn!(
+                "VALKEY_URL not set: user cards and guest pages refresh only when their cache expires"
+            );
             None
         }
     };

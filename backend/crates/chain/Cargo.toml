@@ -20,7 +20,13 @@ toml.workspace = true
 tokio = { workspace = true, features = ["time"], optional = true }
 
 [dev-dependencies]
+alloy = { workspace = true, features = ["signer-local"] }
 tokio.workspace = true
+
+# 要本机 anvil 夹具；`cargo test --workspace` 里别的程序的测试依赖会打开这个特性。
+[[test]]
+name = "sig_anvil"
+required-features = ["anvil"]
 
 [lints]
 workspace = true

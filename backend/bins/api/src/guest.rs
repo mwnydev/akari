@@ -193,11 +193,9 @@ pub async fn topic_changed(state: &AppState, topic_id: i64) {
     invalidate(state, &[guest_cache::topic(topic_id)]).await;
 }
 
-/// 主题在列表里的样子变化（新主题、新回复、置顶、精华、锁定、隐藏、移动、改标题）：该主题、所在板块与首页。
+/// 主题在列表里的样子变化（新主题、新回复、置顶、精华、锁定、隐藏、移动、改标题、拍卖出价与状态）：该主题、所在板块与首页。
 pub async fn listing_changed(state: &AppState, topic_id: i64, forum_ids: &[i32]) {
-    let mut versions = vec![guest_cache::topic(topic_id), guest_cache::latest()];
-    versions.extend(forum_ids.iter().map(|&f| guest_cache::board(f)));
-    invalidate(state, &versions).await;
+    invalidate(state, &guest_cache::listing(topic_id, forum_ids)).await;
 }
 
 /// 板块本身变化（新建、改名、改可见等级、改颜色）：所有游客条目。后台改板块的接口必须调用。

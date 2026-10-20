@@ -1,0 +1,114 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 主题列表里拍卖帖的信息行（本页的拍卖帖一次查询）。$1 topic_ids\nSELECT id, topic_id AS \"topic_id!\", state, currency, cny_per_usdt, COALESCE(top_amount, start_price)::text AS \"current!\",\n       bid_count, ends_at AS \"ends_at!\", COALESCE(top_amount >= reserve_price, false) AS \"reserve_met!\"\nFROM auctions\nWHERE topic_id = ANY($1::bigint[])\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "topic_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "topic_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "state",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "currency",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "currency"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "cny_per_usdt",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "cny_per_usdt"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "current!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "bid_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "bid_count"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "ends_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "ends_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "reserve_met!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "78e811be4e493830f04bfabf5a48509a5a6bf8cbfaa581aa3993c85055496c2c"
+}

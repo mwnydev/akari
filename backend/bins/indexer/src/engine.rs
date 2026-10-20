@@ -1,6 +1,6 @@
 //! 把链上数据写进数据库：执行校对计划、写入 WebSocket 即时日志、升级确认级别，并在订单变化时写发件箱、
 //! 同步生成订单的报价卡片（成交次数用完即已付款），并把状态变化写进订单聊天与私信（见 [`crate::chat`]），
-//! 随争议开关仲裁案件（`forum_db::arbitration::sync_order`）；
+//! 随争议开关仲裁案件（`forum_db::arbitration::sync_order`），拍卖成交的订单把拍卖标为已成交（`forum_db::auctions::sync_order`）；
 //! 终态最终确认后给买卖双方发免费代付提币次数、计入双方信誉与交易经验。
 //!
 //! 所有写入都由一个任务串行执行（见 [`crate::run`]），并且同一条链只允许一个 indexer 进程（会话级咨询锁）。
@@ -19,6 +19,7 @@ use forum_db::chain::{self as db, OrderRef};
 use forum_db::credits;
 use forum_db::{PgPool, Postgres, Transaction, outbox};
 use forum_kv::ForumCache;
+use forum_kv::guest_cache::{self, GuestCache};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
@@ -64,6 +65,8 @@ struct Recomputed {
     changed: usize,
     /// 名片需要失效的用户。
     cards: Vec<i64>,
+    /// 拍卖状态变了的拍卖帖 `(主题, 板块)`：游客缓存里的列表要失效。
+    auction_topics: Vec<(i64, i32)>,
 }
 
 /// 一轮执行的统计（日志与测试用）。
@@ -84,6 +87,8 @@ pub struct Engine {
     progress: Progress,
     /// 用户名片缓存（`VALKEY_URL`）；未配置时只靠缓存 TTL。
     cache: Option<ForumCache>,
+    /// 游客页面缓存（同一个 Valkey）：拍卖成交或回滚时让列表里的拍卖信息行失效。
+    guest: Option<GuestCache>,
 }
 
 fn db_i64(v: u64) -> Result<i64, IndexerError> {
@@ -141,6 +146,9 @@ impl Engine {
             max_range: cfg.indexer.max_block_range,
             policy: cfg.confirmation.clone(),
             progress: Progress::default(),
+            guest: cache
+                .as_ref()
+                .map(|c| GuestCache::new(c.pool().clone(), c.ns())),
             cache,
         };
         engine.reload().await?;
@@ -277,7 +285,7 @@ impl Engine {
         let r = self.recompute(&mut tx, &touched).await?;
         applied.orders_changed = r.changed;
         tx.commit().await?;
-        self.invalidate_cards(&r.cards).await;
+        self.after_commit(&r).await;
         Ok(applied)
     }
 
@@ -341,7 +349,7 @@ impl Engine {
         }
         let r = self.recompute(&mut tx, &touched).await?;
         tx.commit().await?;
-        self.invalidate_cards(&r.cards).await;
+        self.after_commit(&r).await;
         Ok(false)
     }
 
@@ -373,7 +381,7 @@ impl Engine {
         db::set_confirmations(&mut *tx, self.chain_id, db_i64(safe)?, db_i64(finalized)?).await?;
         let r = self.recompute(&mut tx, &touched).await?;
         tx.commit().await?;
-        self.invalidate_cards(&r.cards).await;
+        self.after_commit(&r).await;
         self.reload().await?;
         Ok((safe, finalized))
     }
@@ -421,6 +429,7 @@ impl Engine {
     ) -> Result<Recomputed, IndexerError> {
         let mut changed = 0;
         let mut finalized = Vec::new();
+        let mut auction_topics = Vec::new();
         for ((contract, order_id), cause) in touched {
             let address = Address::try_from(contract.as_slice())
                 .map_err(|_| ChainError::Decode("expected 20-byte address".into()))?;
@@ -486,6 +495,16 @@ impl Engine {
             if let Some(s) = forum_db::arbitration::sync_order(tx, row.id).await? {
                 tracing::info!(order = row.id, change = ?s, "arbitration case synced");
             }
+            // 拍卖成交（AuctionSettled）即把拍卖标为已成交，被回滚则退回待付款。
+            if let Some(s) = forum_db::auctions::sync_order(tx, row.id).await? {
+                auction_topics.extend(s.topic_id.map(|t| (t, s.forum_id)));
+                tracing::info!(
+                    order = row.id,
+                    auction = s.auction_id,
+                    state = s.state,
+                    "auction synced"
+                );
+            }
             // 终态且最终确认：买卖双方各得 1 次免费代付提币（每单每人一次，重放不重复）。
             if view
                 .as_ref()
@@ -514,14 +533,28 @@ impl Engine {
             outbox::enqueue(&mut **tx, ORDER_UPDATED, &payload, outbox::PRIORITY_NORMAL).await?;
         }
         let cards = forum_db::reputation::apply_finalized(tx, &finalized).await?;
-        Ok(Recomputed { changed, cards })
+        Ok(Recomputed {
+            changed,
+            cards,
+            auction_topics,
+        })
     }
 
-    /// 提交后失效信誉或等级变化的用户名片；Valkey 不可用时只记日志（名片缓存有 TTL 兜底）。
-    async fn invalidate_cards(&self, users: &[i64]) {
-        let Some(cache) = &self.cache else { return };
-        if let Err(e) = cache.cards_invalidate(users).await {
-            tracing::warn!(error = %e, users = users.len(), "user card invalidation failed");
+    /// 提交后失效信誉或等级变化的用户名片与拍卖状态变了的游客列表；Valkey 不可用时只记日志（两种缓存都有 TTL 兜底）。
+    async fn after_commit(&self, r: &Recomputed) {
+        if let Some(cache) = &self.cache
+            && let Err(e) = cache.cards_invalidate(&r.cards).await
+        {
+            tracing::warn!(error = %e, users = r.cards.len(), "user card invalidation failed");
+        }
+        let Some(guest) = &self.guest else { return };
+        for &(topic_id, forum_id) in &r.auction_topics {
+            if let Err(e) = guest
+                .bump(&guest_cache::listing(topic_id, &[forum_id]))
+                .await
+            {
+                tracing::warn!(error = %e, topic = topic_id, "guest cache bump failed");
+            }
         }
     }
 

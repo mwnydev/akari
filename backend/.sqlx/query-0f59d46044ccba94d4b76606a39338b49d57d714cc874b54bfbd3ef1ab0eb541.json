@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auctions (seller_id, forum_id, chain_id, verifying_contract, seller, currency, cny_per_usdt,\n                                 start_price, increment, reserve_price, duration_secs, eligibility, eligibility_value,\n                                 terms, content_hash, draft)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text::numeric, $9::text::numeric, $10::text::numeric, $11, $12,\n                   $13::text::numeric, $14, $15, $16)\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int2",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int2",
+        "Text",
+        "Jsonb",
+        "Bytea",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0f59d46044ccba94d4b76606a39338b49d57d714cc874b54bfbd3ef1ab0eb541"
+}

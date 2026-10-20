@@ -33,6 +33,8 @@ SPONSOR_KEY=0xdccc2a137d5ed46c4b46ea12b6e50feb5565cfa60bda1c3814b0e25d3f52eb98  
 SPONSOR_ADDR=0x9A53c3ACF864004F00BdE6E48Bd8A50D6470e8A8                          # akari-dev-only:sponsor
 RELAYER_KEY=0x418cc49efb0f686af9f810b10928711756343553a8bcf6e77f784ec4c23310cf    # akari-dev-only:relayer gitleaks:allow
 RELAYER_ADDR=0x8204490c73DceDE91340e855279A8A67758609AC                          # akari-dev-only:relayer（forum-sponsor 代发热钱包）
+AUCTION_KEY=0x0484655bc83a9203012cc81cf5e00787e18dfa491046ed71f6ebe3d6fe11d5e9    # akari-dev-only:auction-signer gitleaks:allow
+AUCTION_ADDR=0x66A9EF9f3699A02056f0abd5D26Eb7EA4b3ce9B3                          # akari-dev-only:auction-signer（EscrowConfig.auctionSigner）
 EXECUTOR_ADDR=0x19d6319D75788D0fc7f71f3b49fa11863412c804                         # akari-dev-only:bundler-executor
 UTILITY_ADDR=0x685bb2D07a60B63Bd337a0a67b02Ee7749a4Ade3                          # akari-dev-only:bundler-utility
 
@@ -108,7 +110,7 @@ up() {
   start_block=$(cast block-number --rpc-url "$RPC")
   usdt=$(cd "$CONTRACTS" && forge create src/MockUSDT.sol:MockUSDT --broadcast --json \
     --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" | jq -r .deployedTo)
-  (cd "$CONTRACTS" && TOKEN=$usdt OWNER=$deployer ARBITER=$deployer FEE_RECIPIENT=$deployer \
+  (cd "$CONTRACTS" && TOKEN=$usdt OWNER=$deployer ARBITER=$deployer FEE_RECIPIENT=$deployer AUCTION_SIGNER=$AUCTION_ADDR \
     forge script script/Deploy.s.sol --broadcast --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" --silent)
   config=$(cast compute-address "$deployer" --nonce 1 | awk '{print $NF}')
   escrow=$(cast compute-address "$deployer" --nonce 2 | awk '{print $NF}')
@@ -243,6 +245,7 @@ SPONSOR_LISTEN=127.0.0.1:$SPONSOR_PORT
 SPONSOR_API_TOKEN=$SPONSOR_API_TOKEN
 SPONSOR_DEV_PAYMASTER_KEY=$SPONSOR_KEY
 SPONSOR_DEV_HOT_WALLET_KEY=$RELAYER_KEY
+SPONSOR_DEV_AUCTION_KEY=$AUCTION_KEY
 FALLBACK_BUNDLER_URL=$BUNDLER
 ENV
   log "已写入 ${CHAIN_TOML#"$ROOT/"}、${DEV_ENV#"$ROOT/"}"

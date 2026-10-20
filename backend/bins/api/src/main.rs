@@ -9,7 +9,10 @@ use forum_api::arbitration::ArbitrationState;
 use forum_api::config::Config;
 use forum_api::realtime::Hub;
 use forum_api::routes::aa::SponsorProxy;
-use forum_api::wallet::{AddressVerifier, ChainAddressVerifier, NoChainVerifier, WalletState};
+use forum_api::wallet::{
+    AddressVerifier, AuctionChain, ChainAddressVerifier, NoAuctionChain, NoChainVerifier,
+    RpcAuctionChain, WalletState,
+};
 use forum_api::{AppState, app};
 use forum_auth::passkey::{UserHandles, single_origin_webauthn, wallet_webauthn, webauthn::Url};
 use forum_auth::{AnyCaptcha, CodeStore, NoopCaptcha, Turnstile};
@@ -50,6 +53,19 @@ async fn main() -> anyhow::Result<()> {
             Arc::new(NoChainVerifier)
         }
     };
+    let rpc = cfg
+        .chain_file
+        .as_ref()
+        .map(forum_chain::rpc::FailoverRpc::from_config)
+        .transpose()?
+        .map(Arc::new);
+    let auction_chain: Arc<dyn AuctionChain> = match (&rpc, cfg.chain.usdt) {
+        (Some(rpc), Some(token)) => Arc::new(RpcAuctionChain {
+            rpc: rpc.clone(),
+            token,
+        }),
+        _ => Arc::new(NoAuctionChain),
+    };
     let wallet = WalletState {
         webauthn: wallet_webauthn(&cfg.wallet_rp_id, &cfg.brand_name, &origins)?,
         origins: cfg.wallet_origins.clone(),
@@ -58,12 +74,8 @@ async fn main() -> anyhow::Result<()> {
         chain: cfg.chain.clone(),
         limits: cfg.trade_limits,
         verifier,
-        rpc: cfg
-            .chain_file
-            .as_ref()
-            .map(forum_chain::rpc::FailoverRpc::from_config)
-            .transpose()?
-            .map(Arc::new),
+        rpc,
+        auction_chain,
         sponsor: match (&cfg.sponsor_url, &cfg.sponsor_token) {
             (Some(url), Some(token)) => Some(SponsorProxy::new(url, token.clone())?),
             _ => {

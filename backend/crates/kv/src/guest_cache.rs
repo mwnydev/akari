@@ -214,3 +214,11 @@ pub fn latest() -> String {
 pub fn topic(topic_id: i64) -> String {
     format!("topic:{topic_id}")
 }
+
+/// 主题在列表里的样子变化时要加一的版本号：该主题、首页与它所在（或刚离开）的板块。
+/// forum-api 的写操作与 forum-worker、forum-indexer 的拍卖状态变化共用。
+pub fn listing(topic_id: i64, forum_ids: &[i32]) -> Vec<String> {
+    let mut versions = vec![topic(topic_id), latest()];
+    versions.extend(forum_ids.iter().map(|&f| board(f)));
+    versions
+}

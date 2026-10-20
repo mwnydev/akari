@@ -33,6 +33,9 @@ const BIG_TABLES: &[&str] = &[
     "floor_comments",
     "reports",
     "report_cases",
+    "auctions",
+    "auction_bids",
+    "user_devices",
 ];
 
 #[derive(Debug, Default)]
@@ -1425,4 +1428,81 @@ async fn search_queries_use_indexes(db: PgPool) {
             "{name}: {plan:#}"
         );
     }
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn auction_queries_use_indexes(db: PgPool) {
+    seed(&db).await;
+    sqlx::raw_sql(
+        r"
+        -- 2000 场拍卖（主题 1001–3000），20 万口出价；第 1 场是 5000 口的热门拍卖
+        INSERT INTO auctions (seller_id, forum_id, topic_id, chain_id, verifying_contract, seller, currency,
+          start_price, increment, reserve_price, duration_secs, terms, content_hash, auth_hash, seller_signature,
+          state, starts_at, ends_at, max_ends_at, snipe_window_secs, snipe_extension_secs, extension_cap_secs)
+        SELECT 1 + g % 1000, 1, 1000 + g, 421614, decode(repeat('44', 20), 'hex'), decode(repeat('11', 20), 'hex'), 0,
+               10000000, 1000000, 20000000, 86400, '{}'::jsonb, decode(repeat('ab', 32), 'hex'), sha256(int4send(g)),
+               '\x01', CASE WHEN g % 10 = 0 THEN 4 ELSE 1 END, now(), now() + (g || ' minutes')::interval,
+               now() + (g || ' minutes')::interval + interval '1 day', 900, 900, 86400
+        FROM generate_series(1, 2000) g;
+        INSERT INTO auction_bids (auction_id, bidder_id, amount, amount_usdt)
+        SELECT CASE WHEN g <= 5000 THEN 1 ELSE 2 + g % 1999 END, 1 + g % 1000, 10000000 + g, 10000000 + g
+        FROM generate_series(1, 200000) g;
+        UPDATE auctions a SET top_amount = b.amount, bid_count = b.n
+        FROM (SELECT auction_id, max(amount) AS amount, count(*) AS n FROM auction_bids GROUP BY auction_id) b
+        WHERE b.auction_id = a.id;
+        INSERT INTO user_devices (user_id, device_hash) SELECT id, sha256(int8send(id % 5000)) FROM users;
+        ANALYZE;
+        ",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let sql = q!("auction_bid.sql");
+    for index in [
+        "auctions_pkey",
+        "user_devices_device",
+        "auction_bids_bidder",
+    ] {
+        check(
+            &db,
+            "auction_bid",
+            sqlx::query(sql)
+                .bind(1_i64)
+                .bind(500_i64)
+                .bind("99999999")
+                .bind("99999999")
+                .bind("1000000"),
+            index,
+        )
+        .await;
+    }
+
+    let sql = q!("auction_bids_page.sql");
+    check(
+        &db,
+        "auction_bids_page",
+        sqlx::query(sql).bind(1_i64).bind(i64::MAX).bind(50_i64),
+        "auction_bids_auction",
+    )
+    .await;
+
+    let topics: Vec<i64> = (1001..1051).collect();
+    let sql = q!("auction_summaries.sql");
+    check(
+        &db,
+        "auction_summaries",
+        sqlx::query(sql).bind(&topics),
+        "auctions_topic_id_key",
+    )
+    .await;
+
+    let sql = q!("auction_next_candidate.sql");
+    check(
+        &db,
+        "auction_next_candidate",
+        sqlx::query(sql).bind(1_i64),
+        "auction_bids_rank",
+    )
+    .await;
 }

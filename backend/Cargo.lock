@@ -2413,9 +2413,12 @@ dependencies = [
  "forum-content",
  "forum-core",
  "forum-db",
+ "forum-indexer",
  "forum-kv",
  "forum-media",
  "forum-runtime",
+ "forum-sponsor",
+ "forum-worker",
  "futures-util",
  "hex",
  "rand 0.10.3",
@@ -2429,6 +2432,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-tungstenite",
+ "tokio-util",
  "tower",
  "tower-http 0.7.1",
  "tower-sessions",
@@ -2499,6 +2503,7 @@ name = "forum-db"
 version = "0.1.0"
 dependencies = [
  "forum-core",
+ "serde",
  "serde_json",
  "sqlx",
  "thiserror 2.0.21",
@@ -2617,8 +2622,11 @@ dependencies = [
 name = "forum-worker"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
+ "async-trait",
  "axum",
+ "forum-chain",
  "forum-core",
  "forum-db",
  "forum-kv",

@@ -772,7 +772,7 @@ async fn sanction(db: &PgPool, kind: i16, user_id: i64, forum_id: Option<i32>, b
             forum_id,
             ends_at: None,
             reason: "test",
-            created_by: by,
+            created_by: Some(by),
         },
     )
     .await

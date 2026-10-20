@@ -81,6 +81,7 @@ fork 来的状态（EntryPoint、Kernel 工厂等）不受影响。
 | deployer        | `0xEE56770A46E04f6323AA23dC22f5935a45d933aE` | 部署；兼任 owner、仲裁、手续费收款与 Paymaster 金库         |
 | sponsor         | `0x9A53c3ACF864004F00BdE6E48Bd8A50D6470e8A8` | Paymaster `signer`；forum-sponsor 与前端 DEV 代付用它签名   |
 | relayer         | `0x8204490c73DceDE91340e855279A8A67758609AC` | forum-sponsor 代发热钱包（`aa.sh up` 给它 100 ETH）         |
+| auction-signer  | `0x66A9EF9f3699A02056f0abd5D26Eb7EA4b3ce9B3` | `EscrowConfig.auctionSigner`；forum-sponsor 签拍卖成交证明  |
 | bundler 执行者  | `0x19d6319D75788D0fc7f71f3b49fa11863412c804` | Alto `--executor-private-keys`                              |
 | bundler 工具户  | `0x685bb2D07a60B63Bd337a0a67b02Ee7749a4Ade3` | Alto `--utility-private-key`                                |
 
@@ -101,6 +102,7 @@ cast send 0x8c313D0eC280837325fA5aB05AC04Be31F46AbBC 'mint(address,uint256)' <�
   `wallet_init_versions` 第 1 版与前端 `localChain` 的版本 1 逐项相同，不同的话钱包页面会拒绝操作。
 - `deploy/dev/.env.aa`：`CHAIN_CONFIG`、`SPONSOR_URL`、`SPONSOR_LISTEN`、`SPONSOR_API_TOKEN`、
   `SPONSOR_DEV_PAYMASTER_KEY`（sponsor 开发私钥）、`SPONSOR_DEV_HOT_WALLET_KEY`（relayer 开发私钥）、
+  `SPONSOR_DEV_AUCTION_KEY`（auction-signer 开发私钥）、
   `FALLBACK_BUNDLER_URL`（Alto）。
 
 ```sh
@@ -108,7 +110,7 @@ set -a; source backend/.env; source deploy/dev/.env.aa; set +a   # .env.aa 在�
 cd backend
 cargo run -p forum-sponsor &   # 代付签名 + 私有代发器，只听 $SPONSOR_LISTEN
 cargo run -p forum-indexer &   # 订单状态；anvil 每秒一块，约 1 分钟到 finalized
-cargo run -p forum-worker &    # 登录与开通交易的验证码邮件（Mailpit）
+cargo run -p forum-worker &    # 登录与开通交易的验证码邮件（Mailpit）；拍卖结算（读同一份 CHAIN_CONFIG 与 SPONSOR_*）
 cargo run -p forum-api         # /api/v1/aa/rpc 转发给 forum-sponsor
 ```
 

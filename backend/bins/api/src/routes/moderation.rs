@@ -111,7 +111,8 @@ pub struct SanctionView {
     #[serde(with = "time::serde::rfc3339::option")]
     pub ends_at: Option<OffsetDateTime>,
     pub reason: String,
-    pub created_by: i64,
+    /// 处罚人；系统自动的处罚（拍卖违约禁拍）为空。
+    pub created_by: Option<i64>,
     #[schema(value_type = String, format = DateTime)]
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
@@ -279,7 +280,7 @@ pub(crate) async fn apply_sanction(
             forum_id: terms.forum_id,
             ends_at,
             reason,
-            created_by: actor_id,
+            created_by: Some(actor_id),
         };
         vec![sanctions::create(&mut **tx, s).await?]
     };

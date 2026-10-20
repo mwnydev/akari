@@ -16,6 +16,7 @@ pub const KIND_LIKE: &str = "like";
 pub const KIND_MESSAGE: &str = "message";
 pub const KIND_ORDER: &str = "order";
 pub const KIND_OFFER: &str = "offer";
+pub const KIND_AUCTION: &str = "auction";
 pub const KIND_SYSTEM: &str = "system";
 
 #[derive(Debug, Clone, PartialEq)]

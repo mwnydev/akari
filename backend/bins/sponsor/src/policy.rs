@@ -7,10 +7,12 @@
 //!   由担保合约结算时扣固定 gas 费。免费额度用完的操作：标记发货、开始、领取直接拒绝，延长确认期与和解改收代付费。
 //! - 提回另需 1 次免费代付提币次数（开通钱包送 1 次、每完成一笔担保交易得 1 次），每人滚动 24 小时最多 3 次；
 //!   一笔操作最多提回一次。
+//! - 拍卖付款 `createFromAuction` 解码出授权与成交证明（[`AuctionPayment`]），由 [`crate::sponsor`] 对照库里最新一份
+//!   成交证明核对：只代付这份证明的中标者、付款截止前（收代付费，与下单相同）。
 
 use std::collections::HashMap;
 
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{Address, Bytes, U256};
 use alloy::sol_types::SolCall;
 use forum_chain::bindings::Escrow;
 use forum_chain::bindings::stream::StreamEscrow;
@@ -45,7 +47,6 @@ pub struct Contracts {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Method {
     CreateAndFund,
-    CreateFromAuction,
     CancelOffer,
     Withdraw,
     DepositBond,
@@ -69,7 +70,6 @@ impl Method {
     pub fn name(self) -> &'static str {
         match self {
             Self::CreateAndFund => "createAndFund",
-            Self::CreateFromAuction => "createFromAuction",
             Self::CancelOffer => "cancelOffer",
             Self::Withdraw => "withdraw",
             Self::DepositBond => "depositBond",
@@ -108,6 +108,41 @@ pub enum Action {
         method: Method,
         order_id: U256,
     },
+    /// Escrow `createFromAuction`：拍卖中标者付款建单（付款前操作，收代付费）。
+    AuctionPayment(Box<AuctionPayment>),
+}
+
+/// `createFromAuction` 的参数里代付前要核对的部分（卖家签名由合约验）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuctionPayment {
+    pub auth: Escrow::AuctionAuth,
+    pub proof: Escrow::SettlementProof,
+    pub platform_sig: Bytes,
+}
+
+impl AuctionPayment {
+    /// 换成 forum-core 的结构（用它重算 EIP-712 哈希，与 forum-api 签名时同一份实现）。
+    pub fn core_auth(&self) -> forum_core::eip712::AuctionAuth {
+        use forum_core::eip712::{Address as A, B256, U256 as N};
+        let a = &self.auth;
+        forum_core::eip712::AuctionAuth {
+            seller: A(a.seller.into_array()),
+            token: A(a.token.into_array()),
+            auction_id: N(a.auctionId.to_be_bytes()),
+            reserve_price: N(a.reservePrice.to_be_bytes()),
+            currency: a.currency,
+            cny_per_usdt: a.cnyPerUsdt,
+            fee_payer: a.feePayer,
+            max_fee_bps: a.maxFeeBps,
+            max_base_gas: N(a.maxBaseGas.to_be_bytes()),
+            max_min_fee: N(a.maxMinFee.to_be_bytes()),
+            instant: a.instant,
+            ship_window: a.shipWindow,
+            confirm_window: a.confirmWindow,
+            listing_hash: B256(a.listingHash.0),
+            expiry: a.expiry,
+        }
+    }
 }
 
 /// 不在免费额度内时怎么办。
@@ -149,8 +184,7 @@ const fn quota(limit: i64, per_side: bool, per_day: bool, over: Over) -> Tier {
 pub fn tier(market: Market, method: Method) -> Tier {
     use Method::*;
     match method {
-        CreateAndFund | CreateFromAuction | CancelOffer | Withdraw | DepositBond | WithdrawBond
-        | Refund => Tier::Fee,
+        CreateAndFund | CancelOffer | Withdraw | DepositBond | WithdrawBond | Refund => Tier::Fee,
         ClaimTimeout if market == Market::Escrow => Tier::FreeIfDelivered,
         ClaimTimeout => Tier::Fee,
         MarkDelivered | Start => quota(1, false, false, Over::Reject),
@@ -179,7 +213,6 @@ fn escrow_method(data: &[u8], i: usize) -> Result<(Method, Option<U256>), Reject
         .ok_or_else(|| not_allowed(i, "missing selector"))?;
     let decoded = match sel {
         createAndFundCall::SELECTOR => (Method::CreateAndFund, None),
-        createFromAuctionCall::SELECTOR => (Method::CreateFromAuction, None),
         cancelOfferCall::SELECTOR => (Method::CancelOffer, None),
         withdrawCall::SELECTOR => (Method::Withdraw, None),
         depositBondCall::SELECTOR => (Method::DepositBond, None),
@@ -330,6 +363,17 @@ pub fn classify(
                     };
                 }
                 return Err(not_allowed(i, "token method not sponsored"));
+            }
+            if call.target == c.escrow
+                && data.get(..4) == Some(&Escrow::createFromAuctionCall::SELECTOR[..])
+            {
+                let a = Escrow::createFromAuctionCall::abi_decode(data)
+                    .map_err(|_| not_allowed(i, "malformed arguments"))?;
+                return Ok(Action::AuctionPayment(Box::new(AuctionPayment {
+                    auth: a.auth,
+                    proof: a.proof,
+                    platform_sig: a.platformSig,
+                })));
             }
             if call.target == c.escrow {
                 return Ok(market_action(
@@ -633,6 +677,69 @@ mod tests {
                 method: Method::CancelOffer
             }
         );
+    }
+
+    #[test]
+    fn auction_payment_is_decoded_for_the_proof_check() {
+        let auth = Escrow::AuctionAuth {
+            seller: Address::repeat_byte(0x11),
+            token: TOKEN,
+            auctionId: id(42),
+            reservePrice: id(57_600),
+            currency: 1,
+            cnyPerUsdt: 72_000,
+            feePayer: 0,
+            maxFeeBps: 100,
+            maxBaseGas: id(100_000),
+            maxMinFee: id(1_000_000),
+            instant: false,
+            shipWindow: 86_400,
+            confirmWindow: 86_400,
+            listingHash: alloy::primitives::B256::repeat_byte(7),
+            expiry: 1_800_000_000,
+        };
+        let proof = Escrow::SettlementProof {
+            authHash: alloy::primitives::B256::repeat_byte(9),
+            winner: SENDER,
+            price: id(60_000),
+            payDeadline: 1_700_000_000,
+        };
+        let c = call(
+            ESCROW,
+            Escrow::createFromAuctionCall {
+                auth: auth.clone(),
+                sellerSig: Bytes::from_static(&[1]),
+                proof: proof.clone(),
+                platformSig: Bytes::from_static(&[2, 3]),
+            },
+        );
+        let Action::AuctionPayment(p) = classify1(c).unwrap() else {
+            panic!("not an auction payment");
+        };
+        assert_eq!((p.auth.clone(), p.proof.clone()), (auth, proof));
+        assert_eq!(p.platform_sig.as_ref(), [2, 3]);
+        // 与 forum-core 的结构逐字段对应（用它重算授权哈希）
+        let core = p.core_auth();
+        assert_eq!(core.auction_id.to_u128(), Some(42));
+        assert_eq!(core.reserve_price.to_u128(), Some(57_600));
+        assert_eq!((core.currency, core.cny_per_usdt), (1, 72_000));
+        assert_eq!(core.seller.0, [0x11; 20]);
+        // 付款前操作：收代付费，不是订单调用
+        let priced = price1(Action::AuctionPayment(p), Facts::default()).unwrap();
+        assert!(priced.fee_due && priced.calls.is_empty());
+        // 在 StreamEscrow 上调用同一个选择器：不认
+        let on_stream = Call {
+            target: STREAM,
+            value: U256::ZERO,
+            data: Escrow::createFromAuctionCall::SELECTOR.to_vec().into(),
+        };
+        assert!(classify1(on_stream).is_err());
+        let truncated = Call {
+            target: ESCROW,
+            value: U256::ZERO,
+            data: Escrow::createFromAuctionCall::SELECTOR.to_vec().into(),
+        };
+        assert!(classify1(truncated).is_err());
     }
 
     fn order(market: Market, method: Method, n: u64) -> Action {

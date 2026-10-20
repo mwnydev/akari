@@ -599,6 +599,67 @@
         }
       }
     },
+    "/api/v1/admin/settings/auction": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "拍卖参数与上线开关（plan 第 9 节「拍卖」「拍卖风控」）。",
+        "operationId": "get_auction_settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuctionSettingsView" }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["admin"],
+        "summary": "修改拍卖参数或开关（必须在上下限内）。只影响之后挂拍、出价与结算：已签的拍卖授权里的期限不变。",
+        "operationId": "put_auction_settings",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AuctionSettings" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AuctionSettingsView" }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/settings/moderation": {
       "get": {
         "tags": ["admin"],
@@ -1567,6 +1628,327 @@
         }
       }
     },
+    "/api/v1/auctions/params": {
+      "get": {
+        "tags": ["auction"],
+        "summary": "挂拍表单需要的参数：开关、时长范围、出价资格档位、订单上下限。",
+        "operationId": "auction_params",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuctionParams" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auctions/{id}": {
+      "get": {
+        "tags": ["auction"],
+        "operationId": "get_auction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuctionView" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auctions/{id}/bids": {
+      "get": {
+        "tags": ["auction"],
+        "summary": "出价记录（新的在前，每页 50 条），公开可查，出价人打码。",
+        "operationId": "list_bids",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页最后一条的 ID。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/BidPage" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["auction"],
+        "summary": "出价。点出价就生效、不花 gas（plan 第 7 节「拍卖模式」）。",
+        "operationId": "place_bid",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/BidRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuctionView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auctions/{id}/cancel": {
+      "post": {
+        "tags": ["auction"],
+        "summary": "卖家取消：草稿随时可以；进行中只能在第一口出价之前。",
+        "operationId": "cancel_auction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuctionView" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auctions/{id}/finish": {
+      "post": {
+        "tags": ["auction"],
+        "summary": "挂拍第三步：验签（与合约相同的规则，经链上读节点），通过后发拍卖帖、开始计时。",
+        "operationId": "finish_auction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/FinishAuctionRequest" }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuctionView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auctions/{id}/payment": {
+      "get": {
+        "tags": ["auction"],
+        "summary": "中标者付款需要的数据：卖家授权与签名、平台成交证明与签名、应付 USDT。只有当前这份证明的中标者能取，\n且在付款截止时间之前。",
+        "operationId": "auction_payment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuctionPayment" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auctions/{id}/start": {
+      "post": {
+        "tags": ["auction"],
+        "summary": "挂拍第二步：按当前参数生成拍卖授权，返回给卖家钱包签名的 EIP-712 typed data。\n需要 5 分钟内的钱包 Passkey 验证；可以重复调用（换一份新的授权，旧的作废）。",
+        "operationId": "start_auction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuctionSigning" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/email/start": {
       "post": {
         "tags": ["auth"],
@@ -2113,6 +2495,54 @@
               "application/json": {
                 "schema": { "type": "array", "items": { "$ref": "#/components/schemas/ForumView" } }
               }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/forums/{slug}/auctions": {
+      "post": {
+        "tags": ["auction"],
+        "summary": "挂拍第一步：校验条件并保存草稿（还不发帖）。需要已开通交易、没被封号或禁拍，板块允许交易帖。",
+        "operationId": "create_auction",
+        "parameters": [
+          { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/NewAuctionRequest" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuctionView" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
           }
         }
@@ -3983,6 +4413,33 @@
         }
       }
     },
+    "/api/v1/topics/{id}/auction": {
+      "get": {
+        "tags": ["auction"],
+        "summary": "拍卖帖主题对应的拍卖（主题页用）。",
+        "operationId": "topic_auction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer", "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AuctionView" } }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/topics/{id}/moderation": {
       "post": {
         "tags": ["forum"],
@@ -5065,11 +5522,279 @@
           }
         }
       },
+      "AuctionAuth": {
+        "type": "object",
+        "description": "与 `Escrow.AuctionAuth` 字段一一对应、同序：卖家挂拍时签一次的拍卖授权（plan 第 6 节、ADR 0011）。\nJSON 字段名与 EIP-712 typed data 的 `message` 相同（驼峰）。",
+        "required": [
+          "seller",
+          "token",
+          "auctionId",
+          "reservePrice",
+          "currency",
+          "cnyPerUsdt",
+          "feePayer",
+          "maxFeeBps",
+          "maxBaseGas",
+          "maxMinFee",
+          "instant",
+          "shipWindow",
+          "confirmWindow",
+          "listingHash",
+          "expiry"
+        ],
+        "properties": {
+          "auctionId": {
+            "type": "string",
+            "description": "站内拍卖 ID（与卖家地址一起决定链上「只能成交一次」的键）。"
+          },
+          "cnyPerUsdt": {
+            "type": "integer",
+            "format": "int32",
+            "description": "人民币拍卖的卖家汇率（4 位小数定点数）；USDT 拍卖为 0。",
+            "minimum": 0
+          },
+          "confirmWindow": { "type": "integer", "format": "int32", "minimum": 0 },
+          "currency": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0 = USDT、1 = 人民币。",
+            "minimum": 0
+          },
+          "expiry": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix 秒；成交证明的付款截止时间不能晚于它。",
+            "minimum": 0
+          },
+          "feePayer": { "type": "integer", "format": "int32", "minimum": 0 },
+          "instant": { "type": "boolean" },
+          "listingHash": { "type": "string" },
+          "maxBaseGas": { "type": "string" },
+          "maxFeeBps": { "type": "integer", "format": "int32", "minimum": 0 },
+          "maxMinFee": { "type": "string" },
+          "reservePrice": {
+            "type": "string",
+            "description": "拍卖币种的最小单位（USDT 最小单位或分）。"
+          },
+          "seller": { "type": "string" },
+          "shipWindow": { "type": "integer", "format": "int32", "minimum": 0 },
+          "token": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "AuctionParams": {
+        "type": "object",
+        "required": [
+          "settings",
+          "eligibility_percents",
+          "sign_window_secs",
+          "min_order",
+          "order_cap"
+        ],
+        "properties": {
+          "eligibility_percents": {
+            "type": "array",
+            "items": { "type": "integer", "format": "int32", "minimum": 0 },
+            "description": "卖家可选的余额比例档位（%）。"
+          },
+          "min_order": {
+            "type": "string",
+            "description": "订单金额上下限（USDT 最小单位）：起拍价折合 USDT 不能低于下限，出价折合 USDT 不能超过上限。"
+          },
+          "order_cap": { "type": "string" },
+          "settings": {
+            "$ref": "#/components/schemas/AuctionSettings",
+            "description": "站长设置的拍卖参数（含开关）。"
+          },
+          "sign_window_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "开始签名后多少秒内必须提交签名。",
+            "minimum": 0
+          }
+        }
+      },
+      "AuctionPayment": {
+        "type": "object",
+        "required": [
+          "auction_id",
+          "round",
+          "escrow",
+          "chain_id",
+          "auth",
+          "seller_signature",
+          "proof",
+          "platform_signature",
+          "currency",
+          "price",
+          "amount",
+          "buyer_pays",
+          "buyer_fee",
+          "buyer_gas",
+          "buyer_wallet",
+          "pay_deadline"
+        ],
+        "properties": {
+          "amount": {
+            "type": "string",
+            "description": "订单金额（USDT 最小单位）：人民币按卖家汇率向上取整，与合约换算一致。"
+          },
+          "auction_id": { "type": "integer", "format": "int64" },
+          "auth": { "$ref": "#/components/schemas/AuctionAuth" },
+          "buyer_fee": { "type": "string" },
+          "buyer_gas": { "type": "string" },
+          "buyer_pays": {
+            "type": "string",
+            "description": "按当前收费估算：需要 `approve` 并转入的总额 = 金额 + 买家手续费 + 买家 gas 费（以链上建单时为准）。"
+          },
+          "buyer_wallet": {
+            "type": "string",
+            "description": "付款必须从这个地址发起（成交证明里的赢家）。"
+          },
+          "chain_id": { "type": "integer", "format": "int64" },
+          "cny_per_usdt": { "type": ["integer", "null"], "format": "int32" },
+          "currency": { "$ref": "#/components/schemas/Currency" },
+          "escrow": {
+            "type": "string",
+            "description": "`createFromAuction(auth, sellerSig, proof, platformSig)` 的合约地址与链。"
+          },
+          "pay_deadline": { "type": "string", "format": "date-time" },
+          "platform_signature": { "type": "string" },
+          "price": { "type": "string", "description": "成交价（拍卖币种最小单位）。" },
+          "proof": { "$ref": "#/components/schemas/SettlementProof" },
+          "round": {
+            "type": "integer",
+            "format": "int32",
+            "description": "第几份成交证明（1 = 赢家，2、3 = 递补）。"
+          },
+          "seller_signature": { "type": "string" }
+        }
+      },
+      "AuctionSettings": {
+        "type": "object",
+        "description": "站长在后台调整的拍卖参数（plan 第 9 节「拍卖」「拍卖风控」）；`enabled` 是上线开关（第 24–26 周开放）。\n缺字段按默认值；库里的值越界时收回到上下限内。",
+        "properties": {
+          "default_ban_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "违约禁拍时长（秒）。",
+            "default": 2592000,
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "拍卖开关：关闭时不能挂拍、出价（已结束的拍卖照常结算，赢家照常付款）。",
+            "default": false
+          },
+          "extension_cap_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "累计顺延上限（秒）。",
+            "default": 86400,
+            "minimum": 0
+          },
+          "max_duration_secs": {
+            "type": "integer",
+            "format": "int32",
+            "default": 604800,
+            "minimum": 0
+          },
+          "min_duration_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "卖家可选的拍卖时长范围（秒）。",
+            "default": 86400,
+            "minimum": 0
+          },
+          "new_account_cap_usdt": {
+            "type": "integer",
+            "format": "int32",
+            "description": "新账号单场出价上限（整 USDT）。",
+            "default": 100,
+            "minimum": 0
+          },
+          "new_account_days": {
+            "type": "integer",
+            "format": "int32",
+            "description": "注册不满这么多天的账号单场出价有上限。",
+            "default": 7,
+            "minimum": 0
+          },
+          "pay_window_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "赢家付款期（秒）。",
+            "default": 172800,
+            "minimum": 0
+          },
+          "runner_up_window_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "次高出价者递补的付款期（秒）。",
+            "default": 86400,
+            "minimum": 0
+          },
+          "snipe_extension_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "每次顺延多少秒。",
+            "default": 900,
+            "minimum": 0
+          },
+          "snipe_window_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "结束前多少秒内的新出价触发顺延。",
+            "default": 900,
+            "minimum": 0
+          }
+        }
+      },
+      "AuctionSettingsView": {
+        "type": "object",
+        "required": ["settings", "min", "max", "defaults"],
+        "properties": {
+          "defaults": { "$ref": "#/components/schemas/AuctionSettings" },
+          "max": { "$ref": "#/components/schemas/AuctionSettings" },
+          "min": {
+            "$ref": "#/components/schemas/AuctionSettings",
+            "description": "每项允许的最小值与最大值（`enabled` 无意义）。"
+          },
+          "settings": { "$ref": "#/components/schemas/AuctionSettings" }
+        }
+      },
+      "AuctionSigning": {
+        "type": "object",
+        "required": ["auction_id", "typed_data", "auth_hash", "sign_deadline"],
+        "properties": {
+          "auction_id": { "type": "integer", "format": "int64" },
+          "auth_hash": { "type": "string", "description": "`hashAuction(auth)`：签名的摘要。" },
+          "sign_deadline": {
+            "type": "string",
+            "format": "date-time",
+            "description": "这个时间之前提交签名（`POST /auctions/{id}/finish`），否则重新开始。"
+          },
+          "typed_data": { "$ref": "#/components/schemas/AuctionTypedData" }
+        }
+      },
+      "AuctionState": {
+        "type": "string",
+        "enum": ["draft", "live", "ended", "awaiting_payment", "settled", "unsold", "cancelled"]
+      },
       "AuctionSummary": {
         "type": "object",
-        "description": "拍卖帖的信息行（拍卖上线时填写，ADR 0011）。",
-        "required": ["currency", "current", "bids", "ends_at", "reserve_met"],
+        "description": "拍卖帖的信息行（ADR 0011）。",
+        "required": [
+          "auction_id",
+          "state",
+          "currency",
+          "current",
+          "bids",
+          "ends_at",
+          "reserve_met"
+        ],
         "properties": {
+          "auction_id": { "type": "integer", "format": "int64" },
           "bids": { "type": "integer", "format": "int32" },
           "cny_per_usdt": {
             "type": ["integer", "null"],
@@ -5082,24 +5807,150 @@
             "description": "当前价：USDT 时为最小单位，人民币时为分（十进制字符串）。"
           },
           "ends_at": { "type": "string", "format": "date-time" },
-          "reserve_met": { "type": "boolean" }
+          "reserve_met": { "type": "boolean" },
+          "state": {
+            "type": "string",
+            "description": "`live` / `ended` / `awaiting_payment` / `settled` / `unsold` / `cancelled`（同 `AuctionView.state`）。"
+          }
+        }
+      },
+      "AuctionTerms": {
+        "type": "object",
+        "description": "成交后的担保条款（与 `AuctionAuth` 里的同名字段一致）。",
+        "required": ["ship_window", "confirm_window"],
+        "properties": {
+          "confirm_window": { "type": "integer", "format": "int32", "minimum": 0 },
+          "fee_payer": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0 = 卖家、1 = 买家、2 = 各半。",
+            "minimum": 0
+          },
+          "instant": { "type": "boolean" },
+          "ship_window": { "type": "integer", "format": "int32", "minimum": 0 }
+        },
+        "additionalProperties": false
+      },
+      "AuctionTypedData": {
+        "type": "object",
+        "description": "EIP-712 typed data（`signTypedData` 的参数）。`types` 不含 `EIP712Domain`（由 `domain` 推出）。",
+        "required": ["domain", "types", "primaryType", "message"],
+        "properties": {
+          "domain": { "$ref": "#/components/schemas/Eip712Domain" },
+          "message": { "$ref": "#/components/schemas/AuctionAuth" },
+          "primaryType": { "type": "string" },
+          "types": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": { "$ref": "#/components/schemas/TypedField" }
+            },
+            "propertyNames": { "type": "string" }
+          }
         }
       },
       "AuctionView": {
         "type": "object",
-        "description": "拍卖成交（ADR 0011）：付款页显示拍卖币种成交价、卖家汇率与应付 USDT（订单 `amount`）。",
-        "required": ["auction_id", "currency", "price"],
+        "required": [
+          "id",
+          "forum_id",
+          "seller_id",
+          "state",
+          "currency",
+          "start_price",
+          "increment",
+          "reserve_met",
+          "current_price",
+          "current_usdt",
+          "min_next_bid",
+          "bid_count",
+          "eligibility",
+          "terms",
+          "duration_secs",
+          "server_time",
+          "round"
+        ],
         "properties": {
-          "auction_id": { "type": "string" },
+          "bid_count": { "type": "integer", "format": "int32" },
           "cny_per_usdt": {
             "type": ["integer", "null"],
             "format": "int32",
-            "description": "卖家签名的固定汇率（每 1 USDT 合多少元，4 位小数定点数，7.2000 = 72000）；USDT 拍卖为空。"
+            "description": "人民币拍卖的卖家汇率（每 1 USDT 合多少元的 4 位小数定点数）。"
           },
-          "currency": { "type": "string", "description": "`usdt` 或 `cny`。" },
-          "price": {
+          "currency": { "$ref": "#/components/schemas/Currency" },
+          "current_price": {
             "type": "string",
-            "description": "成交价，拍卖币种的最小单位：USDT 6 位小数或人民币分（十进制字符串）。"
+            "description": "当前价：最高出价，还没有出价时为起拍价。"
+          },
+          "current_usdt": {
+            "type": "string",
+            "description": "当前价按卖家汇率折合的 USDT（最小单位，向上取整，与合约换算一致）。"
+          },
+          "duration_secs": {
+            "type": "integer",
+            "format": "int32",
+            "description": "拍卖时长（秒，不含顺延）：已顺延 = `ends_at - starts_at - duration_secs`。"
+          },
+          "eligibility": { "$ref": "#/components/schemas/Eligibility" },
+          "ends_at": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "结束时间（含防狙击顺延）。"
+          },
+          "extension_cap_secs": { "type": ["integer", "null"], "format": "int32" },
+          "forum_id": { "type": "integer", "format": "int32" },
+          "id": { "type": "integer", "format": "int64" },
+          "increment": { "type": "string" },
+          "min_next_bid": { "type": "string", "description": "下一口最低出价。" },
+          "my": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/MyAuctionStatus", "description": "登录用户才有。" },
+              { "type": "null" }
+            ]
+          },
+          "order_id": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "成交后的站内订单。"
+          },
+          "pay_deadline": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "当前一份成交证明的付款截止时间。"
+          },
+          "reserve_met": { "type": "boolean" },
+          "reserve_price": {
+            "type": ["string", "null"],
+            "description": "保留价只给卖家；其他人只看到是否已达到。"
+          },
+          "round": {
+            "type": "integer",
+            "format": "int32",
+            "description": "已发出的成交证明份数（1 = 赢家，2、3 = 递补）。"
+          },
+          "seller_id": { "type": "integer", "format": "int64" },
+          "server_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "服务器当前时间：倒计时按它校正本机时钟偏差。"
+          },
+          "snipe_extension_secs": { "type": ["integer", "null"], "format": "int32" },
+          "snipe_window_secs": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "防狙击：结束前这么多秒内的出价把结束时间顺延 `snipe_extension_secs`，累计不超过 `extension_cap_secs`\n（开始签名时取自站长设置，之后不变；草稿还没开始签名时为空）。"
+          },
+          "start_price": {
+            "type": "string",
+            "description": "以下金额均为拍卖币种最小单位（USDT 最小单位或分），十进制字符串。"
+          },
+          "starts_at": { "type": ["string", "null"], "format": "date-time" },
+          "state": { "$ref": "#/components/schemas/AuctionState" },
+          "terms": { "$ref": "#/components/schemas/AuctionTerms" },
+          "topic_id": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "上线后的拍卖帖主题。"
           }
         }
       },
@@ -5174,6 +6025,44 @@
             "format": "int64",
             "description": "滚动 24 小时内还能代付提币几次（每天最多 3 次，与剩余次数取小者才是实际可用次数）。"
           }
+        }
+      },
+      "BidPage": {
+        "type": "object",
+        "required": ["bids"],
+        "properties": {
+          "bids": { "type": "array", "items": { "$ref": "#/components/schemas/BidView" } },
+          "next_cursor": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "还有更早的出价时为下一页的 `before`。"
+          }
+        }
+      },
+      "BidRequest": {
+        "type": "object",
+        "required": ["amount"],
+        "properties": {
+          "amount": {
+            "type": "string",
+            "description": "拍卖币种最小单位（USDT 最小单位或分），十进制字符串。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BidView": {
+        "type": "object",
+        "required": ["id", "bidder", "mine", "linked", "amount", "created_at"],
+        "properties": {
+          "amount": { "type": "string", "description": "拍卖币种最小单位，十进制字符串。" },
+          "bidder": { "type": "string", "description": "打码的出价人。" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "id": { "type": "integer", "format": "int64" },
+          "linked": {
+            "type": "boolean",
+            "description": "出价人与本场其他出价人是关联账号（同设备）。"
+          },
+          "mine": { "type": "boolean", "description": "是我出的价。" }
         }
       },
       "BoardResponse": {
@@ -5525,6 +6414,11 @@
           "topic_id": { "type": "integer", "format": "int64" }
         }
       },
+      "Currency": {
+        "type": "string",
+        "description": "拍卖币种（`AuctionAuth.currency`）。",
+        "enum": ["usdt", "cny"]
+      },
       "Deadlines": {
         "type": "object",
         "properties": {
@@ -5594,6 +6488,34 @@
           },
           "version": { "type": "string" }
         }
+      },
+      "Eligibility": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["kind"],
+            "properties": { "kind": { "type": "string", "enum": ["none"] } }
+          },
+          {
+            "type": "object",
+            "description": "余额 ≥ 出价（折合 USDT）的 `percent`%；只能是 10、50、100。",
+            "required": ["percent", "kind"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["percent"] },
+              "percent": { "type": "integer", "format": "int32", "minimum": 0 }
+            }
+          },
+          {
+            "type": "object",
+            "description": "余额 ≥ 固定金额（USDT 最小单位，十进制字符串）。",
+            "required": ["usdt", "kind"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["fixed"] },
+              "usdt": { "type": "string" }
+            }
+          }
+        ],
+        "description": "出价资格（卖家挂拍时选，plan 第 9 节「拍卖默认」）：不要求 / 钱包 USDT 余额 ≥ 出价的 10% / 50% / 100% / 固定金额。"
       },
       "ErrorBody": {
         "type": "object",
@@ -5673,6 +6595,18 @@
           "CHAT_CHAIN_BROKEN",
           "REPORT_RESOLVED",
           "RULING_MISMATCH",
+          "AUCTIONS_DISABLED",
+          "AUCTION_UNAVAILABLE",
+          "AUCTION_DURATION_INVALID",
+          "AUCTION_INCREMENT_TOO_LOW",
+          "AUCTION_SIGN_EXPIRED",
+          "AUCTION_SIGNATURE_INVALID",
+          "AUCTION_HAS_BIDS",
+          "BID_TOO_LOW",
+          "BID_BY_SELLER",
+          "BID_ALREADY_LEADING",
+          "BID_NEW_ACCOUNT_CAP",
+          "BID_BALANCE_INSUFFICIENT",
           "INTERNAL"
         ]
       },
@@ -5686,6 +6620,17 @@
           "safe": { "type": ["string", "null"] },
           "transaction_builder": { "type": "object" }
         }
+      },
+      "FinishAuctionRequest": {
+        "type": "object",
+        "required": ["signature"],
+        "properties": {
+          "signature": {
+            "type": "string",
+            "description": "卖家对 `auth_hash` 的签名（`0x` 十六进制；智能账户为 ERC-1271 / ERC-6492 格式）。"
+          }
+        },
+        "additionalProperties": false
       },
       "FloorComment": {
         "type": "object",
@@ -6090,6 +7035,24 @@
           "settings": { "$ref": "#/components/schemas/ModerationSettings" }
         }
       },
+      "MyAuctionStatus": {
+        "type": "object",
+        "description": "访问者自己在这场拍卖里的情况。",
+        "required": ["seller", "leading", "outbid", "winner"],
+        "properties": {
+          "best_bid": {
+            "type": ["string", "null"],
+            "description": "我的最高出价（拍卖币种最小单位）。"
+          },
+          "leading": { "type": "boolean", "description": "我是当前最高出价者。" },
+          "outbid": { "type": "boolean", "description": "我出过价、但已被超过。" },
+          "seller": { "type": "boolean" },
+          "winner": {
+            "type": "boolean",
+            "description": "当前这份成交证明是给我的（待付款时用 `GET /auctions/{id}/payment` 取付款数据）。"
+          }
+        }
+      },
       "NegotiationRef": {
         "type": "object",
         "description": "私信报价生成的订单：谈判会话与付款上链时的最后一条消息（`GET /api/v1/orders/{id}/negotiation` 读取）。",
@@ -6098,6 +7061,51 @@
           "conversation_id": { "type": "integer", "format": "int64" },
           "last_message_id": { "type": "integer", "format": "int64" }
         }
+      },
+      "NewAuctionRequest": {
+        "allOf": [
+          { "$ref": "#/components/schemas/NewTopicRequest" },
+          {
+            "type": "object",
+            "required": [
+              "currency",
+              "start_price",
+              "increment",
+              "reserve_price",
+              "duration_secs",
+              "terms"
+            ],
+            "properties": {
+              "cny_per_usdt": {
+                "type": ["integer", "null"],
+                "format": "int32",
+                "description": "人民币拍卖必填：每 1 USDT 合多少元，4 位小数定点数（7.2000 = 72000），范围 50000–100000。",
+                "minimum": 0
+              },
+              "currency": { "$ref": "#/components/schemas/Currency" },
+              "duration_secs": {
+                "type": "integer",
+                "format": "int32",
+                "description": "拍卖时长（秒），在站长设定的范围内。",
+                "minimum": 0
+              },
+              "eligibility": { "$ref": "#/components/schemas/Eligibility" },
+              "increment": {
+                "type": "string",
+                "description": "加价幅度：不低于 1 USDT（人民币按卖家汇率折算）与起拍价的 1%。"
+              },
+              "reserve_price": {
+                "type": "string",
+                "description": "保留价：不低于起拍价；最高出价达到它才成交。"
+              },
+              "start_price": {
+                "type": "string",
+                "description": "以下金额为拍卖币种最小单位（USDT 最小单位或分），十进制字符串。"
+              },
+              "terms": { "$ref": "#/components/schemas/AuctionTerms" }
+            }
+          }
+        ]
       },
       "NewCommentRequest": {
         "type": "object",
@@ -6276,11 +7284,11 @@
           "id": { "type": "integer", "format": "int64" },
           "kind": {
             "type": "string",
-            "description": "`reply` / `mention` / `comment` / `like` / `message` / `order` / `offer` / `system`。"
+            "description": "`reply` / `mention` / `comment` / `like` / `message` / `order` / `offer` / `auction` / `system`。"
           },
           "payload": {
             "type": "object",
-            "description": "按类型：reply / mention 为 `{topic_id, post_id, floor}`（评论里的 @ 另有 `comment_id`）；\ncomment 为 `{topic_id, post_id, floor, comment_id, reply}`（`reply` 为真：回复了你的评论，否则是评论了你的楼层）；\nlike 为 `{topic_id, post_id, floor, count, likers}`（合并窗口内新增的赞数与最近几位，新的在前）；\nmessage 为 `{conversation_id, message_id}`；\noffer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；\nsystem 为发件箱原样内容（含 `event`）。"
+            "description": "按类型：reply / mention 为 `{topic_id, post_id, floor}`（评论里的 @ 另有 `comment_id`）；\ncomment 为 `{topic_id, post_id, floor, comment_id, reply}`（`reply` 为真：回复了你的评论，否则是评论了你的楼层）；\nlike 为 `{topic_id, post_id, floor, count, likers}`（合并窗口内新增的赞数与最近几位，新的在前）；\nmessage 为 `{conversation_id, message_id}`；\noffer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；\nauction 为 `{auction_id, topic_id, event, …}`（`event`：`outbid` 被超价、`won` 中标、`runner_up` 递补中标、\n`sold` / `unsold` 卖家的成交（待付款）与流拍、`defaulted` 逾期违约，见 `forum_db::auctions`）；\nsystem 为发件箱原样内容（含 `event`）。"
           },
           "read": { "type": "boolean" }
         }
@@ -6406,6 +7414,24 @@
         "required": ["user_id"],
         "properties": { "user_id": { "type": "integer", "format": "int64" } }
       },
+      "OrderAuction": {
+        "type": "object",
+        "description": "拍卖成交（ADR 0011）：付款页显示拍卖币种成交价、卖家汇率与应付 USDT（订单 `amount`）。",
+        "required": ["auction_id", "currency", "price"],
+        "properties": {
+          "auction_id": { "type": "string" },
+          "cny_per_usdt": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "卖家签名的固定汇率（每 1 USDT 合多少元，4 位小数定点数，7.2000 = 72000）；USDT 拍卖为空。"
+          },
+          "currency": { "type": "string", "description": "`usdt` 或 `cny`。" },
+          "price": {
+            "type": "string",
+            "description": "成交价，拍卖币种的最小单位：USDT 6 位小数或人民币分（十进制字符串）。"
+          }
+        }
+      },
       "OrderFees": {
         "type": "object",
         "description": "下单时固定的费用（下单区块 `getOrder` 快照；快照缺失时为空）。",
@@ -6475,7 +7501,7 @@
         "properties": {
           "auction": {
             "oneOf": [
-              { "$ref": "#/components/schemas/AuctionView", "description": "拍卖成交的订单。" },
+              { "$ref": "#/components/schemas/OrderAuction", "description": "拍卖成交的订单。" },
               { "type": "null" }
             ]
           },
@@ -7393,11 +8419,15 @@
       },
       "SanctionView": {
         "type": "object",
-        "required": ["id", "kind", "reason", "created_by", "created_at", "active"],
+        "required": ["id", "kind", "reason", "created_at", "active"],
         "properties": {
           "active": { "type": "boolean", "description": "仍在生效（未解除、未到期）。" },
           "created_at": { "type": "string", "format": "date-time" },
-          "created_by": { "type": "integer", "format": "int64" },
+          "created_by": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "处罚人；系统自动的处罚（拍卖违约禁拍）为空。"
+          },
           "ends_at": {
             "type": ["string", "null"],
             "format": "date-time",
@@ -7463,6 +8493,23 @@
             "type": "string",
             "description": "文字，≤ 2000 字（图片消息在图片上传上线后支持）。"
           }
+        },
+        "additionalProperties": false
+      },
+      "SettlementProof": {
+        "type": "object",
+        "description": "与 `Escrow.SettlementProof` 字段一一对应、同序：forum-sponsor 签的成交证明。",
+        "required": ["authHash", "winner", "price", "payDeadline"],
+        "properties": {
+          "authHash": { "type": "string" },
+          "payDeadline": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix 秒。",
+            "minimum": 0
+          },
+          "price": { "type": "string", "description": "成交价，拍卖币种的最小单位。" },
+          "winner": { "type": "string" }
         },
         "additionalProperties": false
       },
@@ -7733,7 +8780,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/AuctionSummary",
-                "description": "拍卖帖的信息行（当前价、出价次数、剩余时间等）。拍卖还没上线，现在总是空。"
+                "description": "拍卖帖的信息行（当前价、出价次数、结束时间等）；只在主题列表里给出，主题页用 `GET /api/v1/topics/{id}/auction`。"
               },
               { "type": "null" }
             ]
@@ -7746,7 +8793,7 @@
           "kind": {
             "type": "integer",
             "format": "int32",
-            "description": "0=普通、1=交易、2=争议。"
+            "description": "0=普通、1=交易、2=争议、3=拍卖。"
           },
           "last_floor": {
             "type": "integer",
@@ -7899,6 +8946,11 @@
             "description": "剩余库存：仍有效的公开报价还能成交的次数。没有公开报价时为空；只在主题列表里给出。"
           }
         }
+      },
+      "TypedField": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": { "name": { "type": "string" }, "type": { "type": "string" } }
       },
       "UnreadCount": {
         "type": "object",

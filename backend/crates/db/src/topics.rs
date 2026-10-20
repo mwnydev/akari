@@ -11,9 +11,10 @@ pub const FLAG_HIDDEN: i16 = 8;
 /// 不进普通列表的标志：置顶（单独展示）与隐藏。
 pub const FLAGS_NOT_LISTED: i16 = FLAG_PINNED | FLAG_HIDDEN;
 
-/// `topics.kind`：普通 / 交易 / 争议。
+/// `topics.kind`：普通 / 交易 / 争议 / 拍卖。
 pub const KIND_NORMAL: i16 = 0;
 pub const KIND_TRADE: i16 = 1;
+pub const KIND_AUCTION: i16 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Topic {
