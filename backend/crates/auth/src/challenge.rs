@@ -57,10 +57,7 @@ mod tests {
     use super::*;
 
     fn pool() -> Option<Pool> {
-        let Ok(url) = std::env::var("VALKEY_URL") else {
-            eprintln!("VALKEY_URL not set, skipping valkey-backed test");
-            return None;
-        };
+        let url = forum_testkit::valkey_url()?;
         Some(forum_kv::pool(&url).unwrap())
     }
 

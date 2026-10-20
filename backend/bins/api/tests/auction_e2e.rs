@@ -132,11 +132,9 @@ async fn trader(app: &axum::Router, db: &PgPool, w: &chain::World, salt: u8, usd
 async fn auction_settles_on_chain_through_the_sponsor(db: PgPool) {
     let (Some(anvil_bin), Some(forge)) = (chain::foundry_bin("anvil"), chain::foundry_bin("forge"))
     else {
-        eprintln!("anvil or forge not found, skipping");
         return;
     };
-    if std::env::var("VALKEY_URL").is_err() {
-        eprintln!("VALKEY_URL not set, skipping");
+    if forum_testkit::valkey_url().is_none() {
         return;
     }
     let out = chain::compile_fixtures(&forge);

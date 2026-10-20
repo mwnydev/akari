@@ -38,7 +38,6 @@ use common::*;
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn sponsors_and_relays_user_operations(db: PgPool) {
     let (Some(anvil_bin), Some(forge)) = (foundry_bin("anvil"), foundry_bin("forge")) else {
-        eprintln!("anvil or forge not found, skipping");
         return;
     };
     forum_runtime::init_tracing();
@@ -375,7 +374,6 @@ async fn nitro_proxy(upstream: String) -> (String, Arc<AtomicUsize>) {
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn simulates_through_the_entry_point_when_simulate_v1_crashes(db: PgPool) {
     let (Some(anvil_bin), Some(forge)) = (foundry_bin("anvil"), foundry_bin("forge")) else {
-        eprintln!("anvil or forge not found, skipping");
         return;
     };
     forum_runtime::init_tracing();

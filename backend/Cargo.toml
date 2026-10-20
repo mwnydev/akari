@@ -19,6 +19,7 @@ forum-kv = { path = "crates/kv" }
 forum-mail = { path = "crates/mail" }
 forum-content = { path = "crates/content" }
 forum-media = { path = "crates/media" }
+forum-testkit = { path = "crates/testkit" }
 
 tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "signal", "net"] }
 tokio-util = { version = "0.7", features = ["rt"] }

@@ -161,10 +161,7 @@ pub fn build_with(db: PgPool, wallet: WalletState) -> Option<Router> {
 
 /// 应用状态；`ns` 是 Valkey 键与推送频道前缀，同一个 `ns` 的两个状态相当于同一部署里的两个 forum-api 实例。
 pub fn state_with(db: PgPool, wallet: WalletState, ns: &str) -> Option<AppState> {
-    let Ok(url) = std::env::var("VALKEY_URL") else {
-        eprintln!("VALKEY_URL not set, skipping valkey-backed test");
-        return None;
-    };
+    let url = forum_testkit::valkey_url()?;
     let kv = forum_kv::pool(&url).unwrap();
     Some(AppState {
         db,

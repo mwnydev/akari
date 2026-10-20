@@ -260,7 +260,7 @@ async fn below_reserve_or_no_bids_is_unsold(db: PgPool) {
 /// 状态变化（这里是流拍）让游客缓存里带这条拍卖信息行的板块列表失效。
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn state_changes_invalidate_guest_lists(db: PgPool) {
-    let Ok(url) = std::env::var("VALKEY_URL") else {
+    let Some(url) = forum_testkit::valkey_url() else {
         return;
     };
     people(&db).await;

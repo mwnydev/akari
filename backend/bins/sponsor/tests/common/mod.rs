@@ -44,19 +44,9 @@ alloy::sol! {
     }
 }
 
+/// Foundry 的命令行工具；找不到时按 [`forum_testkit::require`] 跳过（或在严格模式下失败）。
 pub fn foundry_bin(name: &str) -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .map(|h| PathBuf::from(h).join(".foundry/bin").join(name))
-        .filter(|p| p.is_file())
-        .or_else(|| {
-            Command::new(name)
-                .arg("--version")
-                .stdout(Stdio::null())
-                .status()
-                .ok()
-                .filter(|s| s.success())
-                .map(|_| PathBuf::from(name))
-        })
+    forum_testkit::require(forum_testkit::tool(name), name, "install Foundry")
 }
 
 pub struct Anvil {

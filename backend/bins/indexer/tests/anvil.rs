@@ -27,6 +27,7 @@ use forum_chain::config::{
 use forum_chain::order::Market;
 use forum_chain::reorg::{BlockTag, ChainSource};
 use forum_db::PgPool;
+use forum_testkit::require;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
@@ -529,8 +530,7 @@ async fn seed_forum(pool: &PgPool, w: &World) -> (i64, i64) {
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
-    let Some(bin) = anvil_bin() else {
-        eprintln!("skipped: anvil not found (install Foundry or set ANVIL_BIN)");
+    let Some(bin) = require(anvil_bin(), "anvil", "install Foundry or set ANVIL_BIN") else {
         return;
     };
     let anvil = Anvil::spawn(&bin).unwrap();
@@ -946,8 +946,7 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
 
 #[tokio::test]
 async fn rpc_fails_over_to_backup() {
-    let Some(bin) = anvil_bin() else {
-        eprintln!("skipped: anvil not found (install Foundry or set ANVIL_BIN)");
+    let Some(bin) = require(anvil_bin(), "anvil", "install Foundry or set ANVIL_BIN") else {
         return;
     };
     let anvil = Anvil::spawn(&bin).unwrap();
@@ -966,8 +965,7 @@ async fn rpc_fails_over_to_backup() {
 /// （1 小时内不重复）。
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn deep_reorg_and_failover_alert_admins(pool: PgPool) {
-    let Some(bin) = anvil_bin() else {
-        eprintln!("skipped: anvil not found (install Foundry or set ANVIL_BIN)");
+    let Some(bin) = require(anvil_bin(), "anvil", "install Foundry or set ANVIL_BIN") else {
         return;
     };
     let anvil = Anvil::spawn(&bin).unwrap();
@@ -1022,8 +1020,7 @@ async fn deep_reorg_and_failover_alert_admins(pool: PgPool) {
 /// arbiter 按后端生成的 `resolve` calldata 执行 → 关闭（executed），订单按裁决结算。
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn arbitration_case_follows_dispute_reorg_and_resolve(pool: PgPool) {
-    let Some(bin) = anvil_bin() else {
-        eprintln!("skipped: anvil not found (install Foundry or set ANVIL_BIN)");
+    let Some(bin) = require(anvil_bin(), "anvil", "install Foundry or set ANVIL_BIN") else {
         return;
     };
     let anvil = Anvil::spawn(&bin).unwrap();

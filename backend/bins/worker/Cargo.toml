@@ -37,6 +37,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+forum-testkit.workspace = true
 axum.workspace = true
 serde_json.workspace = true
 

@@ -436,9 +436,9 @@ async fn wallet_address_is_verified_against_the_kernel_factory(db: PgPool) {
     use forum_api::wallet::ChainAddressVerifier;
     use forum_chain::anvil::{Anvil, anvil_bin, dev_wallet_version, install_kernel_factory};
     use forum_chain::kernel::{AddressResolver, PasskeyPublicKey};
+    use forum_testkit::require;
 
-    let Some(bin) = anvil_bin() else {
-        eprintln!("skipped: anvil not found (install Foundry or set ANVIL_BIN)");
+    let Some(bin) = require(anvil_bin(), "anvil", "install Foundry or set ANVIL_BIN") else {
         return;
     };
     let anvil = Anvil::spawn(&bin).unwrap();

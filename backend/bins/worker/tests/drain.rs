@@ -302,7 +302,7 @@ async fn order_updates_notify_parties_and_push(pool: PgPool) {
     outbox::enqueue(&pool, "push.message", &json!({"id": m.id}), 0)
         .await
         .unwrap();
-    let rt = std::env::var("VALKEY_URL").ok().map(|url| {
+    let rt = forum_testkit::valkey_url().map(|url| {
         (
             url.clone(),
             forum_kv::Realtime::new(
@@ -401,8 +401,7 @@ async fn notification_partitions_roll_forward(pool: PgPool) {
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
 async fn view_counts_flush_to_topics(pool: PgPool) {
-    let Ok(url) = std::env::var("VALKEY_URL") else {
-        eprintln!("VALKEY_URL not set, skipping valkey-backed test");
+    let Some(url) = forum_testkit::valkey_url() else {
         return;
     };
     let cache = forum_kv::ForumCache::new(

@@ -3,27 +3,17 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // 测试代码
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::path::Path;
+use std::process::Command;
 
-fn tool(name: &str) -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".foundry/bin").join(name));
-    home.filter(|p| p.is_file()).or_else(|| {
-        Command::new(name)
-            .arg("--version")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .ok()
-            .filter(|s| s.success())
-            .map(|_| PathBuf::from(name))
-    })
-}
+use forum_testkit::{require, tool};
 
 #[test]
 fn committed_bytecode_matches_the_source() {
-    let (Some(forge), Some(_)) = (tool("forge"), tool("jq")) else {
-        eprintln!("skipped: forge or jq not installed");
+    let (Some(forge), Some(_)) = (
+        require(tool("forge"), "forge", "install Foundry"),
+        require(tool("jq"), "jq", "install jq"),
+    ) else {
         return;
     };
     let sig = Path::new(env!("CARGO_MANIFEST_DIR")).join("sig");

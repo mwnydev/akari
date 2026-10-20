@@ -115,13 +115,9 @@ configs:
         }
         return listen.apply(this, args);
       };
+  # CI 的 rust 任务也挂载这个文件（.github/workflows/ci.yml）
   s3-identities:
-    content: |
-      {"identities": [
-        {"name": "anonymous", "actions": ["Read"]},
-        {"name": "dev", "credentials": [{"accessKey": "akari-dev", "secretKey": "akari-dev-only-secret"}],
-         "actions": ["Admin", "Read", "Write", "List", "Tagging"]}
-      ]}
+    file: ./s3-identities.json
 volumes:
   pgdata:
   valkeydata:

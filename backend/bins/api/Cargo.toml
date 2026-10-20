@@ -46,6 +46,7 @@ utoipa.workspace = true
 utoipa-axum.workspace = true
 
 [dev-dependencies]
+forum-testkit.workspace = true
 tokio-tungstenite = "0.29"
 forum-chain = { workspace = true, features = ["anvil"] }
 webauthn-authenticator-rs.workspace = true

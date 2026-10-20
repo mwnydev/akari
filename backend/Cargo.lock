@@ -2418,6 +2418,7 @@ dependencies = [
  "forum-media",
  "forum-runtime",
  "forum-sponsor",
+ "forum-testkit",
  "forum-worker",
  "futures-util",
  "hex",
@@ -2447,6 +2448,7 @@ name = "forum-auth"
 version = "0.1.0"
 dependencies = [
  "forum-kv",
+ "forum-testkit",
  "hex",
  "hmac 0.13.0",
  "openssl",
@@ -2469,6 +2471,7 @@ name = "forum-chain"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "forum-testkit",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -2522,6 +2525,7 @@ dependencies = [
  "forum-db",
  "forum-kv",
  "forum-runtime",
+ "forum-testkit",
  "serde",
  "serde_json",
  "sqlx",
@@ -2538,6 +2542,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "deadpool-redis",
+ "forum-testkit",
  "futures-util",
  "rand 0.10.3",
  "redis",
@@ -2570,6 +2575,7 @@ dependencies = [
 name = "forum-media"
 version = "0.1.0"
 dependencies = [
+ "forum-testkit",
  "hex",
  "image",
  "kamadak-exif",
@@ -2606,6 +2612,7 @@ dependencies = [
  "forum-core",
  "forum-db",
  "forum-runtime",
+ "forum-testkit",
  "reqwest",
  "serde",
  "serde_json",
@@ -2617,6 +2624,10 @@ dependencies = [
  "tower",
  "tracing",
 ]
+
+[[package]]
+name = "forum-testkit"
+version = "0.1.0"
 
 [[package]]
 name = "forum-worker"
@@ -2633,6 +2644,7 @@ dependencies = [
  "forum-mail",
  "forum-media",
  "forum-runtime",
+ "forum-testkit",
  "hex",
  "reqwest",
  "serde",

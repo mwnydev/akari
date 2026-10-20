@@ -1,0 +1,5 @@
+{"identities": [
+  {"name": "anonymous", "actions": ["Read"]},
+  {"name": "dev", "credentials": [{"accessKey": "akari-dev", "secretKey": "akari-dev-only-secret"}],
+   "actions": ["Admin", "Read", "Write", "List", "Tagging"]}
+]}

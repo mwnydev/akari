@@ -157,10 +157,7 @@ mod tests {
     use super::*;
 
     fn store() -> Option<CodeStore> {
-        let Ok(url) = std::env::var("VALKEY_URL") else {
-            eprintln!("VALKEY_URL not set, skipping valkey-backed test");
-            return None;
-        };
+        let url = forum_testkit::valkey_url()?;
         Some(CodeStore::new(forum_kv::pool(&url).unwrap(), &[7u8; 32]).unwrap())
     }
 

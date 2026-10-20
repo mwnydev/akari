@@ -5,10 +5,7 @@
 use forum_media::{Storage, StorageConfig};
 
 async fn storage() -> Option<Storage> {
-    let Some(cfg) = StorageConfig::from_env().unwrap() else {
-        eprintln!("MEDIA_S3_* not set, skipping storage test");
-        return None;
-    };
+    let cfg = forum_testkit::require_s3(StorageConfig::from_env().unwrap())?;
     let s = Storage::new(&cfg).unwrap();
     s.ensure_bucket().await.unwrap();
     Some(s)

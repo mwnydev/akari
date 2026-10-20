@@ -18,6 +18,7 @@ thiserror.workspace = true
 webp.workspace = true
 
 [dev-dependencies]
+forum-testkit.workspace = true
 kamadak-exif.workspace = true
 tokio.workspace = true
 

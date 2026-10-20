@@ -20,6 +20,7 @@ toml.workspace = true
 tokio = { workspace = true, features = ["time"], optional = true }
 
 [dev-dependencies]
+forum-testkit.workspace = true
 alloy = { workspace = true, features = ["signer-local"] }
 tokio.workspace = true
 

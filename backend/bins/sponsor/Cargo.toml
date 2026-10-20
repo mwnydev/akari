@@ -32,6 +32,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+forum-testkit.workspace = true
 tower.workspace = true
 
 [lints]

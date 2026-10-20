@@ -418,10 +418,9 @@ async fn uploads_presign_complete_and_status(db: PgPool) {
         let (app, ca) = (app.clone(), ca.clone());
         async move { call(&app, "POST", "/api/v1/uploads", Some(body), &ca).await }
     };
-    let Some(storage) = common::media() else {
+    let Some(storage) = forum_testkit::require_s3(common::media()) else {
         let r = new(json!({"content_type": "image/jpeg", "size": 1000})).await;
         assert_eq!(r.status, StatusCode::SERVICE_UNAVAILABLE);
-        eprintln!("MEDIA_S3_* not set, skipping upload flow");
         return;
     };
     storage.ensure_bucket().await.unwrap();

@@ -16,7 +16,7 @@ fn committed_abi_matches_forge_artifacts() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let out = root.join("../../../contracts/out");
     if !out.exists() {
-        eprintln!("skipped: contracts/out not built (cd contracts && forge build)");
+        forum_testkit::require_or_skip("contracts/out", "cd contracts && forge build");
         return;
     }
     for name in [

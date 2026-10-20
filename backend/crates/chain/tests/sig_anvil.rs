@@ -10,11 +10,11 @@ use alloy::signers::local::PrivateKeySigner;
 use forum_chain::anvil::{Anvil, anvil_bin};
 use forum_chain::bindings::MockUSDT;
 use forum_chain::sig::signature_valid;
+use forum_testkit::require;
 
 #[tokio::test]
 async fn checks_signatures_like_the_contract() {
-    let Some(bin) = anvil_bin() else {
-        eprintln!("skipped: anvil not found (install Foundry or set ANVIL_BIN)");
+    let Some(bin) = require(anvil_bin(), "anvil", "install Foundry or set ANVIL_BIN") else {
         return;
     };
     let anvil = Anvil::spawn(&bin).unwrap();

@@ -37,8 +37,23 @@ jobs:
       SQLX_OFFLINE: "true"
       DATABASE_URL: postgres://akari:akari-ci@127.0.0.1:5432/akari
       VALKEY_URL: redis://127.0.0.1:6379
+      # 缺少测试前提（anvil、forge、jq、Valkey、S3、合约产物）时测试直接失败而不是跳过（forum-testkit）
+      AKARI_TEST_STRICT: "1"
+      # 下一步启动的 S3 兼容服务；测试自己建存储桶
+      MEDIA_S3_ENDPOINT: http://127.0.0.1:8333
+      MEDIA_S3_BUCKET: akari-ci
+      MEDIA_S3_REGION: us-east-1
+      MEDIA_S3_ACCESS_KEY: akari-dev
+      MEDIA_S3_SECRET_KEY: akari-dev-only-secret
+      MEDIA_PUBLIC_BASE: http://127.0.0.1:8333/akari-ci/
     steps:
       - uses: actions/checkout@v5
+      # 与 deploy/dev/compose.yaml 的 `s3` 服务相同（镜像、身份文件）。服务容器不能传启动参数，所以用 docker run
+      - run: >-
+          docker run -d --name s3 --memory 512m -p 127.0.0.1:8333:8333
+          -v "$GITHUB_WORKSPACE/deploy/dev/s3-identities.json:/etc/seaweedfs/s3.json:ro"
+          chrislusf/seaweedfs:3.97 server -dir=/data -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json
+          -master.volumeSizeLimitMB=64 -volume.max=8
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.99.1
@@ -59,12 +74,13 @@ jobs:
           psql "$DATABASE_URL" -c "ALTER SYSTEM SET random_page_cost = 1.1" -c "ALTER SYSTEM SET effective_io_concurrency = 200" -c "SELECT pg_reload_conf()"
       - run: sqlx migrate run --source crates/db/migrations
       - run: SQLX_OFFLINE=false cargo sqlx prepare --workspace --check -- --all-targets
-      # anvil / forge 集成测试（代付、拍卖、indexer、ABI 与字节码新鲜度）找不到工具会自行跳过，CI 必须装上
+      # anvil / forge 集成测试（代付、拍卖、indexer、ABI 与字节码新鲜度）要用；jq 是 runner 自带的
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.8.3
       - run: forge build
         working-directory: contracts
+      - run: timeout 60 bash -c 'until curl -sf -o /dev/null http://127.0.0.1:8333/; do sleep 1; done'
       # 测试只跑一遍（插桩构建），顺带产出行覆盖率；合约绑定（sol! 宏）与测试代码不计入
       # 门槛：全部 ≥ 88%（引入时 89.8% 减 1 个百分点取整），core 与 db 层各 ≥ 80%（plan 第 14 节）
       - run: >-

@@ -115,10 +115,7 @@ async fn daily_audit_repairs_stats(db: PgPool) {
 }
 
 async fn storage() -> Option<Arc<Storage>> {
-    let Some(cfg) = StorageConfig::from_env().unwrap() else {
-        eprintln!("MEDIA_S3_* not set, skipping image worker test");
-        return None;
-    };
+    let cfg = forum_testkit::require_s3(StorageConfig::from_env().unwrap())?;
     let s = Storage::new(&cfg).unwrap();
     s.ensure_bucket().await.unwrap();
     Some(Arc::new(s))

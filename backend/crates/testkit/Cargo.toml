@@ -1,0 +1,12 @@
+[package]
+name = "forum-testkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# 只作 dev-dependency：测试的外部前提（见 src/lib.rs）。
+
+[lints]
+workspace = true
