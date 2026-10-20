@@ -28,8 +28,10 @@ use_block_tags = true
 fallback_safe_depth = 240
 fallback_finalized_depth = 4800
 
+# 补拉校对间隔：生产默认 20 秒（Infura 免费档预算，docs/runbooks/testnet-deploy.md「RPC 用量」）；
+# 环境变量 INDEXER_RECONCILE_MS 可覆盖。实时显示靠 WebSocket 订阅，补拉只负责校对与回滚。
 [indexer]
-reconcile_interval_ms = 5000
+reconcile_interval_ms = 20000
 max_block_range = 2000
 promote_every = 6
 failback_secs = 300

@@ -25,8 +25,8 @@ interface ISafe {
 ///   AUCTION_SIGNER    forum-sponsor auction key (optional; unset = auctions off)
 ///   PAYMASTER_SIGNER  forum-sponsor paymaster key (optional; unset = no paymaster)
 ///   PAYMASTER_OWNER   operations Safe (paymaster owner: stake, signer rotation, deposit withdrawal)
-/// On Arbitrum One OWNER, ARBITER and FEE_RECIPIENT must be 2-of-3 Safes (ADR 0013 §5, plan §9) and PAYMASTER_OWNER a
-/// contract; testnets and local chains may use EOAs.
+/// On Arbitrum One OWNER, ARBITER, FEE_RECIPIENT and PAYMASTER_OWNER must be 2-of-3 Safes (ADR 0013 §5, plan §9);
+/// testnets and local chains may use EOAs or threshold-1 Safes.
 /// Usage: forge script script/Deploy.s.sol --rpc-url arbitrum_sepolia --broadcast --verify (or deploy/testnet/testnet.sh)
 contract Deploy is Script {
     struct Inputs {
@@ -143,12 +143,11 @@ contract Deploy is Script {
         _requireSafe("FEE_RECIPIENT", feeRecipient, deployer);
     }
 
-    /// Arbitrum One: the paymaster owner (operations Safe, plan §9: the site owner executes alone) can withdraw the
-    /// ETH deposit and rotate the sponsor key, so it must be a contract and not the deployer's key.
+    /// Arbitrum One: the paymaster owner (operations Safe) can withdraw the ETH deposit and rotate the sponsor key, so
+    /// it gets the same 2-of-3 checks as the other Safes. Testnets keep a threshold-1 operations Safe.
     function requireMainnetPaymasterOwner(address deployer, address paymasterOwner) public view {
         if (block.chainid != ARBITRUM_ONE) return;
-        require(paymasterOwner != deployer, "PAYMASTER_OWNER must not be the deployer");
-        require(paymasterOwner.code.length > 0, "PAYMASTER_OWNER has no code (an EOA is not allowed on Arbitrum One)");
+        _requireSafe("PAYMASTER_OWNER", paymasterOwner, deployer);
     }
 
     function _requireSafe(string memory name, address safe, address deployer) internal view {

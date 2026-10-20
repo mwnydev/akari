@@ -68,7 +68,7 @@ Oct 17, 2026 · @lam
 - **图片直传 R2**，worker 异步转 WebP；**后台独立前端**，和钱包一样放 Cloudflare Pages
 - **链路追踪**：api、worker、indexer、sponsor 接入 OpenTelemetry
 - 刻意不做：微服务拆分、Kubernetes、Kafka——按本项目规模只增加运维负担
-- **indexer 省调用**：用 RPC 的 WebSocket 订阅合约事件即时显示，每 5 秒按区块范围批量补拉校对，不逐块轮询（Arbitrum 约 0.25 秒出一个块，逐块轮询会让 RPC 账单翻几倍）
+- **indexer 省调用**：用 RPC 的 WebSocket 订阅合约事件即时显示，每 20 秒按区块范围批量补拉校对（`INDEXER_RECONCILE_MS` 可调；5 秒时单 indexer 一天约 700 万 Infura credits，超出免费档），不逐块轮询（Arbitrum 约 0.25 秒出一个块，逐块轮询会让 RPC 账单翻几倍）
 - **浏览器不直连第三方**：钱包页提交操作、读链上状态都经 forum-api 代理；代理只转发本站钱包的操作并限流，读链结果走 Valkey 缓存，RPC 与备用 Bundler 密钥只在服务器
 
 **现成中间件（能用现成的就不自己写）**
@@ -880,7 +880,7 @@ Telegram 只做通知、讨论和引流，任何涉及资金或账号安全的�
 | 聊天消息端到端 | p95 < 300 ms |
 | 在线状态、通知推送 | < 1 秒 |
 | 全文搜索 | p95 < 300 ms |
-| 链上事件进入论坛 | < 3 秒（RPC WebSocket 订阅即时推送，每 5 秒批量补拉校对） |
+| 链上事件进入论坛 | < 3 秒（RPC WebSocket 订阅即时推送，每 20 秒批量补拉校对） |
 | 首屏 LCP（移动 4G） | < 2.5 秒 |
 | 单页首次加载 JS | < 200 KB（钱包 SDK 只在钱包页加载） |
 | 峰值 CPU / 内存 | < 70% / < 80% |

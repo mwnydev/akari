@@ -25,7 +25,7 @@ WebAuthn 验证器、Safe 都是链上现成合约（ADR 0003）。
   | --- | --- | --- |
   | 仲裁 Safe | Escrow / StreamEscrow 的 `arbiter`（`resolve`、`extendDeadlines`） | 2 名管理员 + 站长，任意 2 人（ADR 0013） |
   | 金库 Safe | EscrowConfig 的 `owner`（改参数，72 小时排队）、两个市场的 `feeRecipient`、Paymaster 的 `treasury` | 站长的 3 个签名设备，任意 2 个（plan 第 9 节） |
-  | 运营 Safe | FixedFeePaymaster 的 `owner`（质押、换代付签名者、取回押金） | 站长单独执行（门槛 1；可再加金库设备作签名人以便取回） |
+  | 运营 Safe | FixedFeePaymaster 的 `owner`（质押、换代付签名者、取回押金） | 测试网：站长单独执行（门槛 1；可再加金库设备作签名人以便取回）。主网：与另两个一样必须是 2/3 Safe（`Deploy.s.sol` 在链 42161 上拒绝其他配置） |
 
   plan 里的「合约 owner Safe」就是金库 Safe，不另建。部署账户不兼任任何角色，部署完只剩一点测试网 ETH。
 - **forum-sponsor 的三把热密钥**只把地址交给部署：`PAYMASTER_SIGNER`（Paymaster 构造时写入）、`RELAYER_ADDRESS`
@@ -199,8 +199,10 @@ deploy/testnet/testnet.sh emit-config   # 写前端 / 后端链配置
 | 折合一整天（`reconcile_interval_ms = 5000`） | 约 5.5 万 | **约 700 万** |
 | forum-sponsor 代付一笔操作（模拟、gas 估算与价格；不含提交） | 约 12 | 1 千 |
 
-Infura 免费档每天 300 万 credits（以官网为准）：按默认 5 秒补拉，单是 indexer 就超出。测试网可以在 `deploy/testnet/.env`
-设 `INDEXER_RECONCILE_MS=20000` 后重跑 `emit-config`（约 175 万 / 天；WebSocket 订阅照常即时显示，补拉只负责校对），
+Infura 免费档每天 300 万 credits（以官网为准）：按 5 秒补拉，单是 indexer 就超出。所以补拉间隔的默认值是 **20 秒**
+（`[indexer] reconcile_interval_ms` 不写时的默认值、`chain.example.toml` 与 `emit-config` 的默认 `INDEXER_RECONCILE_MS=20000`，
+约 175 万 / 天；WebSocket 订阅照常即时显示，补拉只负责校对与回滚）。服务器上可以不改链配置，直接在 `forum-indexer.env` 设
+`INDEXER_RECONCILE_MS` 覆盖（deploy/README.md）；本地开发链（`deploy/dev/aa.sh`）与测试用 1 秒以内。额度更紧时调大，
 或者升级套餐、加第二家节点分摊。主网的用量与套餐另行评估（plan 第 2 节「indexer 省调用」）。WebSocket 订阅推送的计费没有计入。
 
 ## 七、回滚与重新部署

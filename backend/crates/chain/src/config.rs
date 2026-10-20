@@ -133,6 +133,7 @@ impl Default for ConfirmationPolicy {
 }
 
 /// 省调用（plan 第 2 节）：WebSocket 订阅即时显示，每 `reconcile_interval_ms` 按区块范围批量补拉校对。
+/// 环境变量 `INDEXER_RECONCILE_MS` 覆盖文件里的间隔。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct IndexerPolicy {
@@ -148,7 +149,9 @@ pub struct IndexerPolicy {
 impl Default for IndexerPolicy {
     fn default() -> Self {
         Self {
-            reconcile_interval_ms: 5000,
+            // 生产默认 20 秒：每轮补拉约 4 次区块 / 日志查询，一天约 175 万 Infura credits，留在免费档 300 万以内
+            // （docs/runbooks/testnet-deploy.md「RPC 用量」）。本地开发链与测试显式设成 1 秒以内。
+            reconcile_interval_ms: 20_000,
             max_block_range: 2000,
             promote_every: 6,
             failback_secs: 300,
@@ -190,6 +193,11 @@ impl ChainConfig {
         }
         if let Some(backup) = cfg.rpc.backup.as_mut() {
             set_opt(&mut backup.ws, "CHAIN_RPC_BACKUP_WS");
+        }
+        if let Some(ms) = env("INDEXER_RECONCILE_MS").filter(|v| !v.is_empty()) {
+            cfg.indexer.reconcile_interval_ms = ms.parse().map_err(|_| {
+                ChainError::Config(format!("INDEXER_RECONCILE_MS: {ms:?} is not a number"))
+            })?;
         }
         cfg.validate()?;
         Ok(cfg)
@@ -358,6 +366,29 @@ mod tests {
     fn missing_rpc_is_rejected() {
         let err = ChainConfig::parse(EXAMPLE, |_| None).unwrap_err();
         assert!(err.to_string().contains("CHAIN_RPC"), "{err}");
+    }
+
+    #[test]
+    fn reconcile_interval_defaults_to_the_free_tier_budget_and_env_overrides_it() {
+        let omitted = EXAMPLE.replace("reconcile_interval_ms = 20000\n", "");
+        assert_ne!(omitted, EXAMPLE);
+        let cfg = ChainConfig::parse(&omitted, env).unwrap();
+        assert_eq!(cfg.indexer.reconcile_interval(), Duration::from_secs(20));
+        let with = |ms: &'static str| {
+            move |k: &str| {
+                if k == "INDEXER_RECONCILE_MS" {
+                    Some(ms.to_owned())
+                } else {
+                    env(k)
+                }
+            }
+        };
+        let cfg = ChainConfig::parse(EXAMPLE, with("1000")).unwrap();
+        assert_eq!(cfg.indexer.reconcile_interval_ms, 1000);
+        let err = ChainConfig::parse(EXAMPLE, with("20s")).unwrap_err();
+        assert!(err.to_string().contains("INDEXER_RECONCILE_MS"), "{err}");
+        let err = ChainConfig::parse(EXAMPLE, with("0")).unwrap_err();
+        assert!(err.to_string().contains("positive"), "{err}");
     }
 
     #[test]

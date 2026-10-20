@@ -75,7 +75,7 @@
 
 ## 部署
 
-- `script/Deploy.s.sol`：`TOKEN` 不设时（只限测试网与本地链）先部署 `MockUSDT`；再部署 `EscrowConfig`（预测 Escrow 与 StreamEscrow 地址登记为市场）、`Escrow`、`StreamEscrow`，设了 `PAYMASTER_SIGNER` 时最后部署 `FixedFeePaymaster`（owner = `PAYMASTER_OWNER` 运营 Safe，treasury = 金库 Safe）；测试网缺 Solady ERC-6492 验证器时经 CREATE2 部署，Arbitrum One 上缺失则中止（需单独、有意识地部署）。测试网用 `deploy/testnet/testnet.sh` 调用它（docs/runbooks/testnet-deploy.md）。
+- `script/Deploy.s.sol`：`TOKEN` 不设时（只限测试网与本地链）先部署 `MockUSDT`；再部署 `EscrowConfig`（预测 Escrow 与 StreamEscrow 地址登记为市场）、`Escrow`、`StreamEscrow`，设了 `PAYMASTER_SIGNER` 时最后部署 `FixedFeePaymaster`（owner = `PAYMASTER_OWNER` 运营 Safe，Arbitrum One 上与另外三个角色一样必须是 2/3 Safe；treasury = 金库 Safe）；测试网缺 Solady ERC-6492 验证器时经 CREATE2 部署，Arbitrum One 上缺失则中止（需单独、有意识地部署）。测试网用 `deploy/testnet/testnet.sh` 调用它（docs/runbooks/testnet-deploy.md）。
 - `foundry.toml` 已配 `arbitrum_sepolia` / `arbitrum` 的 RPC 与 Arbiscan（从环境变量读取）。
 
 ## 安全要求

@@ -22,6 +22,8 @@ cd frontend && pnpm install && pnpm turbo run build
 cd contracts && forge test
 ```
 
+缺少测试前提（anvil / forge、Valkey、S3 兼容存储、合约产物）的后端测试默认打印 `skipped: …` 跳过；`AKARI_TEST_STRICT=1`（CI 设置）时直接失败，确认全部真跑过再交付。
+
 ## 本地预检（lefthook）
 
 CI 是唯一的硬门禁；`lefthook.yml` 只做秒级检查（改动文件的 rustfmt、prettier、eslint、forge fmt，装了 gitleaks 时再扫密钥）。lefthook 在 `frontend` 的 devDependencies 里（版本锁定），`pnpm install` 不会自动装 git 钩子。

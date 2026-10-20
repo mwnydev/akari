@@ -1,7 +1,7 @@
 //! forum-indexer：链上状态进入论坛数据库的唯一入口（plan 第 2、8 节）。
 //!
-//! WebSocket 订阅合约日志即时写入（latest），每 `reconcile_interval_ms`（默认 5 秒）按区块范围批量补拉校对、
-//! 处理区块回滚，每隔几轮按 RPC 的 safe / finalized 标记升级确认级别。订单每次变化写一条
+//! WebSocket 订阅合约日志即时写入（latest），每 `reconcile_interval_ms`（默认 20 秒，`INDEXER_RECONCILE_MS` 可覆盖）
+//! 按区块范围批量补拉校对、处理区块回滚，每隔几轮按 RPC 的 safe / finalized 标记升级确认级别。订单每次变化写一条
 //! `order.updated` 发件箱消息，由 worker 投递；订单最终确认后在同一事务里更新双方交易信誉与经验。
 
 pub mod chat;

@@ -538,17 +538,28 @@ async fn escrow_lifecycle_reorg_and_finality(pool: PgPool) {
     let (buyer_id, seller_id) = seed_forum(&pool, &w).await;
 
     // ── 阶段 1：校对间隔 1 小时，部署后的订单事件只能经 WebSocket 即时到达。
+    // 启动时的校对按 5 块一段补拉：MarketAdded 在第一段就写入，要等游标追上部署后的最新块（这一轮校对结束）
+    // 才能探测订阅。否则还没结束的校对可能自己捡到探测事件，订阅（先试不可达的主节点，约 1 秒后才建立）
+    // 还没推送就被当成已就绪，之后的订单事件没人补拉（负载下偶发超时）。
+    let deployed = i64::try_from(w.p.get_block_number().await.unwrap()).unwrap();
     let indexer = Running::start(&pool, w.config(&anvil, 3_600_000));
     eventually("initial catch-up", || async {
-        (count(
-            &pool,
-            "SELECT count(*) FROM escrow_events WHERE name = 'MarketAdded'",
-        )
-        .await
-            == 2)
-            .then_some(())
+        let cursor: Option<i64> =
+            sqlx::query_scalar("SELECT block_number FROM indexer_cursors WHERE chain_id = 31337")
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        (cursor == Some(deployed)).then_some(())
     })
     .await;
+    assert_eq!(
+        count(
+            &pool,
+            "SELECT count(*) FROM escrow_events WHERE name = 'MarketAdded'"
+        )
+        .await,
+        2
+    );
     // 订阅建立前的事件只能等校对；先用 OfferCancelled 探测订阅已经在推送。
     for nonce in 1000.. {
         w.cancel_offer(nonce).await;

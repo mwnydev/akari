@@ -115,35 +115,74 @@ contract DeployTest is Test {
         script.deploy(c);
     }
 
-    function test_deploy_mainnet_requiresToken() public {
-        vm.chainId(ARBITRUM_ONE);
-        vm.expectRevert(bytes("TOKEN required on Arbitrum One"));
-        script.deploy(_inputs());
+    /// Mainnet inputs: the env token and a 2-of-3 operations Safe (the env one is the testnet threshold-1 Safe).
+    function _mainnetInputs() internal returns (Deploy.Inputs memory c) {
+        c = _inputs();
+        c.token = vm.envAddress("TOKEN");
+        c.paymasterOwner = _safe(_owners("opsSigner"), 2);
     }
 
-    function test_deploy_mainnet_paymasterOwnerMustBeContract() public {
+    function test_deploy_mainnet_requiresToken() public {
         vm.chainId(ARBITRUM_ONE);
-        vm.expectRevert(bytes("PAYMASTER_OWNER has no code (an EOA is not allowed on Arbitrum One)"));
-        script.requireMainnetPaymasterOwner(deployer, makeAddr("opsEoa"));
-        vm.expectRevert(bytes("PAYMASTER_OWNER must not be the deployer"));
-        script.requireMainnetPaymasterOwner(deployer, deployer);
+        Deploy.Inputs memory c = _mainnetInputs();
+        c.token = address(0);
+        vm.expectRevert(bytes("TOKEN required on Arbitrum One"));
+        script.deploy(c);
+    }
+
+    function _checkPaymasterOwner(address paymasterOwner, string memory reason) internal {
+        vm.chainId(ARBITRUM_ONE);
+        vm.expectRevert(bytes(reason));
+        script.requireMainnetPaymasterOwner(deployer, paymasterOwner);
+    }
+
+    function test_deploy_mainnet_paymasterOwnerMustBeTwoOfThreeSafe() public {
+        _checkPaymasterOwner(makeAddr("opsEoa"), "PAYMASTER_OWNER has no code (an EOA is not allowed on Arbitrum One)");
+        _checkPaymasterOwner(deployer, "PAYMASTER_OWNER must not be the deployer");
+        // The testnet operations Safe (threshold 1) is not enough on Arbitrum One
+        _checkPaymasterOwner(operations, "PAYMASTER_OWNER Safe threshold must be 2");
+        address[] memory owners = _owners("siteOwnerDevice");
+        owners[2] = deployer;
+        _checkPaymasterOwner(_safe(owners, 2), "PAYMASTER_OWNER Safe must not be owned by the deployer");
+        owners[2] = owners[0];
+        _checkPaymasterOwner(_safe(owners, 2), "PAYMASTER_OWNER Safe owners must be distinct");
+        owners[2] = address(0);
+        _checkPaymasterOwner(_safe(owners, 2), "PAYMASTER_OWNER Safe has a zero owner");
+        _checkPaymasterOwner(_safe(_owners("siteOwnerDevice"), 3), "PAYMASTER_OWNER Safe threshold must be 2");
+        _checkPaymasterOwner(address(new NotASafe()), "PAYMASTER_OWNER is not a Safe (getThreshold failed)");
+        script.requireMainnetPaymasterOwner(deployer, _safe(_owners("opsSigner"), 2));
+    }
+
+    function test_deploy_testnet_allowsThresholdOnePaymasterOwner() public {
+        vm.chainId(421_614);
         script.requireMainnetPaymasterOwner(deployer, operations);
+        script.requireMainnetPaymasterOwner(deployer, makeAddr("opsEoa"));
     }
 
     function test_deploy_mainnet_requiresVerifier() public {
         vm.chainId(ARBITRUM_ONE);
+        Deploy.Inputs memory c = _mainnetInputs();
         vm.expectRevert(bytes("ERC-6492 verifier missing on Arbitrum One"));
-        script.run();
+        script.deploy(c);
     }
 
     function test_deploy_mainnet_withSafes() public {
         vm.chainId(ARBITRUM_ONE);
         vm.etch(VERIFIER, hex"00");
-        Deploy.Deployment memory d = script.run();
+        Deploy.Inputs memory c = _mainnetInputs();
+        Deploy.Deployment memory d = script.deploy(c);
         assertEq(d.config.owner(), treasury);
         assertEq(d.escrow.arbiter(), arbiter);
         assertEq(d.stream.feeRecipient(), treasury);
-        assertEq(d.paymaster.owner(), operations);
+        assertEq(d.paymaster.owner(), c.paymasterOwner);
+    }
+
+    /// The env-driven entry point on Arbitrum One refuses the threshold-1 operations Safe before deploying anything.
+    function test_deploy_mainnet_rejectsThresholdOnePaymasterOwner() public {
+        vm.chainId(ARBITRUM_ONE);
+        vm.etch(VERIFIER, hex"00");
+        vm.expectRevert(bytes("PAYMASTER_OWNER Safe threshold must be 2"));
+        script.run();
     }
 
     function test_deploy_mainnet_checksSafesBeforeDeploying() public {
