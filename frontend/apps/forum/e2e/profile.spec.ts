@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { login, member, uniqueEmail, uniqueName } from "./auth";
+import { GUEST_EDGE_CACHE } from "../lib/edge-cache";
 
 test("member sets a username in settings, keeps the session, and sees the profile", async ({
   page,
@@ -69,7 +70,7 @@ test("member sets a username in settings, keeps the session, and sees the profil
   try {
     const gp = await guest.newPage();
     const res = await gp.goto(`/u/${name}`);
-    expect(res?.headers()["cloudflare-cdn-cache-control"]).toBe("public, max-age=60");
+    expect(res?.headers()["cloudflare-cdn-cache-control"]).toBe(GUEST_EDGE_CACHE);
     await expect(gp.getByRole("heading", { level: 1 })).toContainText(name);
     await expect(gp.getByText("仅自己可见")).toHaveCount(0);
     await expect(gp.getByRole("link", { name: "登录后发私信" })).toBeVisible();

@@ -7,6 +7,7 @@ import type { ApiAuctionAuth, AuctionView } from "../lib/wallet/api";
 import { parseAuctionAuth } from "../lib/wallet/auction";
 import { FORUM_ORIGIN } from "../lib/wallet/domains";
 import { chainIsDown, publicClient } from "./env";
+import { seedSettledAuction } from "./forum-user";
 import { U, balances, confirmSignature, createWallet, harness, mintUsdt } from "./harness";
 
 // 拍卖：卖家在钱包生成并核对拍卖授权、签名（ERC-6492，钱包未部署）→ 平台签成交证明 → 赢家一次 Face ID 付款建单。
@@ -140,13 +141,28 @@ test("拍卖：卖家核对并签授权 → 余额不足只给充值地址 → �
     functionName: "hashProof",
     args: [proof],
   });
+  const platformSig = await platform.sign({ hash: proofHash });
+  // 真实 forum-sponsor 只代付库里那份成交证明：把它写进测试库（没有真实后端时由 DEV 代付，不查库）
+  if (h.realSponsor) {
+    seedSettledAuction({
+      chainId: chain.chainId,
+      escrow: chain.contracts.Escrow,
+      seller: sellerAddr,
+      authHash,
+      winner: buyerAddr,
+      price,
+      amount,
+      payDeadline,
+      signature: platformSig,
+    });
+  }
   h.fake.settleAuction(AUCTION_ID, {
     auction_id: AUCTION_ID,
     round: 1,
     chain_id: chain.chainId,
     escrow: chain.contracts.Escrow,
     proof: { authHash, winner: buyerAddr, price: price.toString(), payDeadline },
-    platform_signature: await platform.sign({ hash: proofHash }),
+    platform_signature: platformSig,
     currency: "cny",
     cny_per_usdt: 72_000,
     price: price.toString(),

@@ -6,13 +6,8 @@
 // 伪造的 Cookie 因此打不穿缓存层去触发按用户渲染（plan 第 11 节）。
 import { type NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE } from "./lib/config";
+import { GUEST_EDGE_CACHE } from "./lib/edge-cache";
 import { importSigningKey, verifySignedValue } from "./lib/signed-cookie";
-
-const GUEST_EDGE_TTL = 60;
-// 过期后边缘节点先返回旧页面、同时后台回源（只多一次回源的时间，不会多出 30 秒的旧内容）；源站出错时最多再用 5 分钟旧页面。
-const GUEST_EDGE_STALE = 30;
-const GUEST_EDGE_IF_ERROR = 300;
-export const GUEST_EDGE_CACHE = `public, max-age=${GUEST_EDGE_TTL}, stale-while-revalidate=${GUEST_EDGE_STALE}, stale-if-error=${GUEST_EDGE_IF_ERROR}`;
 
 let keyPromise: Promise<CryptoKey | null> | undefined;
 

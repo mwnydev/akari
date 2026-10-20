@@ -14,6 +14,7 @@ import { boardColor } from "../lib/board-color";
 import { cardLookup } from "../lib/display";
 import { forumTree, listForums, type ForumView } from "../lib/forums";
 import { boardHref, loginHref } from "../lib/links";
+import { hotRequest } from "../lib/pagination";
 import { needsPostCaptcha } from "../lib/public-config";
 import { getMe } from "../lib/session";
 
@@ -31,13 +32,13 @@ function postableBoards(forums: ForumView[]) {
 /**
  * 首页：跨板块最新主题（后端按最后回复时间，只含访问者看得到的板块）、热门（后端 `sort=hot`，排名每 5 分钟更新）、
  * 板块目录三个标签页。`?cursor=` 翻到更早的最新主题，`?hot=` 翻热门的下一页；`?tab=hot` / `?tab=boards`
- * 直接打开对应标签页（侧栏「热门」）。
+ * 直接打开对应标签页（侧栏「热门」）。热门只在打开它时才取，切到热门标签页即打开 `?tab=hot`。
  */
 export default async function Home({ searchParams }: { searchParams: Search }) {
   const sp = await searchParams;
   const cursor = typeof sp.cursor === "string" && sp.cursor ? sp.cursor : undefined;
-  const hotCursor = typeof sp.hot === "string" && sp.hot ? sp.hot : undefined;
-  const tab = hotCursor
+  const hotTab = hotRequest(sp);
+  const tab = hotTab.active
     ? "hot"
     : typeof sp.tab === "string" && TABS.includes(sp.tab)
       ? sp.tab
@@ -46,11 +47,15 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
   const [forums, latest, hot, me] = await Promise.all([
     listForums(),
     load(api.GET("/api/v1/topics/latest", { params: { query: cursor ? { cursor } : {} } })),
-    load(
-      api.GET("/api/v1/topics/latest", {
-        params: { query: { sort: "hot", ...(hotCursor ? { cursor: hotCursor } : {}) } },
-      }),
-    ),
+    hotTab.active
+      ? load(
+          api.GET("/api/v1/topics/latest", {
+            params: {
+              query: { sort: "hot", ...(hotTab.cursor ? { cursor: hotTab.cursor } : {}) },
+            },
+          }),
+        )
+      : null,
     getMe(),
   ]);
   if (forums instanceof ApiError) {
@@ -90,7 +95,9 @@ export default async function Home({ searchParams }: { searchParams: Search }) {
         ) : null,
       },
     ];
-    if (!(hot instanceof ApiError)) {
+    if (hot === null) {
+      lists.push({ value: "hot", label: "热门", href: "/?tab=hot" });
+    } else if (!(hot instanceof ApiError)) {
       const hotCtx = { user: cardLookup(hot.users), forum: (id: number) => byId.get(id) };
       lists.push({
         value: "hot",

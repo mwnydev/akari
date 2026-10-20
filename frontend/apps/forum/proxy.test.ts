@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { beforeAll, describe, expect, it } from "vitest";
-import { GUEST_EDGE_CACHE, proxy } from "./proxy";
+import { GUEST_EDGE_CACHE } from "./lib/edge-cache";
+import { proxy } from "./proxy";
 
 // 会话 Cookie 只由 forum-api 签发（host-only，ADR 0012）；Next.js 这一层只读不写，任何响应都不能带 Set-Cookie。
 // 向量同 lib/signed-cookie.test.ts（后端 COOKIE_SECRET = "ab" × 64，签名密钥是前 32 字节）。

@@ -70,6 +70,47 @@
       # {{ ansible_managed }}
       AKARI_ENV={{ akari_env }}
 
+# 可选凭据（auction-signer）只在凭据文件已放好时写进单元：LoadCredentialEncrypted 指向不存在的文件时单元起不来
+- name: Check optional service credentials
+  ansible.builtin.stat:
+    path: "/etc/akari/credstore/{{ item }}.cred"
+  loop: "{{ app_services | map(attribute='optional_credentials', default=[]) | flatten | unique }}"
+  register: app_optional_credentials
+
+- name: Remember provisioned optional credentials
+  ansible.builtin.set_fact:
+    app_provisioned_credentials: >-
+      {{ app_optional_credentials.results | selectattr('stat.exists') | map(attribute='item') | list }}
+
+# Turnstile 密钥：staging / production 必填（forum-api 缺了拒绝启动）。经 -e turnstile_secret_file=<控制机本地文件>
+# 传入时写进 forum-api.env（0600，与 COOKIE_SECRET 同一文件）；没传时要求文件里已经有，缺了在这里停下而不是等服务起不来。
+- name: Write the Turnstile secret into forum-api.env (only when a secret file is passed)
+  ansible.builtin.lineinfile:
+    path: /etc/akari/forum-api.env
+    regexp: "^TURNSTILE_SECRET="
+    line: "TURNSTILE_SECRET={{ lookup('ansible.builtin.file', turnstile_secret_file) | trim }}"
+    create: true
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: turnstile_secret_file is defined
+
+- name: Look for the Turnstile secret in forum-api.env
+  ansible.builtin.command: grep -qE '^TURNSTILE_SECRET=.+' /etc/akari/forum-api.env
+  register: app_turnstile_secret
+  changed_when: false
+  check_mode: false
+  failed_when: false
+  when: akari_env in ['staging', 'production']
+
+- name: Forum-api has a Turnstile secret (staging / production)
+  ansible.builtin.assert:
+    that: app_turnstile_secret.rc == 0
+    fail_msg: /etc/akari/forum-api.env 里没有 TURNSTILE_SECRET：用 -e turnstile_secret_file=<密钥文件路径> 重跑（见 deploy/README.md「Turnstile」）
+    quiet: true
+  when: akari_env in ['staging', 'production']
+
 - name: Rust service units
   ansible.builtin.template:
     src: rust.service.j2

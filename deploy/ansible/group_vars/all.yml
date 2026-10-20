@@ -25,12 +25,19 @@ valkey_sha256: 0d2a79936cbafa5f527a5175536bb17bd3f767f95f53529e59dddfacf762eec0 
 
 app_root: /opt/akari
 app_releases_keep: 5
-# 每个程序独立系统用户（plan 第 13 节）；forum-sponsor 是唯一持有私钥的程序
+# 每个程序独立系统用户（plan 第 13 节）；forum-sponsor 是唯一持有私钥的程序。
+# credentials：必须有的 systemd 凭据（/etc/akari/credstore/<名字>.cred，缺了单元起不来）；
+# optional_credentials：凭据文件已放好才加进单元（拍卖成交证明的 auction-signer，开放拍卖前才生成，见 deploy/README.md）
 app_services:
   - { unit: forum-api@, user: forum-api, bin: forum-api, memory_max: 512M, instances: [1, 2] }
   - { unit: forum-worker, user: forum-worker, bin: forum-worker, memory_max: 1G, cpu_quota: 200% }
   - { unit: forum-indexer, user: forum-indexer, bin: forum-indexer, memory_max: 400M }
-  - { unit: forum-sponsor, user: forum-sponsor, bin: forum-sponsor, memory_max: 100M, credentials: [paymaster-signer, relayer-hot-wallet] }
+  - unit: forum-sponsor
+    user: forum-sponsor
+    bin: forum-sponsor
+    memory_max: 100M
+    credentials: [paymaster-signer, relayer-hot-wallet]
+    optional_credentials: [auction-signer]
 
 # 源站入口（docs/runbooks/origin-protection.md）：
 #   tunnel：80/443 不对公网开放，网页与 SSH 都经 cloudflared（只有出站连接）；Caddy 只听本机 caddy_listen_port

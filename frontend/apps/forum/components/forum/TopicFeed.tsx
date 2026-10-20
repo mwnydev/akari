@@ -1,7 +1,8 @@
 "use client";
 
-import { EmptyState } from "@akari/ui";
+import { EmptyState, LoadingState } from "@akari/ui";
 import { SegmentedControl, Tabs, TabsContent, TabsList, TabsTrigger } from "@akari/ui/tabs";
+import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { ListToolbar } from "./ListToolbar";
 import { TopicListFrame, type TopicKind } from "./TopicTable";
@@ -16,13 +17,16 @@ export interface FeedRow {
   node: ReactNode;
 }
 
-export interface FeedList {
-  value: string;
-  label: string;
-  rows: FeedRow[];
-  /** 列表下方（分页、「更早的主题」） */
-  footer?: ReactNode;
-}
+export type FeedList =
+  | {
+      value: string;
+      label: string;
+      rows: FeedRow[];
+      /** 列表下方（分页、「更早的主题」） */
+      footer?: ReactNode;
+    }
+  /** 按需加载的列表（热门）：页面没有取它，切到这个标签页时打开 `href`，由服务端渲染出这个列表 */
+  | { value: string; label: string; href: string };
 
 const FILTER_LABEL: Record<FeedFilter, string> = { all: "全部", trade: "交易", auction: "拍卖" };
 
@@ -47,6 +51,7 @@ export function TopicFeed({
   /** 一条主题都没有时的提示 */
   empty: ReactNode;
 }) {
+  const router = useRouter();
   const [filter, setFilter] = useState<FeedFilter>("all");
   const pick = (rows: FeedRow[]) =>
     filter === "all" ? rows : rows.filter((r) => r.pinned || r.kind === filter);
@@ -55,9 +60,16 @@ export function TopicFeed({
     label: FILTER_LABEL[value],
   }));
   const tabs = extra ? [...lists, extra] : lists;
-  const initial = tabs.some((t) => t.value === defaultTab) ? defaultTab : lists[0]?.value;
+  const [tab, setTab] = useState(defaultTab);
+  // 选中的标签页不在了（例如切过去加载热门失败、页面不再给出这个列表）时回到第一个
+  const current = tabs.some((t) => t.value === tab) ? tab : lists[0]?.value;
+  const select = (value: string) => {
+    setTab(value);
+    const list = lists.find((l) => l.value === value);
+    if (list && "href" in list) router.push(list.href, { scroll: false });
+  };
   return (
-    <Tabs defaultValue={initial}>
+    <Tabs value={current} onValueChange={select}>
       <ListToolbar action={action}>
         <TabsList variant="underline" aria-label="主题排序">
           {tabs.map((t) => (
@@ -77,6 +89,13 @@ export function TopicFeed({
         ) : null}
       </ListToolbar>
       {lists.map((l) => {
+        if ("href" in l) {
+          return (
+            <TabsContent key={l.value} value={l.value}>
+              <LoadingState rows={3} label={`正在加载${l.label}主题`} />
+            </TabsContent>
+          );
+        }
         const shown = pick(l.rows);
         return (
           <TabsContent key={l.value} value={l.value}>

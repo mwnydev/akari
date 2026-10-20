@@ -15,7 +15,7 @@ Environment=API_LISTEN=127.0.0.1:808%i
 EnvironmentFile=-/etc/akari/{{ item.bin }}.env
 # 部署环境由 Ansible 写入、排在最后（同名变量以后读的文件为准），手写的 .env 改不了它
 EnvironmentFile=/etc/akari/deployment.env
-{% for c in item.credentials | default([]) %}
+{% for c in item.credentials | default([]) + item.optional_credentials | default([]) | select('in', app_provisioned_credentials) | list %}
 LoadCredentialEncrypted={{ c }}:/etc/akari/credstore/{{ c }}.cred
 {% endfor %}
 Restart=on-failure

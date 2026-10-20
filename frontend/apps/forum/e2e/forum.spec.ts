@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { backdateAccount, login, uniqueEmail } from "./auth";
+import { GUEST_EDGE_CACHE } from "../lib/edge-cache";
 
 // 一页 20 楼：造到 21 楼才有第 2 页
 const FLOORS = 21;
@@ -84,7 +85,7 @@ test("member creates a topic, replies, edits, deletes and jumps to page 2; guest
   try {
     const gp = await guest.newPage();
     const res = await gp.goto(`/t/${topicId}`);
-    expect(res?.headers()["cloudflare-cdn-cache-control"]).toBe("public, max-age=60");
+    expect(res?.headers()["cloudflare-cdn-cache-control"]).toBe(GUEST_EDGE_CACHE);
     await expect(gp.getByRole("heading", { level: 1 })).toHaveText(title);
     await expect(gp.locator("#floor-2")).toContainText("二楼改过了");
     await expect(gp.locator("#floor-3")).toContainText("该楼层已被删除");

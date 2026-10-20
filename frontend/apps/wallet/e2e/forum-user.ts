@@ -62,6 +62,55 @@ export function ensureBoard(): string {
   return slug;
 }
 
+/**
+ * 真实 forum-sponsor 只代付库里当前那份成交证明（policy：授权哈希、赢家、价格、截止时间、平台签名都要对上）。
+ * 测试的拍卖由 fake-backend 回答，这里把 forum-worker 与 forum-sponsor 本该写入的那一份（待付款的拍卖、出价、第 1 份
+ * 成交证明）直接写进测试库；卖家与出价人用库里任意一个用户（代付只看付款人是不是证明里的赢家）。十六进制都不带 0x。
+ */
+export function seedSettledAuction(p: {
+  chainId: number;
+  escrow: string;
+  seller: string;
+  authHash: string;
+  winner: string;
+  price: bigint;
+  amount: bigint;
+  payDeadline: number;
+  signature: string;
+}) {
+  const hex = (v: string) => v.replace(/^0x/, "");
+  psql(
+    `WITH u AS (SELECT min(id) AS id FROM users), f AS (SELECT min(id) AS id FROM forums),
+     t AS (INSERT INTO topics (forum_id, author_id, title, kind, last_post_at)
+           SELECT f.id, u.id, 'e2e 拍卖', 3, now() FROM f, u RETURNING id, forum_id, author_id),
+     a AS (INSERT INTO auctions (seller_id, forum_id, topic_id, chain_id, verifying_contract, seller, currency,
+             cny_per_usdt, start_price, increment, reserve_price, duration_secs, terms, content_hash, auth, auth_hash,
+             seller_signature, state, round, starts_at, ends_at, max_ends_at, pay_deadline)
+           SELECT t.author_id, t.forum_id, t.id, :'chain'::bigint, decode(:'escrow', 'hex'), decode(:'seller', 'hex'),
+             1, 72000, 50000, 1000, 80000, 259200, '{}', sha256(:'auth_hash'::bytea), '{}', decode(:'auth_hash', 'hex'),
+             '\\x01', 2, 1, now() - interval '3 days', now() - interval '1 minute', now() + interval '1 day',
+             to_timestamp(:'deadline'::bigint)
+           FROM t RETURNING id, seller_id),
+     b AS (INSERT INTO auction_bids (auction_id, bidder_id, amount, amount_usdt)
+           SELECT a.id, a.seller_id, :'price'::numeric, :'amount'::numeric FROM a RETURNING id, auction_id, bidder_id)
+     INSERT INTO auction_proofs (auction_id, round, bid_id, bidder_id, auth_hash, winner, price, pay_deadline, signature)
+     SELECT b.auction_id, 1, b.id, b.bidder_id, decode(:'auth_hash', 'hex'), decode(:'winner', 'hex'),
+       :'price'::numeric, to_timestamp(:'deadline'::bigint), decode(:'signature', 'hex')
+     FROM b;`,
+    {
+      chain: String(p.chainId),
+      escrow: hex(p.escrow),
+      seller: hex(p.seller),
+      auth_hash: hex(p.authHash),
+      winner: hex(p.winner),
+      price: p.price.toString(),
+      amount: p.amount.toString(),
+      deadline: String(p.payDeadline),
+      signature: hex(p.signature),
+    },
+  );
+}
+
 /** 在测试数据库上执行一段 SQL；psql 变量只在标准输入的脚本里展开（-c 不展开），用 :'x' 按字面量引用，避免拼 SQL。 */
 function psql(sql: string, vars: Record<string, string>) {
   execFileSync(

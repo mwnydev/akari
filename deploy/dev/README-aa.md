@@ -137,6 +137,9 @@ pnpm e2e:aa                                                 # Playwright + CDP �
   上面四个后端程序都在跑时就是完整的真实流程：卖家发交易帖并签公开报价 → 买家经 forum-sponsor 代付、代发付款 →
   indexer 把报价标为已付款 → 卖家标记发货 → 买家确认收货 → 等到 finalized。订单页按站内订单 ID 打开，
   链上操作用订单的 `chain_order_id` 与 `contract`。
+- 拍卖（`e2e/auction.spec.ts`）：卖家生成并核对拍卖授权、签名，赢家付款建单。测试登记的拍卖总由 `e2e/fake-backend.ts`
+  回答（真实后端里没有这场拍卖）；成交证明用 aa.sh 部署时登记为 `EscrowConfig.auctionSigner` 的 auction-signer
+  开发私钥签（与 forum-sponsor 的 `SPONSOR_DEV_AUCTION_KEY` 相同），不改链上存储。
 - 钱包首页（余额、提币地址、提回交易所）与紧急取回页也各有一组测试：`e2e/withdraw.spec.ts`、`e2e/emergency.spec.ts`。
   紧急取回页不连后端（测试里掐断全部 `/api/v1` 请求），经 Alto 不带 Paymaster 提交，ETH 用 `anvil_setBalance` 打进钱包；
   超时取回那条会把链上时间往后拨一天，用 `evm_snapshot` / `evm_revert` 包住，跑完时间复原。

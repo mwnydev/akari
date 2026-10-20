@@ -14,6 +14,7 @@ use utoipa::ToSchema;
 
 use crate::admin::AdminSession;
 use crate::error::{ApiError, ApiResult, ErrorBody};
+use crate::guest;
 use crate::state::AppState;
 use crate::views::ForumView;
 
@@ -118,7 +119,7 @@ fn changes(old: &Forum, new: &Forum) -> (Value, Value) {
     (Value::Object(before), Value::Object(after))
 }
 
-/// 修改板块。论坛里的板块列表立即生效；主题第 1 页缓存里的板块名与色块最长 10 分钟后更新。
+/// 修改板块。论坛里的板块列表与游客页面立即生效；登录用户的主题第 1 页缓存里的板块名与色块最长 10 分钟后更新。
 #[utoipa::path(
     patch, path = "/api/v1/admin/forums/{id}", tag = "admin", operation_id = "admin_update_forum",
     params(("id" = i32, Path)),
@@ -166,6 +167,8 @@ pub async fn admin_update_forum(
         .await?;
     }
     tx.commit().await?;
+    // 板块目录、名称、颜色、可见等级出现在游客缓存的每一类页面里
+    guest::forums_changed(&state).await;
     Ok(Json((&new).into()))
 }
 

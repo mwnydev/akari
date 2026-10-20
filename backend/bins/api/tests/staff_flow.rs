@@ -1766,6 +1766,11 @@ async fn owner_edits_boards_and_sees_report_counts(db: PgPool) {
         patch(json!({"name": "x"}), uc.clone()).await.status,
         StatusCode::UNAUTHORIZED
     );
+    // 游客的板块目录先进缓存：改板块必须让它失效（下面读到的是新名字）
+    let cached = call(&app, "GET", "/api/v1/forums", None, &[]).await;
+    assert_eq!(cached.body[0]["slug"], "general", "{:?}", cached.body);
+    let again = call(&app, "GET", "/api/v1/forums", None, &[]).await;
+    assert_eq!(again.headers["x-guest-cache"], "hit");
     let r = patch(
         json!({"name": " 综合 ", "description": "什么都聊", "color": "#2e9d5c", "position": 3}),
         o.admin.clone(),

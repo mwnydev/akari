@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { db, member } from "./auth";
+import { GUEST_EDGE_CACHE } from "../lib/edge-cache";
 
 /**
  * 交易帖由钱包签名后创建；这里先经 API 发一个普通主题，再直接在库里把它变成交易帖（与 messaging.spec 造报价同一思路）。
@@ -80,7 +81,7 @@ test("trade listing: price panel with ¥ reference, list row links to it, 发起
     try {
       const gp = await guest.newPage();
       const r = await gp.goto(`/trade/${listingId}`);
-      expect(r?.headers()["cloudflare-cdn-cache-control"]).toBe("public, max-age=60");
+      expect(r?.headers()["cloudflare-cdn-cache-control"]).toBe(GUEST_EDGE_CACHE);
       await expect(gp.getByRole("link", { name: "私信卖家" })).toHaveAttribute(
         "href",
         /\/login\?next=/,
@@ -100,6 +101,10 @@ test("home: latest / hot / boards tabs; the sidebar lists boards from the API", 
   await page.goto("/");
   const tabs = page.getByRole("tablist", { name: "主题排序" });
   await expect(tabs.getByRole("tab", { name: "最新" })).toHaveAttribute("aria-selected", "true");
+  // 热门只在切过去时才取：点「热门」打开 ?tab=hot，由服务端渲染热门列表
+  await tabs.getByRole("tab", { name: "热门" }).click();
+  await expect(page).toHaveURL(/\/\?tab=hot$/);
+  await expect(page.getByRole("tabpanel")).not.toContainText("正在加载");
   await tabs.getByRole("tab", { name: "板块" }).click();
   await expect(page.getByRole("table", { name: "全部板块" })).toContainText("综合讨论");
 

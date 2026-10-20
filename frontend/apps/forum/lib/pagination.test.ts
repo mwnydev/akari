@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { floorPage, pageWindow, parsePositiveInt } from "./pagination";
+import { floorPage, hotRequest, pageWindow, parsePositiveInt } from "./pagination";
 
 describe("floorPage", () => {
   it("maps floors to 20-floor pages", () => {
@@ -33,5 +33,16 @@ describe("parsePositiveInt", () => {
     expect(parsePositiveInt("abc")).toBe(1);
     expect(parsePositiveInt(["4", "5"])).toBe(4);
     expect(parsePositiveInt("12")).toBe(12);
+  });
+});
+
+describe("hotRequest", () => {
+  it("only asks for the hot list when its tab is open or paged", () => {
+    expect(hotRequest({})).toEqual({ active: false, cursor: undefined });
+    expect(hotRequest({ tab: "latest", page: "2" })).toEqual({ active: false, cursor: undefined });
+    expect(hotRequest({ tab: "hot" })).toEqual({ active: true, cursor: undefined });
+    expect(hotRequest({ hot: "1.5_9" })).toEqual({ active: true, cursor: "1.5_9" });
+    expect(hotRequest({ hot: "" })).toEqual({ active: false, cursor: undefined });
+    expect(hotRequest({ hot: ["a", "b"] })).toEqual({ active: false, cursor: undefined });
   });
 });

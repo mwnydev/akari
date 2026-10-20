@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { uniqueEmail, useTestIp } from "./auth";
 import { latestCode } from "./mailpit";
+import { GUEST_EDGE_CACHE } from "../lib/edge-cache";
 
 test("guest logs in with an emailed code, sees themselves in the nav, then logs out", async ({
   page,
@@ -51,6 +52,6 @@ test("a forged session cookie renders the guest page", async ({ page, context, b
     { name: "sid", value: `${"A".repeat(43)}=forged`, url: baseURL ?? "http://localhost:3000" },
   ]);
   const res = await page.goto("/");
-  expect(res?.headers()["cloudflare-cdn-cache-control"]).toBe("public, max-age=60");
+  expect(res?.headers()["cloudflare-cdn-cache-control"]).toBe(GUEST_EDGE_CACHE);
   await expect(page.getByRole("link", { name: "登录", exact: true })).toBeVisible();
 });

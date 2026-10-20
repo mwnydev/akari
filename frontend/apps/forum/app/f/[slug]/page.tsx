@@ -18,7 +18,7 @@ import { load, serverApi } from "../../../lib/api";
 import { boardColor } from "../../../lib/board-color";
 import { cardLookup } from "../../../lib/display";
 import { boardHref, loginHref } from "../../../lib/links";
-import { parsePositiveInt } from "../../../lib/pagination";
+import { hotRequest, parsePositiveInt } from "../../../lib/pagination";
 import { BOARD_MAX_PAGE, needsPostCaptcha } from "../../../lib/public-config";
 import { getMe } from "../../../lib/session";
 
@@ -50,7 +50,7 @@ async function auctionsEnabled(): Promise<boolean> {
   return !(params instanceof ApiError) && params.settings.enabled === true;
 }
 
-/** 板块热门（后端 `sort=hot`，不含置顶帖；排名每 5 分钟更新），`?hot=` 翻下一页。 */
+/** 板块热门（后端 `sort=hot`，不含置顶帖；排名每 5 分钟更新）：只在 `?tab=hot` 或 `?hot=`（翻下一页）时取。 */
 const loadHot = async (slug: string, cursor: string | undefined) =>
   load(
     (await serverApi()).GET("/api/v1/forums/{slug}/topics", {
@@ -83,10 +83,10 @@ export default async function BoardPage({
   const { slug } = await params;
   const sp = await searchParams;
   const q = boardQuery(sp);
-  const hotCursor = typeof sp.hot === "string" && sp.hot ? sp.hot : undefined;
+  const hotTab = hotRequest(sp);
   const [data, hot, me] = await Promise.all([
     loadBoard(slug, q.page, q.cursor),
-    loadHot(slug, hotCursor),
+    hotTab.active ? loadHot(slug, hotTab.cursor) : null,
     getMe(),
   ]);
   if (data instanceof ApiError) {
@@ -140,27 +140,29 @@ export default async function BoardPage({
         <TopicFeed
           lists={[
             { value: "latest", label: "最新", rows: liveFeedRows(topics, ctx), footer: pager },
-            ...(hot instanceof ApiError
-              ? []
-              : [
-                  {
-                    value: "hot",
-                    label: "热门",
-                    rows: liveFeedRows(hot.topics, { user: cardLookup(hot.users) }),
-                    footer: hot.next_cursor ? (
-                      <p className="py-3 text-center text-sm">
-                        <Link
-                          href={`${boardHref(forum.slug)}?hot=${encodeURIComponent(hot.next_cursor)}`}
-                          className="text-accent hover:underline"
-                        >
-                          更多热门主题
-                        </Link>
-                      </p>
-                    ) : null,
-                  },
-                ]),
+            ...(hot === null
+              ? [{ value: "hot", label: "热门", href: `${boardHref(forum.slug)}?tab=hot` }]
+              : hot instanceof ApiError
+                ? []
+                : [
+                    {
+                      value: "hot",
+                      label: "热门",
+                      rows: liveFeedRows(hot.topics, { user: cardLookup(hot.users) }),
+                      footer: hot.next_cursor ? (
+                        <p className="py-3 text-center text-sm">
+                          <Link
+                            href={`${boardHref(forum.slug)}?hot=${encodeURIComponent(hot.next_cursor)}`}
+                            className="text-accent hover:underline"
+                          >
+                            更多热门主题
+                          </Link>
+                        </p>
+                      ) : null,
+                    },
+                  ]),
           ]}
-          defaultTab={hotCursor ? "hot" : undefined}
+          defaultTab={hotTab.active ? "hot" : undefined}
           filters={[
             ...(forum.allow_trade ? (["trade"] as const) : []),
             ...(auctionBoard ? (["auction"] as const) : []),
