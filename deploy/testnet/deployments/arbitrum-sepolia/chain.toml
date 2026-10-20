@@ -1,0 +1,37 @@
+# 由 deploy/testnet/testnet.sh emit-config 生成，勿手改。Arbitrum Sepolia 测试网（格式见 backend/crates/chain/chain.example.toml）。
+# RPC 地址带密钥，不写在这里：服务器上由 CHAIN_RPC_PRIMARY_HTTP / CHAIN_RPC_PRIMARY_WS / CHAIN_RPC_BACKUP_HTTP /
+# CHAIN_RPC_BACKUP_WS 提供（/etc/akari/*.env，见 deploy/README.md）。
+chain_id = 421614
+name = "Arbitrum Sepolia"
+
+[contracts]
+escrow = "0x6f37A10708cD1116580535834500EfD1406E96Df"
+stream = "0x15782ee7B5854F0c6831471Cc699f98978476f28"
+config = "0x90fF98f66c79a5Dc0D8b0133a9Cb36c068c6dbd1"
+# 第一笔部署交易所在区块：indexer 首次启动从这里补拉。
+start_block = 321167256
+
+[token]
+symbol = "mUSDT"
+address = "0xE293960211Ac2a501eBcA137C924cCF119185357"
+decimals = 6
+
+[aa]
+entry_point = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
+paymaster = "0x3ef4F422B9A4e6506B2D9b6b67A6F96AA9BDBe54"
+factories = ["0xd703aaE79538628d27099B8c4f621bE4CCd142d5"]
+
+# indexer 每轮补拉都要查区块与日志，是 RPC 用量的大头（docs/runbooks/testnet-deploy.md「RPC 用量」）。
+[indexer]
+reconcile_interval_ms = 20000
+
+[[wallet_init_versions]]
+version = 1
+kernel_implementation = "0xd6CEDDe84be40893d153Be9d467CD6aD37875b28"
+kernel_factory = "0x2577507b78c2008Ff367261CB6285d44ba5eF2E9"
+kernel_meta_factory = "0xd703aaE79538628d27099B8c4f621bE4CCd142d5"
+webauthn_validator = "0x7ab16Ff354AcB328452F1D445b3Ddee9a91e9e69"
+entry_point = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
+paymaster = "0x3ef4F422B9A4e6506B2D9b6b67A6F96AA9BDBe54"
+approve_token = "0xE293960211Ac2a501eBcA137C924cCF119185357"
+approve_amount = "115792089237316195423570985008687907853269984665640564039457584007913129639935"

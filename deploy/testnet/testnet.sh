@@ -82,6 +82,7 @@ load_config() {
   STATE_DIR=$(abspath "${STATE_DIR:-deploy/testnet/deployments/arbitrum-sepolia}")
   FRONTEND_CHAIN_JSON=$(abspath "${FRONTEND_CHAIN_JSON:-frontend/packages/contracts/src/chain.arbitrum-sepolia.json}")
   BACKEND_CHAIN_TOML="$STATE_DIR/chain.toml"
+  SPONSOR_ALERTS_ENV="$STATE_DIR/sponsor-alerts.env"
   DEPLOYMENT="$STATE_DIR/deployment.json"
   BROADCAST="$STATE_DIR/broadcast"
   local v
@@ -122,6 +123,12 @@ load_rpc() {
     [[ -z "$BACKUP" || "$BACKUP" == https://* ]] || die "ARBITRUM_SEPOLIA_RPC_BACKUP_URL 必须是 https://…"
     local s
     for s in "$PRIMARY" "$BACKUP" "$WS" "$ARBISCAN_API_KEY"; do add_secret "$s"; done
+    # 可选：经本机计数转发（rpc-meter.py，上游 = 上面的主节点，由操作者另行启动）统计真实网络上的请求数。
+    # 只改请求走的路，仍是真实网络（照常源码验证）；备用节点与 WebSocket 不经转发。
+    if [[ -n "${RPC_METER_URL:-}" ]]; then
+      [[ "$RPC_METER_URL" =~ ^http://(127\.0\.0\.1|localhost):[0-9]+/?$ ]] || die "RPC_METER_URL 只能是本机 http://127.0.0.1:<端口>"
+      PRIMARY=$RPC_METER_URL
+    fi
     export ARBITRUM_SEPOLIA_RPC_URL=$PRIMARY # foundry.toml 的 rpc_endpoints.arbitrum_sepolia
     if [[ -n "$ARBISCAN_API_KEY" ]]; then export ARBISCAN_API_KEY; fi
   fi
@@ -285,7 +292,7 @@ check_aa_code() {
 check_code_soft() { if has_code "$2"; then ok "$1 $2"; else bad "$1 $2 没有代码"; fi; }
 
 preflight() {
-  log "preflight：$CHAIN_NAME（$([[ $FORK == 1 ]] && echo "本机 fork $PRIMARY" || echo "RPC_SECRETS_FILE")）"
+  log "preflight：$CHAIN_NAME（$([[ $FORK == 1 ]] && echo "本机 fork $PRIMARY" || echo "RPC_SECRETS_FILE${RPC_METER_URL:+，经本机计数转发}")）"
   local tool
   for tool in forge cast jq curl perl; do command -v "$tool" >/dev/null || bad "找不到 $tool"; done
 
@@ -421,7 +428,8 @@ send() { # send <描述> <cast send 参数…>：部署账户发交易，核对�
   receipt=$(cast send --json "${WALLET[@]}" "$@")
   [[ "$(jq -r .status <<<"$receipt")" == 0x1 ]] || die "$what 失败（交易 $(jq -r .transactionHash <<<"$receipt")）"
   [[ "$(jq -r '.from | ascii_downcase' <<<"$receipt")" == "${DEPLOYER_ADDRESS,,}" ]] || die "$what 不是 DEPLOYER_ADDRESS 发出的"
-  ok "$what（交易 $(jq -r .transactionHash <<<"$receipt")）"
+  LAST_TX=$(jq -r .transactionHash <<<"$receipt")
+  ok "$what（交易 $LAST_TX）"
 }
 
 safe_tx() { # safe_tx <to> <value wei> <函数签名> <参数…>：输出一笔 Transaction Builder 交易（一行 JSON）
@@ -689,7 +697,16 @@ reconcile_interval_ms = $INDEXER_RECONCILE_MS
 TOML
     jq -r '.[] | "\n[[wallet_init_versions]]\nversion = \(.version)\nkernel_implementation = \"\(.kernelImpl)\"\nkernel_factory = \"\(.factory)\"\nkernel_meta_factory = \"\(.metaFactory)\"\nwebauthn_validator = \"\(.webauthnValidator)\"\nentry_point = \"\(.entryPoint)\"\npaymaster = \"\(.paymaster)\"\napprove_token = \"\(.approveToken)\"\napprove_amount = \"\(.approveAmount)\""' <<<"$versions"
   } >"$BACKEND_CHAIN_TOML"
-  log "已写入 ${FRONTEND_CHAIN_JSON#"$ROOT/"}（前端）与 ${BACKEND_CHAIN_TOML#"$ROOT/"}（后端 CHAIN_CONFIG）"
+
+  # forum-sponsor 的告警线跟着 configure 的目标值走（测试网 ETH 少时两边一起调低，preflight 已核对目标值高于告警线）。
+  cat >"$SPONSOR_ALERTS_ENV" <<ENV
+# 由 deploy/testnet/testnet.sh emit-config 生成，勿手改：并入服务器 /etc/akari/forum-sponsor.env（没有密钥）。
+# 告警线 = deploy/testnet/.env 的 SPONSOR_ALERT_DEPOSIT / SPONSOR_ALERT_HOT_WALLET（ETH）；configure 把 Paymaster 押金补到
+# $PAYMASTER_DEPOSIT ETH、热钱包补到 $RELAYER_FUND ETH。热钱包低于告警线时代发器视为不健康（改走备用 bundler）。
+SPONSOR_ALERT_DEPOSIT_WEI=$(to_wei "$SPONSOR_ALERT_DEPOSIT")
+SPONSOR_ALERT_HOT_WALLET_WEI=$(to_wei "$SPONSOR_ALERT_HOT_WALLET")
+ENV
+  log "已写入 ${FRONTEND_CHAIN_JSON#"$ROOT/"}（前端）、${BACKEND_CHAIN_TOML#"$ROOT/"}（后端 CHAIN_CONFIG）与 ${SPONSOR_ALERTS_ENV#"$ROOT/"}（forum-sponsor 告警线）"
 }
 
 # ───────────────────────────── 入口 ─────────────────────────────
@@ -718,4 +735,5 @@ main() {
   esac
 }
 
-main "$@"
+# 被 source 时（deploy/testnet/safe.sh 复用配置、RPC、遮盖与发交易的函数）不执行入口。
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi

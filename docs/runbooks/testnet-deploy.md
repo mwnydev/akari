@@ -11,8 +11,9 @@ WebAuthn 验证器、Safe 都是链上现成合约（ADR 0003）。
 | `testnet.sh` | 唯一入口：`preflight` → `deploy` → `configure` → `verify` → `emit-config`，每步可重复运行 |
 | `.env.example` | 配置模板（只有地址与文件路径，没有密钥），复制成 `deploy/testnet/.env` |
 | `rehearse.sh` | 本机 anvil fork 演练整套流程（含四个后端程序与冒烟检查），见文末 |
+| `safe.sh` | 测试网专用：用 cast 建 Safe（`create`）、给 Safe 打 ETH（`fund`）、由本机签名人密钥库签并执行 Safe 交易文件（`exec`），代替 app.safe.global |
 | `rpc-meter.py` | 本机 JSON-RPC 计数转发，统计 RPC 服务商额度用量 |
-| `deployments/arbitrum-sepolia/` | `deploy` 之后生成并入库：部署记录、forge 广播、Safe 交易文件、后端链配置 |
+| `deployments/arbitrum-sepolia/` | `deploy` 之后生成并入库：部署记录、forge 广播、Safe 交易文件与执行记录、后端链配置、forum-sponsor 告警线 |
 
 ## 已定的取舍
 
@@ -60,9 +61,18 @@ ARBITRUM_SEPOLIA_WS_URL=wss://arbitrum-sepolia.infura.io/ws/v3/<key>
 ARBISCAN_API_KEY=<key>
 ```
 
-`testnet.sh` 只读这几行（不 source、不执行），经环境变量交给 forge / cast，URL 不出现在进程命令行里；所有输出经过遮盖，
+`testnet.sh` 只读这几行（不 source、不执行；文件里每项一行 `KEY=VALUE`，服务商给的是别的格式时先整理成这样），经环境变量交给 forge / cast，URL 不出现在进程命令行里；所有输出经过遮盖，
 密钥显示为 `<redacted>`。forge 为 `--resume` 在 `contracts/cache/Deploy.s.sol/421614/` 记下带密钥的 RPC 地址，
 脚本把它设成只有本人可读、部署成功后删除。
+
+**统计 RPC 用量**（可选）：先在本机启动计数转发（上游 URL 只经环境变量传入），再给 `testnet.sh` / `safe.sh` 设
+`RPC_METER_URL`：主节点请求都经它转发（仍是真实网络，照常源码验证；备用节点与 WebSocket 不经过它），计数在第二个参数的文件里。
+
+```sh
+(RPC_METER_UPSTREAM=$(sed -n 's/^ARBITRUM_SEPOLIA_RPC_URL=//p' ~/secrets/akari-arbitrum-sepolia.env) \
+  python3 deploy/testnet/rpc-meter.py 8611 .run/rpc-counts.json &)
+export RPC_METER_URL=http://127.0.0.1:8611
+```
 
 ## 二、部署账户
 
@@ -79,6 +89,8 @@ cast wallet list                                              # 记下地址，�
 gas 价算出准确数字），运营 Safe 另需 0.01 ETH 质押。来源：各 RPC 服务商与 Chainlink 等的 Arbitrum Sepolia 水龙头（多数要求
 主网地址有少量余额，规则常变），或在 Sepolia 领 ETH 后经官方桥 `bridge.arbitrum.io` 转到 Arbitrum Sepolia（约 10 分钟）。
 测试网 ETH 紧张时可以一起调低 Paymaster 押金 / 热钱包目标值与 forum-sponsor 告警线（见 `.env.example`）。
+2026-10-21 实测：gas 价约 0.02 gwei、L1 数据费为 0，五个合约部署共 13,147,749 gas ≈ 0.00027 ETH；建 3 个 Safe、configure、
+Safe 执行等全部 gas 合计约 0.0003 ETH。首次部署只有 0.048 ETH，押金 / 热钱包 / 质押按 0.02 / 0.01 / 0.01 配置（见文末）。
 
 ## 三、forum-sponsor 的热密钥
 
@@ -99,6 +111,10 @@ done
 不开拍卖时可以不生成，`AUCTION_SIGNER` 留空。
 
 ## 四、建 Safe（app.safe.global）
+
+> 测试网也可以不用网页：签名人用本机 cast 密钥库时，`deploy/testnet/safe.sh create <名字> <门槛> <签名人,…>` 经 Safe v1.4.1
+> 官方工厂建 Safe（部署账户付 gas，saltNonce 取自名字，重跑得到同一地址、不重复建），`safe.sh fund <运营 Safe> 0.01`
+> 打质押用的 ETH。2026-10-21 的首次部署就是这样建的（见文末「当前部署」）。主网的 Safe 一律由各签名人在自己的设备上建、签。
 
 每个签名人先准备好自己的钱包（硬件钱包、浏览器钱包或 Passkey 均可；同一个人不要用同一个 iCloud / Google 账号下的多个 Passkey）。
 由任一签名人操作，连接钱包付建 Safe 的 gas：
@@ -145,6 +161,10 @@ deploy/testnet/testnet.sh emit-config   # 写前端 / 后端链配置
   给仲裁签名人的文件同一格式）。app.safe.global → 对应 Safe → **Apps → Transaction Builder** → 把 JSON 拖进去 →
   核对每笔的目标地址、金额与说明 → **Create batch → Send batch** → 其他签名人在 Queue 里确认 → 执行。首次部署只有一笔：
   运营 Safe 调 `FixedFeePaymaster.addStake(86400)`，附 0.01 ETH（质押只有公共 bundler 备用通道需要；私有代发器不需要）。
+  测试网签名人是本机密钥库时，改用 `SAFE_SIGNER_PASSWORD_FILE=<口令文件> deploy/testnet/safe.sh exec <交易文件> <签名人密钥库…>`：
+  先把 Safe 合约的 `getTransactionHash` 与本地 EIP-712 计算对照，各签名人用 `cast wallet sign --data`（EIP-712 SafeTx）签，
+  `checkSignatures` 与 `execTransaction` 先模拟再由部署账户提交；多笔交易经 MultiSendCallOnly v1.4.1 打包。执行记录追加到
+  `deployments/arbitrum-sepolia/safe-executions.jsonl`（入库），同一个文件只执行一次，执行后再跑 `configure` 确认。
   以后改了 `PAYMASTER_SIGNER`（换代付签名者）或 `AUCTION_SIGNER`，`configure` 会生成 `setSigner` / `queueAuctionSigner`；
   后者排队 72 小时，到期后再跑一次 `configure` 由部署账户执行 `applyAuctionSigner`。
 - `verify` 核对：五个合约的链上代码与本地构建一致（immutable 位置清零后逐字节比较）；EscrowConfig 的 owner = 金库 Safe、
@@ -157,6 +177,8 @@ deploy/testnet/testnet.sh emit-config   # 写前端 / 后端链配置
   - `frontend/packages/contracts/src/chain.arbitrum-sepolia.json`：前端链配置，形状同 `chain.local.json`，另含
     `walletInitVersions`。**钱包初始化参数版本只增不改**（ADR 0008）：文件已存在时沿用其中的版本，Paymaster 或代币变了才追加新版本。
   - `deploy/testnet/deployments/arbitrum-sepolia/chain.toml`：后端 `CHAIN_CONFIG`。
+  - `deploy/testnet/deployments/arbitrum-sepolia/sponsor-alerts.env`：forum-sponsor 的 `SPONSOR_ALERT_DEPOSIT_WEI` /
+    `SPONSOR_ALERT_HOT_WALLET_WEI`（取自 `.env` 的 `SPONSOR_ALERT_*`），并入服务器的 `forum-sponsor.env`。
 - 完成后提交 `deploy/testnet/deployments/arbitrum-sepolia/` 与前端链配置（广播记录里只有交易与地址，没有 RPC 地址或密钥）。
 
 ## 六、测试服务器
@@ -198,6 +220,11 @@ deploy/testnet/testnet.sh emit-config   # 写前端 / 后端链配置
 | 四个后端程序空转 313 秒（indexer 每 5 秒补拉：`eth_getBlockByNumber` 147、`eth_getLogs` 54，其余个位数） | 238 | 2.9 万 |
 | 折合一整天（`reconcile_interval_ms = 5000`） | 约 5.5 万 | **约 700 万** |
 | forum-sponsor 代付一笔操作（模拟、gas 估算与价格；不含提交） | 约 12 | 1 千 |
+| 2026-10-21 首次真实部署全程（建 3 个 Safe、preflight ×2、deploy、configure ×2、Safe 执行、verify、emit-config、冒烟） | 约 800 | 约 4.6 万 |
+| 其中真实 Infura 上 forum-sponsor 代付一笔（走 `eth_simulateV1` → EntryPoint 备用模拟；不含提交；含钱包 SDK 的读） | 17 | 1.3 千 |
+
+首次部署的 771 个主节点请求里 `anvil_nodeInfo` 占 212 个：cast / forge 每次启动都先探测是不是 anvil（Infura 回错误），
+其余主要是 `eth_chainId` 239、`eth_call` 100、`eth_getCode` 81。
 
 Infura 免费档每天 300 万 credits（以官网为准）：按 5 秒补拉，单是 indexer 就超出。所以补拉间隔的默认值是 **20 秒**
 （`[indexer] reconcile_interval_ms` 不写时的默认值、`chain.example.toml` 与 `emit-config` 的默认 `INDEXER_RECONCILE_MS=20000`，
@@ -251,3 +278,26 @@ Safe 用链上现成的 Safe v1.4.1 工厂真实创建，部署账户是一次�
 差异：anvil 没有 Arbitrum 的 NodeInterface（换成把 L1 数据费估成 0 的替身）、不算 L1 数据费；`eth_simulateV1` 在 anvil 上可用，
 所以 forum-sponsor 走的是首选模拟方法（真实 Infura 上走备用方法）；Safe 交易用 anvil 冒充 Safe 地址执行，不走签名人流程。
 端口可用 `REHEARSAL_*_PORT` 改。
+
+## 当前部署（2026-10-21，首次真实部署）
+
+记录在 `deploy/testnet/deployments/arbitrum-sepolia/`（`deployment.json`、forge 广播、`safe-executions.jsonl`、`chain.toml`、
+`sponsor-alerts.env`）与前端 `chain.arbitrum-sepolia.json`；起始区块 321167256，五个合约都已在 Arbiscan 验证源码，`verify` 全部通过。
+
+| Safe（v1.4.1，`safe.sh create` 建） | 地址 | 门槛 / 签名人 |
+| --- | --- | --- |
+| 仲裁 | `0xd6DA0736C4efbD85c6A9a2c11f68Ecb6D58de813` | 2/3：signer-1..3 |
+| 金库 | `0xcDA11264954B170fa77Bc029Ce6ED7F7234508fC` | 2/3：signer-1..3 |
+| 运营 | `0x74A80a729792E7F712DE57B6EdcF4d29EC92A6F7` | 1/1：signer-1（测试网专用安排） |
+
+测试网签名人（本机密钥库 `akari-testnet-signer-1..3`，只用于测试网）：`0x2Aab2d23dD71634d644017a7e2e6ABe44781Fbde`、
+`0x40b2c18776100Fe5439D882350C8346c9CBd1713`、`0x7C2dd0c8952264AAa9853AEA4Cd7cA4b738cF775`。forum-sponsor 热密钥地址：
+`PAYMASTER_SIGNER` `0xd05cEfdabdfcCd3DF39De58a51903741d1929621`、`RELAYER_ADDRESS` `0x013cFb0BeA3db0867e09C9a1dC4715631EcaBd6A`、
+`AUCTION_SIGNER` `0xE2cd4F613d1deee652c61f2BFf4965eF13f5248E`（构造时写入 EscrowConfig，不需要 72 小时排队）。三把热密钥目前在
+生成它们的电脑上的密钥库里，接测试服务器时按第三节把私钥送进 `systemd-creds`
+（`cast wallet private-key --keystore <密钥库> --password-file <口令文件> | ssh <服务器> "sudo systemd-creds encrypt --name=<名字> - …"`）。
+
+预算（部署账户共 0.048 ETH）：Paymaster 押金 0.02、热钱包 0.01、运营 Safe 质押 0.01（解押延迟 1 天），gas 合计约 0.0003，
+部署账户余约 0.0077 ETH。forum-sponsor 告警线相应调低为押金 0.01、热钱包 0.005 ETH（`sponsor-alerts.env`；默认 0.05 / 0.01）。
+真实 Infura 上的只读冒烟（本机 forum-sponsor，未提交）：未部署钱包的付款操作（approve + createAndFund，initCode 经 meta factory）
+模拟并签名通过，`eth_simulateV1` 返回 -32601 后自动改用 EntryPoint 模拟（healthz `simulations.entryPoint` = 2）。
