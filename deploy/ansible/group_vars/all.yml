@@ -1,7 +1,12 @@
 # 版本与 plan 第 3 节一致；升级走 PR。
 ansible_user: deploy
+# 上传版本并执行 install-release 的账号（sudo 只能执行 install-release）。生产与 ansible_user 相同；
+# sslip 测试服务器 Ansible 以 root（只用密钥）连接，另建这个账号（docs/runbooks/staging.md）。
+deploy_user: deploy
 ansible_port: "{{ ssh_port }}"
 ssh_port: 22022
+# 生产必须为 true（site.yml 断言）；只有一次性测试服务器可关
+ssh_hardening: true
 # SSH 不对公网开放：日常经 Cloudflare Tunnel + Access 登录（本机需装 cloudflared）。
 # 源站 IP 不写进仓库；首次初始化与隧道故障时的做法见 docs/runbooks/origin-protection.md。
 ansible_host: "{{ cloudflared_ssh_hostname }}"
@@ -19,7 +24,7 @@ pg_app_accounts:
   - { system_user: forum-worker, role: forum_worker }
   - { system_user: forum-indexer, role: forum_indexer }
   - { system_user: forum-sponsor, role: forum_sponsor }
-pg_grants_schema_version: 20261220000001
+pg_grants_schema_version: 20261221000001
 valkey_version: 9.1.2
 valkey_sha256: 0d2a79936cbafa5f527a5175536bb17bd3f767f95f53529e59dddfacf762eec0 # gitleaks:allow（公开校验和）
 
@@ -42,8 +47,34 @@ app_services:
 # 源站入口（docs/runbooks/origin-protection.md）：
 #   tunnel：80/443 不对公网开放，网页与 SSH 都经 cloudflared（只有出站连接）；Caddy 只听本机 caddy_listen_port
 #   direct：备用方案，443 只放行 Cloudflare 网段 + Authenticated Origin Pulls，DNS 需改成指向源站 IP 的代理记录
+#   public：只用于没有 Cloudflare 的一次性测试服务器（akari_env 必须是 staging，site.yml 断言）：22/80/443 对公网开放，
+#           Caddy 直接向 Let's Encrypt 申请证书，钱包 / 后台静态页也由 Caddy 提供（docs/runbooks/staging.md）
 origin_ingress: tunnel
 caddy_listen_port: 8080
+# public 模式下 Caddy 另外提供的站点（空 = 不提供）：钱包、后台静态导出（取自当前版本的 wallet/、admin/），
+# 图片存储（本机 SeaweedFS 的 S3 接口）与 Mailpit 网页（basic auth）
+wallet_domain: ""
+admin_domain: ""
+media_domain: ""
+mail_domain: ""
+
+# 只用于测试服务器（akari_env 必须是 staging，site.yml 断言）：
+# 本机 Mailpit（SMTP 收信，代替 Resend / Postmark）与 SeaweedFS（S3 兼容，代替 R2），见 roles/staging_local
+staging_local_services: false
+mailpit_version: 1.31.6
+mailpit_sha256: 10fa12ccc610f653d4ed4df848c1817f9935dcf4e9a6a458a19ab0fa02093f91 # gitleaks:allow（公开校验和，与 GitHub 发布页一致）
+mailpit_smtp_port: 1025
+mailpit_http_port: 8025
+mailpit_user: owner
+caddy_mailpit_auth_file: /etc/caddy/mailpit-auth.caddy
+seaweedfs_version: "3.97"
+seaweedfs_sha256: a5b73384efb1b3848e8ba464420475b2e0c12c17c32d7939546cd496728849a7 # gitleaks:allow（公开校验和，与 GitHub 发布页一致）
+seaweedfs_s3_port: 8333
+media_bucket: akari-media
+# 相对 roles/staging_local（与 install-release.sh 的写法相同）
+staging_chain_config: ../../../testnet/deployments/arbitrum-sepolia/chain.toml
+# install-release 接受没有 GitHub 构建证明的本地构建（还要求服务器上 AKARI_ENV=staging，见 install-release.sh）
+release_allow_unattested: false
 
 # Cloudflare Tunnel 连接器（plan 第 3 节锁版本）：GitHub 发布的单文件，sha256 与发布说明核对过
 cloudflared_version: 2026.10.0

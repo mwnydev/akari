@@ -1,9 +1,10 @@
 # {{ ansible_managed }}
 Port {{ ssh_port }}
-PermitRootLogin no
+# 只有 sslip 测试服务器以 root 连接（只能用密钥，site.yml 保证生产不会这样）；其余环境禁止 root 登录
+PermitRootLogin {{ 'prohibit-password' if ansible_user == 'root' else 'no' }}
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PubkeyAuthentication yes
-AllowUsers {{ ansible_user }}
+AllowUsers {{ [ansible_user, deploy_user] | unique | join(' ') }}
 MaxAuthTries 3
 X11Forwarding no

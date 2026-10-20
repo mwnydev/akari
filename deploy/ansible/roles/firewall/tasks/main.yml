@@ -1,6 +1,14 @@
 # 入站：tunnel 模式下公网一个端口都不开（网页与 SSH 都经 cloudflared 出站连接进来）；direct 模式只放行 Cloudflare 网段的 443，
 # 源站另由 Caddy 校验 Authenticated Origin Pulls。出站只放行固定端口（docs/runbooks/origin-protection.md「出站」）。
 # 本角色排在 cloudflared 之后：隧道验证通过前不会走到这里，公网 SSH 不会在隧道可用之前被关掉。
+# public 模式（sslip 测试服务器）22/80/443 对所有来源开放，只能用于 staging（site.yml 另有同样的断言）
+- name: Public ingress only on staging
+  ansible.builtin.assert:
+    that: origin_ingress != 'public' or akari_env == 'staging'
+    fail_msg: origin_ingress=public 只能用于 akari_env=staging
+    quiet: true
+  tags: [always]
+
 - name: Bootstrap SSH allowlist is narrow
   ansible.builtin.assert:
     that: firewall_ssh_bootstrap_allow | select('match', '^(0\.0\.0\.0|::)/0$') | list | length == 0

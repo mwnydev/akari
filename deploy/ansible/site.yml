@@ -1,12 +1,35 @@
 - name: Akari single-host server
   hosts: all
   become: true
+  pre_tasks:
+    # 测试服务器专用的开关（公网直连、root 连接、本机 Mailpit / SeaweedFS、无构建证明的版本）只能在 staging 打开：
+    # 生产与任何非 staging 环境在这里停下，什么都不改（docs/runbooks/staging.md）
+    - name: Staging-only switches are never enabled outside staging
+      ansible.builtin.assert:
+        that:
+          - akari_env in ['staging', 'production']
+          - origin_ingress in ['tunnel', 'direct', 'public']
+          - akari_env == 'staging' or origin_ingress != 'public'
+          - akari_env == 'staging' or not (staging_local_services | bool)
+          - akari_env == 'staging' or not (release_allow_unattested | bool)
+          - akari_env == 'staging' or ansible_user != 'root'
+          - akari_env == 'staging' or (ssh_hardening | bool)
+          - akari_env == 'staging' or deploy_user == ansible_user
+        fail_msg: >-
+          origin_ingress=public、staging_local_services、release_allow_unattested、以 root 连接只允许 akari_env=staging
+          （当前 akari_env={{ akari_env }}、origin_ingress={{ origin_ingress }}）
+        quiet: true
+      # 带 --tags 运行（如 cloudflare-ips）时也要先过这一关
+      tags: [always]
   roles:
     - base
-    # 先建好并验证隧道，firewall 才关闭公网 SSH（docs/runbooks/origin-protection.md）
-    - cloudflared
+    # 先建好并验证隧道，firewall 才关闭公网 SSH（docs/runbooks/origin-protection.md）；public 模式没有隧道
+    - role: cloudflared
+      when: origin_ingress != 'public'
     - firewall
     - postgresql
     - valkey
+    - role: staging_local
+      when: staging_local_services | bool
     - caddy
     - app

@@ -183,7 +183,7 @@
     mode: "0644"
     validate: /usr/sbin/sshd -t -f %s
     content: |
-      # {{ ansible_managed }}
+      # Managed by Ansible
       {% if firewall_ssh_bootstrap_allow | length > 0 %}
       # 临时放行公网 SSH（firewall_ssh_bootstrap_allow），隧道恢复后不带该变量重跑即改回只听本机
       {% else %}

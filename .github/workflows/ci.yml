@@ -186,4 +186,5 @@ jobs:
       - run: uvx --from ansible-lint --with ansible-core ansible-lint site.yml
       - run: shellcheck -S warning ../install-release.sh
       - run: shellcheck -S warning ../check-origin-exposure.sh
+      - run: shellcheck -S warning ../staging/release.sh ../staging/staging-env.sh
       - run: shellcheck -S warning -x ../lib.sh ../dev/aa.sh ../testnet/testnet.sh ../testnet/rehearse.sh

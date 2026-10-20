@@ -418,6 +418,12 @@ fn turnstile_secret(
         None if deployment != Deployment::Development => {
             bail!("TURNSTILE_SECRET is required unless AKARI_ENV=development")
         }
+        // 测试密钥人人通过（且不带 action），只能用在测试服务器（docs/runbooks/staging.md）
+        Some(s)
+            if deployment == Deployment::Production && forum_auth::captcha::is_test_secret(&s) =>
+        {
+            bail!("TURNSTILE_SECRET must not be a Cloudflare testing key in production")
+        }
         v => Ok(v),
     }
 }
@@ -536,6 +542,17 @@ mod tests {
                     .unwrap()
                     .as_deref(),
                 Some("0x4AAA")
+            );
+        }
+        // Cloudflare 测试密钥只允许测试服务器（与开发）使用
+        let testing = "1x0000000000000000000000000000000AA";
+        assert!(turnstile_secret(Some(testing.to_owned()), Deployment::Production).is_err());
+        for d in [Deployment::Staging, Deployment::Development] {
+            assert_eq!(
+                turnstile_secret(Some(testing.to_owned()), d)
+                    .unwrap()
+                    .as_deref(),
+                Some(testing)
             );
         }
     }

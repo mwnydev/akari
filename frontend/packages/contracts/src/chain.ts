@@ -1,10 +1,11 @@
 import type { Address } from "viem";
+import arbitrumSepolia from "./chain.arbitrum-sepolia.json" with { type: "json" };
 import local from "./chain.local.json" with { type: "json" };
 
 /**
  * 一条链上钱包需要的全部地址。本地链读入库的 chain.local.json（地址固定、URL 用默认端口；deploy/dev/aa.sh up
  * 只核对不改写，见 README-aa.md）。Arbitrum Sepolia 的 chain.arbitrum-sepolia.json 由 deploy/testnet/testnet.sh emit-config
- * 生成（同一形状，`walletInitVersions` 直接写在文件里），钱包按 NEXT_PUBLIC_WALLET_CHAIN 选链时接入。
+ * 生成（同一形状，`walletInitVersions` 直接写在文件里），钱包按 NEXT_PUBLIC_WALLET_CHAIN 选链（apps/wallet/lib/wallet/config.ts）。
  */
 export interface ChainConfig {
   chainId: number;
@@ -63,4 +64,19 @@ export const localChain: ChainConfig = {
       approveAmount: MAX_UINT256,
     },
   ],
+};
+
+/** Arbitrum Sepolia 测试网（deploy/testnet/testnet.sh emit-config 生成，初始化参数版本写在文件里，只增不改）。 */
+export const arbitrumSepoliaChain: ChainConfig = {
+  chainId: arbitrumSepolia.chainId,
+  name: arbitrumSepolia.name,
+  rpcUrl: arbitrumSepolia.rpcUrl,
+  bundlerUrl: arbitrumSepolia.bundlerUrl,
+  entryPoint: arbitrumSepolia.entryPoint as Address,
+  kernel: arbitrumSepolia.kernel as ChainConfig["kernel"],
+  webAuthnValidator: arbitrumSepolia.webAuthnValidator as Address,
+  erc6492Verifier: arbitrumSepolia.erc6492Verifier as Address,
+  contracts: arbitrumSepolia.contracts as ChainConfig["contracts"],
+  paymasterSigner: arbitrumSepolia.paymasterSigner as Address,
+  walletInitVersions: arbitrumSepolia.walletInitVersions as WalletInitVersion[],
 };

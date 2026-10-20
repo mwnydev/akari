@@ -1,0 +1,128 @@
+# 测试服务器专用的本机服务（只听 127.0.0.1，内存封顶）：Mailpit 代替 Resend / Postmark 收下全部邮件，
+# SeaweedFS 的 S3 接口代替 R2 存图片。生产不用（site.yml 断言 staging_local_services 只能在 staging 打开）。
+- name: Staging only
+  ansible.builtin.assert:
+    that: akari_env == 'staging'
+    fail_msg: staging_local_services 只能用于 akari_env=staging
+    quiet: true
+
+- name: Service users
+  ansible.builtin.user:
+    name: "{{ item }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+  loop: [mailpit, seaweedfs]
+
+- name: Release directory
+  ansible.builtin.file:
+    path: /usr/local/lib/akari-staging
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Mailpit and SeaweedFS (pinned versions, sha256 checked)
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "/usr/local/lib/akari-staging/{{ item.name }}.tar.gz"
+    checksum: "sha256:{{ item.sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - name: "mailpit-{{ mailpit_version }}"
+      url: "https://github.com/axllent/mailpit/releases/download/v{{ mailpit_version }}/mailpit-linux-amd64.tar.gz"
+      sha256: "{{ mailpit_sha256 }}"
+    - name: "seaweedfs-{{ seaweedfs_version }}"
+      url: "https://github.com/seaweedfs/seaweedfs/releases/download/{{ seaweedfs_version }}/linux_amd64.tar.gz"
+      sha256: "{{ seaweedfs_sha256 }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Unpack directories
+  ansible.builtin.file:
+    path: "/usr/local/lib/akari-staging/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: ["mailpit-{{ mailpit_version }}", "seaweedfs-{{ seaweedfs_version }}"]
+
+- name: Unpack Mailpit
+  ansible.builtin.unarchive:
+    src: "/usr/local/lib/akari-staging/mailpit-{{ mailpit_version }}.tar.gz"
+    dest: "/usr/local/lib/akari-staging/mailpit-{{ mailpit_version }}"
+    remote_src: true
+    include: [mailpit]
+    creates: "/usr/local/lib/akari-staging/mailpit-{{ mailpit_version }}/mailpit"
+  notify: Restart mailpit
+
+- name: Unpack SeaweedFS
+  ansible.builtin.unarchive:
+    src: "/usr/local/lib/akari-staging/seaweedfs-{{ seaweedfs_version }}.tar.gz"
+    dest: "/usr/local/lib/akari-staging/seaweedfs-{{ seaweedfs_version }}"
+    remote_src: true
+    include: [weed]
+    creates: "/usr/local/lib/akari-staging/seaweedfs-{{ seaweedfs_version }}/weed"
+  notify: Restart seaweedfs
+
+# 写 env 文件与生成服务器端密钥的脚本（docs/runbooks/staging.md「密钥」）
+- name: Staging env helper
+  ansible.builtin.copy:
+    src: ../../../staging/staging-env.sh
+    dest: /usr/local/sbin/akari-staging-env
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Credential store and config directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ '0700' if item.endswith('credstore') else '0755' }}"
+  loop: [/etc/akari, /etc/akari/credstore]
+
+# 链配置（只有地址，没有密钥）：Arbitrum Sepolia 的当前部署（docs/runbooks/testnet-deploy.md「当前部署」）
+- name: Chain config
+  ansible.builtin.copy:
+    src: "{{ staging_chain_config }}"
+    dest: /etc/akari/chain.toml
+    owner: root
+    group: root
+    mode: "0644"
+
+# SeaweedFS 的 S3 身份（含访问密钥）由 akari-staging-env 在服务器上生成：/etc/akari/seaweedfs-s3.json（seaweedfs 0600）。
+# 匿名身份只读；不带签名的请求在 Caddy 那一层只放行正式目录 i/（roles/caddy/templates/Caddyfile.j2）。
+- name: Units
+  ansible.builtin.template:
+    src: "{{ item }}.service.j2"
+    dest: "/etc/systemd/system/{{ item }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [mailpit, seaweedfs]
+  notify: ["Restart {{ item }}"]
+
+- name: Enable Mailpit
+  ansible.builtin.systemd_service:
+    name: mailpit
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Look for the S3 identities
+  ansible.builtin.stat:
+    path: /etc/akari/seaweedfs-s3.json
+  register: staging_local_s3_config
+
+# 第一次运行时还没有身份文件：先运行 akari-staging-env init（docs/runbooks/staging.md），再重跑本 play
+- name: Enable SeaweedFS (once its identities exist)
+  ansible.builtin.systemd_service:
+    name: seaweedfs
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: staging_local_s3_config.stat.exists

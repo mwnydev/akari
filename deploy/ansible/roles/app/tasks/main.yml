@@ -50,7 +50,16 @@
     mode: "0440"
     validate: visudo -cf %s
     content: |
-      {{ ansible_user }} ALL=(root) NOPASSWD: {{ app_root }}/bin/install-release *
+      {{ deploy_user }} ALL=(root) NOPASSWD: {{ app_root }}/bin/install-release *
+
+# install-release 只接受这个目录里的产物
+- name: Upload directory for release artifacts
+  ansible.builtin.file:
+    path: "/home/{{ deploy_user }}/incoming"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_user }}"
+    mode: "0750"
 
 - name: Configuration directory
   ansible.builtin.file:
@@ -60,6 +69,32 @@
     group: root
     mode: "0755"
 
+# 测试服务器装本地构建（没有 GitHub 构建证明）：install-release 还要求 AKARI_ENV=staging 且显式带 --unattested
+- name: Allow unattested releases (staging only)
+  ansible.builtin.copy:
+    dest: /etc/akari/allow-unattested-releases
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible：install-release install --unattested 可用（只在 AKARI_ENV=staging 时生效）
+  when: release_allow_unattested | bool and akari_env == 'staging'
+
+- name: Unattested releases are refused everywhere else
+  ansible.builtin.file:
+    path: /etc/akari/allow-unattested-releases
+    state: absent
+  when: not (release_allow_unattested | bool and akari_env == 'staging')
+
+# cloudflared 角色也会建它；public 模式没有那个角色
+- name: Credential store
+  ansible.builtin.file:
+    path: /etc/akari/credstore
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
 - name: Deployment environment (AKARI_ENV; forum-api pins the production domains from it, ADR 0012)
   ansible.builtin.copy:
     dest: /etc/akari/deployment.env
@@ -67,7 +102,7 @@
     group: root
     mode: "0644"
     content: |
-      # {{ ansible_managed }}
+      # Managed by Ansible
       AKARI_ENV={{ akari_env }}
 
 # 可选凭据（auction-signer）只在凭据文件已放好时写进单元：LoadCredentialEncrypted 指向不存在的文件时单元起不来

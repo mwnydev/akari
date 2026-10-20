@@ -5,10 +5,11 @@
 | 路径 | 内容 |
 | --- | --- |
 | `dev/compose.yaml` | 本机开发依赖（PostgreSQL 18 + PGroonga、Valkey、Mailpit） |
-| `ansible/` | 服务器初始化：base、cloudflared、firewall、postgresql、valkey、caddy、app 七个角色 |
+| `ansible/` | 服务器初始化：base、cloudflared、firewall、postgresql、valkey、caddy、app 七个角色；只用于测试服务器的 staging_local（Mailpit、SeaweedFS） |
 | `install-release.sh` | 安装 / 回滚版本；部署账号经 sudoers 只能执行它 |
 | `check-origin-exposure.sh` | 从外部主机检查源站 IP 是否暴露；每次部署、改 DNS 或换 IP 后运行 |
 | `testnet/` | Arbitrum Sepolia 合约部署、Safe 交易文件、链上核对与链配置生成（[docs/runbooks/testnet-deploy.md](../docs/runbooks/testnet-deploy.md)） |
+| `staging/` | 没有 Cloudflare 时的一次性 sslip 测试服务器：本机构建 / 安装版本、迁移、种子（`release.sh`），服务器上写 env 与生成密钥（`staging-env.sh`），见 [docs/runbooks/staging.md](../docs/runbooks/staging.md) |
 | `lib.sh` | 部署脚本共用的链上现成合约地址与检查函数（`dev/aa.sh`、`testnet/*.sh`） |
 
 ## 初始化一台服务器
@@ -25,14 +26,18 @@ ansible-playbook -i inventory/staging.yml site.yml      # 或 inventory/producti
 SSH 另需 Cloudflare Access 登录；源站 IP 不进仓库。上面的命令是日常用法（经隧道连接，本机需装 `cloudflared`）；
 新服务器第一次运行、隧道故障应急、DNS 清单见该手册，换 IP 见 [origin-ip-rotation.md](../docs/runbooks/origin-ip-rotation.md)。
 
+sslip 测试服务器（还没有 Cloudflare 账号时）：清单里的主机放在 `staging_sslip` 组（`group_vars/staging_sslip.yml`：
+`origin_ingress: public`、以 root 连接、本机 Mailpit / SeaweedFS、接受无构建证明的本地构建），做法见
+[docs/runbooks/staging.md](../docs/runbooks/staging.md)。这些开关只在 `akari_env: staging` 下可用，`site.yml` 开头断言，生产选不到。
+
 ## 角色要点
 
-- **base**：自动安全更新；SSH 只允许密钥、非默认端口 22022；大页、`vm.overcommit_memory=1`。
+- **base**：自动安全更新；SSH 只允许密钥、非默认端口 22022；大页（shared_buffers）、透明大页改为 madvise（always 会让每个 PostgreSQL 后端多占几十 MB）、`vm.overcommit_memory=1`。
 - **cloudflared**：锁版本的 Cloudflare Tunnel 连接器（sha256 校验）两个实例，systemd 沙箱；隧道凭据用 `LoadCredentialEncrypted`；验证经隧道能登录后 sshd 只听本机。
-- **firewall**：nftables。入站：tunnel 模式不放行任何端口（direct 备用模式只放行 Cloudflare 网段的 443）；公网 SSH 只在 `firewall_ssh_bootstrap_allow` 临时放行。出站只放行 443、DNS、NTP、隧道等固定端口。
+- **firewall**：nftables。入站：tunnel 模式不放行任何端口（direct 备用模式只放行 Cloudflare 网段的 443；public 模式只用于 staging，放行 22/80/443）；公网 SSH 只在 `firewall_ssh_bootstrap_allow` 临时放行。出站只放行 443、DNS、NTP、隧道等固定端口。
 - **postgresql**：PGDG 18 + PGroonga + pgBackRest；只监听 Unix socket；参数按 `group_vars/<环境>.yml`；只设 `MemoryHigh`。每个程序一个数据库账号，授权见下方「数据库授权矩阵」。
 - **valkey**：官方 9.1.2 二进制（sha256 校验），只监听 Unix socket，AOF，`volatile-lru`。
-- **caddy**：tunnel 模式只听本机、未知 Host 直接断开；direct 模式用 Cloudflare Origin CA 证书 + Authenticated Origin Pulls（`require_and_verify`）；真实 IP 只信任上一跳的 `CF-Connecting-IP`；api 两实例 `least_conn` + 健康检查；Next.js 限并发。
+- **caddy**：tunnel 模式只听本机、未知 Host 直接断开；public 模式（staging）向 Let's Encrypt 申请证书，另外提供钱包 / 后台静态页、图片存储与 Mailpit 网页，转发时用对端 IP 覆盖 `CF-Connecting-IP`；direct 模式用 Cloudflare Origin CA 证书 + Authenticated Origin Pulls（`require_and_verify`）；真实 IP 只信任上一跳的 `CF-Connecting-IP`；api 两实例 `least_conn` + 健康检查；Next.js 限并发。
 - **app**：每个程序独立系统用户和 systemd 单元（`ProtectSystem=strict`、`NoNewPrivileges`、`MemoryMax` 等）；forum-sponsor 的私钥用 `LoadCredentialEncrypted`（`systemd-creds encrypt` 生成，放 `/etc/akari/credstore/`）。
 
 ## 环境变量文件（/etc/akari/*.env，不进仓库）
@@ -66,6 +71,8 @@ SSH 另需 Cloudflare Access 登录；源站 IP 不进仓库。上面的命令�
 - staging / production 必须有密钥（forum-api 缺了拒绝启动）。密钥放在控制机本地的文件里（只有密钥一行），
   `ansible-playbook … -e turnstile_secret_file=<路径>` 时由 app 角色写进 `/etc/akari/forum-api.env`（0600，替换已有的那一行，
   不进日志）；不传时 play 检查文件里已经有 `TURNSTILE_SECRET`，没有就停下并提示。开发环境不设（不校验人机验证）。
+- Cloudflare 文档公开的测试密钥（`1x…AA` 等）只能用于测试服务器：production 下 forum-api 拒绝以它启动；测试密钥的应答不带 `action`，
+  只有配置的正是测试密钥、应答也标明 `result_with_testing_key` 时才不核对 action（`crates/auth/src/captcha.rs`）。
 - forum-api 经 `https://challenges.cloudflare.com/turnstile/v0/siteverify` 校验（出网 443 已放行，客户端登记在出网测试里，5 秒超时），
   并核对令牌的 `action`（登录表单 `login`、发帖 `post`），Cloudflare 不可用时拒绝而不是放行。
 - 论坛目前不发 CSP。以后加 CSP 时须放行 `script-src https://challenges.cloudflare.com` 与 `frame-src https://challenges.cloudflare.com`

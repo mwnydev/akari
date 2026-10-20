@@ -30,6 +30,14 @@
     mode: "0644"
   notify: Restart postgresql
 
+- name: Unit drop-in directory
+  ansible.builtin.file:
+    path: "/etc/systemd/system/postgresql@{{ postgresql_version }}-main.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Soft memory limit only (hard MemoryMax would OOM-kill the database)
   ansible.builtin.copy:
     dest: "/etc/systemd/system/postgresql@{{ postgresql_version }}-main.service.d/memory.conf"
@@ -96,17 +104,33 @@
     options: map=akari
   notify: Reload postgresql
 
-- name: Applied schema version
+# 新机器还没有迁移表：表名在解析阶段就要存在，所以先查表在不在，再查版本
+- name: Migration table exists
   community.postgresql.postgresql_query:
     login_db: "{{ pg_database }}"
-    query: >-
-      SELECT CASE WHEN to_regclass('public._sqlx_migrations') IS NULL THEN 0
-        ELSE (SELECT coalesce(max(version), 0) FROM _sqlx_migrations WHERE success) END AS version
-  register: postgresql_schema
+    query: SELECT to_regclass('public._sqlx_migrations') IS NOT NULL AS present
+  register: postgresql_migrations_table
   changed_when: false
   check_mode: false
   become: true
   become_user: postgres
+
+- name: Applied schema version
+  community.postgresql.postgresql_query:
+    login_db: "{{ pg_database }}"
+    query: SELECT coalesce(max(version), 0) AS version FROM _sqlx_migrations WHERE success
+  register: postgresql_schema_applied
+  changed_when: false
+  check_mode: false
+  when: postgresql_migrations_table.query_result[0].present
+  become: true
+  become_user: postgres
+
+- name: Remember the schema version
+  ansible.builtin.set_fact:
+    postgresql_schema_version: >-
+      {{ postgresql_schema_applied.query_result[0].version | int
+         if postgresql_migrations_table.query_result[0].present else 0 }}
 
 - name: Table grants (per-service matrix, checked against the code by backend/crates/db/tests/grants.rs)
   ansible.builtin.template:
@@ -122,7 +146,7 @@
   community.postgresql.postgresql_script:
     login_db: "{{ pg_database }}"
     path: /etc/postgresql/akari-grants.sql
-  when: (postgresql_schema.query_result[0].version | int) >= pg_grants_schema_version
+  when: (postgresql_schema_version | int) >= pg_grants_schema_version
   changed_when: postgresql_grants_file.changed
   become: true
   become_user: postgres

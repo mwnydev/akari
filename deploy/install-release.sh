@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 安装或回滚一个版本（plan 第 13 节）。部署账号经 sudoers 只能执行本脚本。
-#   install-release install <release.tar.zst>   校验 GitHub 构建证明后安装并切换
-#   install-release rollback                    切回上一个版本
+#   install-release install <release.tar.zst>                校验 GitHub 构建证明后安装并切换
+#   install-release install --unattested <release.tar.zst>   只用于测试服务器：本地构建，没有构建证明（见下）
+#   install-release rollback                                 切回上一个版本
 set -euo pipefail
 
 APP_ROOT=/opt/akari
@@ -21,6 +22,13 @@ restart_all() {
   done
 }
 
+# 不校验构建证明只在三者同时成立时允许：显式 --unattested、Ansible 写的 /etc/akari/deployment.env 是 staging、
+# Ansible 只在 staging 才放的 /etc/akari/allow-unattested-releases 存在（docs/runbooks/staging.md）。两个文件都只有 root 能改。
+unattested_allowed() {
+  [ -f /etc/akari/allow-unattested-releases ] || return 1
+  [ "$(grep -E '^AKARI_ENV=' /etc/akari/deployment.env 2>/dev/null | tail -n1)" = "AKARI_ENV=staging" ]
+}
+
 switch_to() {
   ln -sfn "$1" "$APP_ROOT/current.new"
   mv -T "$APP_ROOT/current.new" "$APP_ROOT/current"
@@ -30,9 +38,19 @@ switch_to() {
 
 case "${1:-}" in
   install)
+    attested=1
+    if [ "${2:-}" = "--unattested" ]; then
+      unattested_allowed || { echo "--unattested is only allowed on a staging server" >&2; exit 2; }
+      attested=0
+      shift
+    fi
     artifact=$(realpath -e "${2:?artifact path required}")
     case "$artifact" in /home/deploy/incoming/*.tar.zst) ;; *) echo "artifact must be in /home/deploy/incoming" >&2; exit 2 ;; esac
-    gh attestation verify "$artifact" --repo "$REPO" >/dev/null
+    if [ "$attested" = 1 ]; then
+      gh attestation verify "$artifact" --repo "$REPO" >/dev/null
+    else
+      echo "WARNING: installing an unattested build (staging only)" >&2
+    fi
     name=$(basename "$artifact" .tar.zst)
     [[ "$name" =~ ^[0-9A-Za-z._-]+$ ]] || { echo "bad release name" >&2; exit 2; }
     dest="$RELEASES/$name"
@@ -51,5 +69,5 @@ case "${1:-}" in
     switch_to "$prev"
     ;;
   *)
-    echo "usage: install-release install <artifact> | rollback" >&2; exit 2 ;;
+    echo "usage: install-release install [--unattested] <artifact> | rollback" >&2; exit 2 ;;
 esac

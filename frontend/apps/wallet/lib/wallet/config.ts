@@ -1,10 +1,27 @@
-import { localChain, type ChainConfig } from "@akari/contracts";
+import { arbitrumSepoliaChain, localChain, type ChainConfig } from "@akari/contracts";
 import { API_BASE } from "./domains";
 
 // 构建期常量（Next 把 NEXT_PUBLIC_* 内联进产物）。本文件很轻，可以被首屏代码引用；钱包 SDK 在 ./sdk.ts，只能动态加载。
 
-/** 当前只有本地 AA 开发链（deploy/dev/aa.sh）；Arbitrum Sepolia / One 的配置接入时按 NEXT_PUBLIC_WALLET_CHAIN 选择。 */
-export const chain: ChainConfig = localChain;
+/** 构建时可选的链（`NEXT_PUBLIC_WALLET_CHAIN`）；不设置 = 本地 AA 开发链（deploy/dev/aa.sh）。Arbitrum One 部署后加入。 */
+const CHAINS: Record<string, ChainConfig> = {
+  local: localChain,
+  "arbitrum-sepolia": arbitrumSepoliaChain,
+};
+
+/** 钱包所在链；名字拼错时构建（与页面加载）直接失败，不会悄悄回落到本地链。 */
+export function selectChain(name: string | undefined): ChainConfig {
+  const key = name || "local";
+  const selected = Object.hasOwn(CHAINS, key) ? CHAINS[key] : undefined;
+  if (!selected) {
+    throw new Error(
+      `NEXT_PUBLIC_WALLET_CHAIN must be one of ${Object.keys(CHAINS).join(", ")}, got "${key}"`,
+    );
+  }
+  return selected;
+}
+
+export const chain: ChainConfig = selectChain(process.env.NEXT_PUBLIC_WALLET_CHAIN);
 
 /**
  * 钱包 Passkey 的 RP ID、forum-api 所在源（ADR 0009：钱包子域名跨源调用论坛 API、带论坛会话 Cookie，

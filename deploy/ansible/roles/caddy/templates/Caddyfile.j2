@@ -5,11 +5,17 @@
 	# 只听本机：公网入口只有 cloudflared，Caddy 不需要证书，也不开 80/443
 	auto_https off
 	default_bind 127.0.0.1 [::1]
-{% else %}
+{% elif origin_ingress == 'direct' %}
 	# Cloudflare 只回源 443（「Always Use HTTPS」），不开 80
 	auto_https disable_redirects
+{% else %}
+	# public（只用于 staging）：直接向 Let's Encrypt 申请证书（HTTP-01 / TLS-ALPN-01），80 只做 ACME 与跳转
 {% endif %}
 	servers {
+{% if origin_ingress == 'public' %}
+		# 没有上游代理：客户端 IP 就是连接的对端，客户端自带的 CF-Connecting-IP 一律在转发时覆盖（见 forum 片段）
+		strict_sni_host on
+{% else %}
 		# 真实 IP 只信任上一跳的 CF-Connecting-IP（plan 第 11 节）：tunnel 模式是本机 cloudflared，direct 模式是 Cloudflare 网段
 {% if origin_ingress == 'tunnel' %}
 		trusted_proxies static 127.0.0.1/32 ::1/128
@@ -19,14 +25,31 @@
 		strict_sni_host on
 {% endif %}
 		client_ip_headers CF-Connecting-IP
+{% endif %}
 	}
 }
 
+{% if origin_ingress == 'public' %}
+(static_site) {
+	root * {{ app_root }}/current/{args[0]}
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
+
+{% endif %}
 (forum) {
 	encode zstd gzip
 
 	handle /api/* {
 		reverse_proxy {% for p in api_ports %}127.0.0.1:{{ p }} {% endfor %}{
+{% if origin_ingress == 'public' %}
+			# forum-api 信任本机传来的 CF-Connecting-IP：换成真实对端 IP，客户端不能伪造
+			header_up CF-Connecting-IP {remote_host}
+{% endif %}
 			lb_policy least_conn
 			health_uri /api/v1/healthz
 			health_interval 5s
@@ -36,6 +59,9 @@
 	handle {
 		# 限制 Next.js 最大并发，超出返回 503，不会被撑爆内存（plan 第 11 节）
 		reverse_proxy 127.0.0.1:{{ nextjs_port }} {
+{% if origin_ingress == 'public' %}
+			header_up CF-Connecting-IP {remote_host}
+{% endif %}
 			transport http {
 				max_conns_per_host {{ nextjs_max_conns }}
 			}
@@ -52,6 +78,74 @@ http://{{ site_domain }}:{{ caddy_listen_port }} {
 http://:{{ caddy_listen_port }} {
 	abort
 }
+{% elif origin_ingress == 'public' %}
+# 只有下面这些主机名有证书；用 IP 或别的名字访问时 TLS 握手失败
+{{ site_domain }} {
+	import forum
+}
+{% if wallet_domain %}
+
+# 钱包静态导出（生产在 Cloudflare Pages）：随版本安装在 current/wallet
+{{ wallet_domain }} {
+	import static_site wallet
+	try_files {path} {path}.html {path}/index.html
+	file_server
+}
+{% endif %}
+{% if admin_domain %}
+
+# 后台静态导出（trailingSlash：每页是 目录/index.html）
+{{ admin_domain }} {
+	import static_site admin
+	try_files {path} {path}/index.html {path}.html
+	file_server
+}
+{% endif %}
+{% if media_domain %}
+
+# 图片存储（本机 SeaweedFS 的 S3 接口，代替 R2 + CDN）：浏览器凭预签名地址直传，正式目录 i/ 公开读
+{{ media_domain }} {
+	@preflight method OPTIONS
+	handle @preflight {
+		header Access-Control-Allow-Origin "https://{{ site_domain }}"
+		header Access-Control-Allow-Methods "PUT"
+		header Access-Control-Allow-Headers "content-type"
+		header Access-Control-Max-Age "600"
+		header Vary Origin
+		respond 204
+	}
+	# 不带签名的请求只能读正式目录（原图所在的 tmp/、列目录、写入都要签名）
+	@unsigned {
+		not query X-Amz-Signature=*
+		not header Authorization *
+	}
+	@unsigned_private {
+		expression {http.request.method} != "GET" && {http.request.method} != "HEAD" || !{path}.startsWith("/{{ media_bucket }}/i/")
+	}
+	handle @unsigned {
+		respond @unsigned_private 403
+		reverse_proxy 127.0.0.1:{{ seaweedfs_s3_port }}
+	}
+	handle {
+		reverse_proxy 127.0.0.1:{{ seaweedfs_s3_port }} {
+			header_down -Access-Control-Allow-Origin
+			header_down -Access-Control-Allow-Methods
+			header_down -Access-Control-Allow-Headers
+			header_down -Access-Control-Expose-Headers
+		}
+		header Access-Control-Allow-Origin "https://{{ site_domain }}"
+		header Vary Origin
+	}
+}
+{% endif %}
+{% if mail_domain %}
+
+# Mailpit 网页（测试服务器收到的全部邮件，含登录验证码）：basic auth，账号密码见 docs/runbooks/staging.md
+{{ mail_domain }} {
+	import {{ caddy_mailpit_auth_file }}
+	reverse_proxy 127.0.0.1:{{ mailpit_http_port }}
+}
+{% endif %}
 {% else %}
 # 未知 SNI（含不带 SNI、用 IP 访问）没有证书可用，握手失败
 {{ site_domain }} {

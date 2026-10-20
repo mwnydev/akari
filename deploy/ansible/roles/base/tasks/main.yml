@@ -4,7 +4,7 @@
 
 - name: Install base packages
   ansible.builtin.apt:
-    name: [unattended-upgrades, apt-listchanges, ca-certificates, curl, gnupg, nftables, chrony, aide]
+    name: [unattended-upgrades, apt-listchanges, ca-certificates, curl, gnupg, nftables, chrony, aide, zstd]
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -17,6 +17,27 @@
       APT::Periodic::Update-Package-Lists "1";
       APT::Periodic::Unattended-Upgrade "1";
 
+# 生产的 deploy 账号事先建好（deploy/README.md）；以 root 连接的测试服务器在这里建，公钥沿用 root 的
+- name: Deploy account (when Ansible itself connects as root)
+  when: ansible_user == 'root' and deploy_user != 'root'
+  block:
+    - name: Create the deploy account
+      ansible.builtin.user:
+        name: "{{ deploy_user }}"
+        shell: /bin/bash
+        create_home: true
+
+    - name: Read root's authorized keys
+      ansible.builtin.slurp:
+        src: /root/.ssh/authorized_keys
+      register: base_root_keys
+
+    - name: Same keys for the deploy account
+      ansible.posix.authorized_key:
+        user: "{{ deploy_user }}"
+        key: "{{ base_root_keys.content | b64decode }}"
+        exclusive: true
+
 - name: Harden sshd (keys only, non-default port)
   ansible.builtin.template:
     src: sshd_hardening.conf.j2
@@ -24,6 +45,15 @@
     mode: "0644"
     validate: /usr/sbin/sshd -t -f %s
   notify: Restart sshd
+  when: ssh_hardening | bool
+
+# 一次性测试服务器保留系统默认 sshd（站长决定，可用 root 密码登录）；只允许在 staging 关闭，site.yml 断言
+- name: Leave sshd at distribution defaults
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d/10-akari.conf
+    state: absent
+  notify: Restart sshd
+  when: not (ssh_hardening | bool)
 
 - name: Kernel settings
   ansible.posix.sysctl:
@@ -37,3 +67,27 @@
       vm.overcommit_memory: 1 # Valkey 后台持久化需要
       vm.swappiness: 1
       net.core.somaxconn: 4096
+
+# 透明大页只给主动 madvise 的程序：Debian 默认 always，PostgreSQL 每个后端会多占几十 MB 匿名内存（2026-10-21 测试服务器上
+# 40 个连接合计 1.2 GB，撞上 MemoryHigh 后整个数据库被限流卡住）；Valkey 也要求关掉。shared_buffers 用的是上面的 vm.nr_hugepages
+- name: Transparent huge pages only on madvise (boot setting)
+  ansible.builtin.copy:
+    dest: /etc/tmpfiles.d/akari-thp.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible
+      w /sys/kernel/mm/transparent_hugepage/enabled - - - - madvise
+      w /sys/kernel/mm/transparent_hugepage/defrag - - - - madvise
+
+- name: Transparent huge pages setting (now)
+  ansible.builtin.command: cat /sys/kernel/mm/transparent_hugepage/enabled
+  register: base_thp
+  changed_when: false
+  check_mode: false
+
+- name: Apply the transparent huge pages setting
+  ansible.builtin.command: systemd-tmpfiles --create /etc/tmpfiles.d/akari-thp.conf
+  when: "'[madvise]' not in base_thp.stdout"
+  changed_when: true

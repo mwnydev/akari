@@ -6,4 +6,9 @@ export {
   mockUsdtAbi,
   streamEscrowAbi,
 } from "./generated";
-export { type ChainConfig, type WalletInitVersion, localChain } from "./chain";
+export {
+  type ChainConfig,
+  type WalletInitVersion,
+  arbitrumSepoliaChain,
+  localChain,
+} from "./chain";

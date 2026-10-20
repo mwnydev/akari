@@ -1,0 +1,31 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Mailpit {{ mailpit_version }} (staging mail sink)
+After=network.target
+
+[Service]
+User=mailpit
+Group=mailpit
+ExecStart=/usr/local/lib/akari-staging/mailpit-{{ mailpit_version }}/mailpit --listen 127.0.0.1:{{ mailpit_http_port }} --smtp 127.0.0.1:{{ mailpit_smtp_port }} --database /var/lib/mailpit/mailpit.db --max 2000 --disable-version-check
+StateDirectory=mailpit
+StateDirectoryMode=0700
+Restart=on-failure
+MemoryMax=256M
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

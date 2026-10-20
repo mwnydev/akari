@@ -1,0 +1,32 @@
+# {{ ansible_managed }}
+[Unit]
+Description=SeaweedFS {{ seaweedfs_version }} (staging S3 for images)
+After=network.target
+
+[Service]
+User=seaweedfs
+Group=seaweedfs
+# master / volume / filer / S3 都只听本机；volume 不用默认的 8080（避开 Caddy 与 forum-api 的端口）
+ExecStart=/usr/local/lib/akari-staging/seaweedfs-{{ seaweedfs_version }}/weed server -ip=127.0.0.1 -ip.bind=127.0.0.1 -dir=/var/lib/seaweedfs -master.port=9333 -volume.port=8380 -filer.port=8888 -s3 -s3.port={{ seaweedfs_s3_port }} -s3.config=/etc/akari/seaweedfs-s3.json -master.volumeSizeLimitMB=64 -volume.max=16
+StateDirectory=seaweedfs
+StateDirectoryMode=0700
+Restart=on-failure
+MemoryMax=512M
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+[Install]
+WantedBy=multi-user.target

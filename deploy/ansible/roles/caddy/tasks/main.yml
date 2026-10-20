@@ -13,6 +13,85 @@
     state: present
     update_cache: true
 
+- name: Public ingress only on staging
+  ansible.builtin.assert:
+    that: origin_ingress != 'public' or akari_env == 'staging'
+    fail_msg: origin_ingress=public 只能用于 akari_env=staging
+    quiet: true
+  tags: [always]
+
+# Mailpit 网页的 basic auth：口令只在控制机本地文件里（-e mailpit_password_file=<路径>），经 stdin 交给 caddy hash-password，
+# 服务器上只存 bcrypt 散列（root:caddy 0640）。bcrypt 每次加盐不同，所以只在散列文件还不存在、或带 -e mailpit_password_rotate=true
+# 时写（重跑不改动）；都没有时要求散列文件已经在，缺了在这里停下
+- name: Mailpit web UI basic auth
+  when: origin_ingress == 'public' and mail_domain | length > 0
+  block:
+    - name: Look for the basic auth snippet
+      ansible.builtin.stat:
+        path: "{{ caddy_mailpit_auth_file }}"
+      register: caddy_mailpit_auth
+
+    - name: Hash the Mailpit password (first run, or when rotating)
+      ansible.builtin.command:
+        argv: [caddy, hash-password]
+        stdin: "{{ lookup('ansible.builtin.file', mailpit_password_file) | trim }}"
+      register: caddy_mailpit_hash
+      changed_when: false
+      no_log: true
+      when: mailpit_password_file is defined and (not caddy_mailpit_auth.stat.exists or mailpit_password_rotate | default(false) | bool)
+
+    - name: Write the basic auth snippet
+      ansible.builtin.copy:
+        dest: "{{ caddy_mailpit_auth_file }}"
+        owner: root
+        group: caddy
+        mode: "0640"
+        content: |
+          basic_auth {
+          	{{ mailpit_user }} {{ caddy_mailpit_hash.stdout | trim }}
+          }
+      no_log: true
+      when: caddy_mailpit_hash.stdout is defined
+      notify: Reload caddy
+
+    - name: Mailpit basic auth is configured
+      ansible.builtin.assert:
+        that: caddy_mailpit_auth.stat.exists or caddy_mailpit_hash.stdout is defined
+        fail_msg: "{{ caddy_mailpit_auth_file }} 不存在：用 -e mailpit_password_file=<口令文件> 重跑（docs/runbooks/staging.md）"
+        quiet: true
+
+# 管理接口是 /run/caddy/admin.sock（只有 caddy 用户能连），软件包的单元不建 /run/caddy，由 systemd 建
+- name: Caddy unit drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/caddy.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags: [cloudflare-ips]
+
+- name: Caddy runtime directory for the admin socket
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/caddy.service.d/10-akari-runtime.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible
+      [Service]
+      RuntimeDirectory=caddy
+      RuntimeDirectoryMode=0750
+  register: caddy_runtime_dropin
+  tags: [cloudflare-ips]
+
+# 软件包自带的 Caddyfile 用 localhost:2019 做管理接口，我们的用 unix 套接字：第一次换配置时 reload 会连不上
+# 正在运行的实例：套接字不在时（第一次换配置，或 Caddy 没在运行）重启一次，之后的 reload 都经套接字
+- name: Look for the Caddy admin socket
+  ansible.builtin.stat:
+    path: /run/caddy/admin.sock
+  register: caddy_admin_socket
+  tags: [cloudflare-ips]
+
 - name: Caddyfile
   ansible.builtin.template:
     src: Caddyfile.j2
@@ -20,4 +99,12 @@
     mode: "0644"
     validate: caddy validate --adapter caddyfile --config %s
   notify: Reload caddy
+  tags: [cloudflare-ips]
+
+- name: Restart Caddy once to switch to the admin socket
+  ansible.builtin.systemd_service:
+    name: caddy
+    state: restarted
+    daemon_reload: "{{ caddy_runtime_dropin is changed }}"
+  when: caddy_runtime_dropin is changed or not caddy_admin_socket.stat.exists
   tags: [cloudflare-ips]

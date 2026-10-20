@@ -47,6 +47,19 @@ pub const TIMEOUT: Duration = Duration::from_secs(5);
 /// Turnstile 令牌最长 2048 字符。
 const MAX_TOKEN_LEN: usize = 2048;
 
+/// Cloudflare 文档公开的 Turnstile 测试密钥（总是通过、总是失败、令牌已用过）。只给测试服务器用：
+/// forum-api 在 `AKARI_ENV=production` 下拒绝以它们启动（`bins/api/src/config.rs`）。
+pub const TEST_SECRETS: [&str; 3] = [
+    "1x0000000000000000000000000000000AA",
+    "2x0000000000000000000000000000000AA",
+    "3x0000000000000000000000000000000AA",
+];
+
+/// 是 Cloudflare 的测试密钥。
+pub fn is_test_secret(secret: &str) -> bool {
+    TEST_SECRETS.contains(&secret)
+}
+
 #[derive(Debug, Clone)]
 pub struct Turnstile {
     client: reqwest::Client,
@@ -82,6 +95,26 @@ struct SiteVerify {
     success: bool,
     #[serde(default)]
     action: Option<String>,
+    #[serde(default)]
+    metadata: SiteVerifyMetadata,
+}
+
+#[derive(Deserialize, Default)]
+struct SiteVerifyMetadata {
+    #[serde(default)]
+    result_with_testing_key: bool,
+}
+
+impl SiteVerify {
+    /// 通过且令牌来自 `action` 表单。例外：测试密钥的应答不带 `action`（只带 `metadata.result_with_testing_key`，
+    /// 2026-10-21 实测），只有本实例配置的就是测试密钥、应答也标明是测试密钥时，才不核对 action。真实密钥永远核对。
+    fn accepts(&self, action: &str, test_secret: bool) -> bool {
+        self.success
+            && match self.action.as_deref() {
+                Some(a) => a == action,
+                None => test_secret && self.metadata.result_with_testing_key,
+            }
+    }
 }
 
 impl Captcha for Turnstile {
@@ -108,7 +141,7 @@ impl Captcha for Turnstile {
             .error_for_status()?
             .json()
             .await?;
-        Ok(res.success && res.action.as_deref() == Some(action))
+        Ok(res.accepts(action, is_test_secret(&self.secret)))
     }
 }
 
@@ -130,5 +163,53 @@ impl Captcha for AnyCaptcha {
             Self::Noop(c) => c.verify(token, ip, action).await,
             Self::Turnstile(c) => c.verify(token, ip, action).await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+
+    fn res(json: &str) -> SiteVerify {
+        serde_json::from_str(json).unwrap()
+    }
+
+    #[test]
+    fn action_must_match() {
+        let ok = res(r#"{"success": true, "action": "login"}"#);
+        assert!(ok.accepts(action::LOGIN, false));
+        assert!(!ok.accepts(action::POST, false));
+        assert!(
+            !ok.accepts(action::POST, true),
+            "a returned action is always checked"
+        );
+        assert!(!res(r#"{"success": false, "action": "login"}"#).accepts(action::LOGIN, true));
+    }
+
+    #[test]
+    fn missing_action_only_passes_for_a_configured_testing_key() {
+        // Cloudflare 测试密钥 1x…AA 的真实应答（没有 action）
+        let testing = res(
+            r#"{"success": true, "error-codes": [], "hostname": "example.com",
+                "metadata": {"result_with_testing_key": true}}"#,
+        );
+        assert!(testing.accepts(action::LOGIN, true));
+        assert!(
+            !testing.accepts(action::LOGIN, false),
+            "real secret: action required"
+        );
+        let no_action = res(r#"{"success": true}"#);
+        assert!(!no_action.accepts(action::LOGIN, true));
+        assert!(!no_action.accepts(action::LOGIN, false));
+    }
+
+    #[test]
+    fn test_secrets_are_recognised_exactly() {
+        assert!(is_test_secret("1x0000000000000000000000000000000AA"));
+        assert!(is_test_secret("3x0000000000000000000000000000000AA"));
+        assert!(!is_test_secret("0x4AAAAAAAA"));
+        assert!(!is_test_secret(" 1x0000000000000000000000000000000AA"));
     }
 }

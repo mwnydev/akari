@@ -32,6 +32,11 @@ table inet filter {
     ip saddr @cloudflare_v4 tcp dport 443 accept
     ip6 saddr @cloudflare_v6 tcp dport 443 accept
 {% endif %}
+{% if origin_ingress == 'public' %}
+    # sslip 测试服务器（只用于 staging）：SSH（只认密钥）、ACME HTTP-01 与跳转、HTTPS（含 HTTP/3）对公网开放
+    tcp dport { {{ ssh_port }}, 80, 443 } accept
+    udp dport 443 accept
+{% endif %}
   }
 
   chain forward { type filter hook forward priority 0; policy drop; }
@@ -42,6 +47,10 @@ table inet filter {
     type filter hook output priority 0; policy {{ 'drop' if firewall_egress_enforce else 'accept' }};
     oif lo accept
     ct state established,related accept
+    # sshd 的回包：第一次加载规则时已在进行的 SSH 连接（如正在运行的 Ansible）不一定被 conntrack 认作 established，
+    # 不放行就会卡死、把自己锁在外面（2026-10-21 在测试服务器上实测）。只认 root 的套接字（sshd 接受的连接）：
+    # 生产的 22022 不是特权端口，别的进程也能拿它当源端口，不加 skuid 就能绕过出站限制
+    tcp sport {{ ssh_port }} meta skuid 0 accept
     ct state invalid drop
     meta l4proto { icmp, ipv6-icmp } accept
     # DNS、DHCP、NTP（chrony）
