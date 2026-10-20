@@ -31,9 +31,11 @@ pub const GUEST_TTL: GuestTtl = GuestTtl {
     fresh: Duration::from_secs(30),
     stale: Duration::from_secs(90),
 };
-/// 等待别的请求回源的轮数与间隔：最多约 200 ms，之后自己回源（不写缓存）。
-const WAIT_ROUNDS: u32 = 20;
-const WAIT_STEP: Duration = Duration::from_millis(10);
+/// 等待别的请求回源：间隔从 10 ms 起翻倍、封顶 100 ms，合计约 1 s（小于回源锁的 3 s），之后自己回源（不写缓存）。
+/// 数据库变慢时回源也变慢，等待太短会让排队的请求一起回源，正好放大负载。
+const WAIT_ROUNDS: u32 = 14;
+const WAIT_FIRST: Duration = Duration::from_millis(10);
+const WAIT_MAX: Duration = Duration::from_millis(100);
 /// 超过这个大小的响应不缓存（防止个别超大页面挤占 Valkey 内存）。
 const MAX_BODY: usize = 1 << 20;
 
@@ -135,6 +137,7 @@ where
         return Ok(bypass(build().await?.0));
     };
     let cache = &state.guest_cache;
+    let mut step = WAIT_FIRST;
     for _ in 0..WAIT_ROUNDS {
         let found = match cache.lookup(&entry.key, &entry.versions).await {
             Ok(found) => found,
@@ -147,7 +150,10 @@ where
         match found {
             Lookup::Hit(body) => return Ok(json(body, "hit")),
             Lookup::Stale(body) => return Ok(json(body, "stale")),
-            Lookup::Wait => tokio::time::sleep(WAIT_STEP).await,
+            Lookup::Wait => {
+                tokio::time::sleep(step).await;
+                step = (step * 2).min(WAIT_MAX);
+            }
             Lookup::Build(ticket) => {
                 let (value, cacheable) = match build().await {
                     Ok(v) => v,
