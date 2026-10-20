@@ -3,13 +3,14 @@
 
 use std::collections::HashMap;
 
-use forum_db::users::{Card, TradeCounts};
+use forum_db::users::{AuctionRecord, Card, TradeCounts};
+use time::OffsetDateTime;
 
 use crate::error::ApiResult;
 use crate::state::AppState;
 use crate::views::UserCardView;
 
-/// 名片哈希的字段。用户名、头像为空时不写该字段。
+/// 名片哈希的字段。用户名、头像、违约禁拍结束时间为空时不写该字段。
 fn fields(c: &Card) -> Vec<(&'static str, String)> {
     let t = &c.trade;
     let mut f = vec![
@@ -19,12 +20,16 @@ fn fields(c: &Card) -> Vec<(&'static str, String)> {
         ("bf", t.buyer_fault_fail.to_string()),
         ("d", t.disputes_lost.to_string()),
         ("st", t.settled.to_string()),
+        ("ad", c.auction.defaults.to_string()),
     ];
     if let Some(u) = &c.username {
         f.push(("u", u.clone()));
     }
     if let Some(a) = &c.avatar_url {
         f.push(("a", a.clone()));
+    }
+    if let Some(b) = c.auction.banned_until {
+        f.push(("bu", b.unix_timestamp().to_string()));
     }
     f
 }
@@ -43,6 +48,13 @@ fn from_fields(id: i64, m: &HashMap<String, String>) -> Option<Card> {
             buyer_fault_fail: num("bf")?,
             disputes_lost: num("d")?,
             settled: num("st")?,
+        },
+        auction: AuctionRecord {
+            defaults: num("ad")?,
+            banned_until: match m.get("bu") {
+                Some(v) => Some(OffsetDateTime::from_unix_timestamp(v.parse().ok()?).ok()?),
+                None => None,
+            },
         },
     })
 }
@@ -84,7 +96,7 @@ pub async fn load(state: &AppState, ids: &[i64]) -> ApiResult<Vec<UserCardView>>
         .collect())
 }
 
-/// 用户名、头像、等级或信誉变化后失效。
+/// 用户名、头像、等级、信誉或拍卖违约记录（含违约禁拍被解除）变化后失效。
 pub async fn invalidate(state: &AppState, ids: &[i64]) {
     crate::posting::after_commit("cards_invalidate", state.cache.cards_invalidate(ids)).await;
 }

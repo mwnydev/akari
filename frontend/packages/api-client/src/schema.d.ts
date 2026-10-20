@@ -3709,7 +3709,8 @@ export interface components {
        *     message 为 `{conversation_id, message_id}`；
        *     offer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；
        *     auction 为 `{auction_id, topic_id, event, …}`（`event`：`outbid` 被超价、`won` 中标、`runner_up` 递补中标、
-       *     `sold` / `unsold` 卖家的成交（待付款）与流拍、`defaulted` 逾期违约，见 `forum_db::auctions`）；
+       *     `sold` / `unsold` 卖家的成交（待付款）与流拍、`defaulted` 逾期违约、`ending_soon` 出过价的拍卖即将结束（`ends_at`）、
+       *     `pay_reminder` 付款截止时间快到了（`round`、`pay_deadline`），时间为 Unix 秒，见 `forum_db::auctions`）；
        *     system 为发件箱原样内容（含 `event`）。
        */
       payload: Record<string, unknown>;
@@ -4259,8 +4260,19 @@ export interface components {
       topic_id: number;
       topic_title: string;
     };
-    /** @description 名片上的交易信誉（plan 第 7 节；只统计最终确认的链上订单）。 */
+    /** @description 名片上的交易信誉（plan 第 7 节；只统计最终确认的链上订单）与公开的拍卖违约记录（plan 第 6 节）。 */
     ReputationView: {
+      /**
+       * Format: date-time
+       * @description 违约自动禁拍的结束时间；没有生效中的违约禁拍时为空。
+       */
+      auction_banned_until: string | null;
+      /**
+       * Format: int32
+       * @description 近 12 个月拍卖中标后逾期未付款（违约）的次数。名片缓存最多 1 小时，满 12 个月的记录可能晚一点才不计入。
+       *     （`serde(default)` 只为读取本字段加入之前缓存的页面，接口总会返回。）
+       */
+      auction_defaults: number;
       /** Format: int32 */
       disputes_lost: number;
       /**

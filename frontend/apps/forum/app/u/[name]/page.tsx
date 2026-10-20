@@ -1,5 +1,5 @@
 import { ApiError } from "@akari/api-client";
-import { Amount, Avatar, Badge, Button, EmptyState } from "@akari/ui";
+import { Amount, Avatar, Badge, Button, EmptyState, cn } from "@akari/ui";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -57,7 +57,7 @@ function Stat({ label, value }: { label: string; value: ReactNode }) {
 }
 
 /**
- * 个人主页：等级与经验、交易信誉（只统计链上最终确认的订单）、最近发帖。资料对所有人相同，游客页可缓存，
+ * 个人主页：等级与经验、交易信誉（只统计链上最终确认的订单）与拍卖违约记录、最近发帖。资料对所有人相同，游客页可缓存，
  * 在线点在浏览器里取。本人看到账号信息与编辑入口，其他登录用户看到「发私信」。
  */
 export default async function ProfilePage({ params }: { params: Params }) {
@@ -160,6 +160,18 @@ export default async function ProfilePage({ params }: { params: Params }) {
               }
             />
           </dl>
+          <p
+            className={cn(
+              "mt-3 rounded-md px-3 py-2 text-sm",
+              t.auction_defaults || t.auction_banned_until ? "bg-warning-soft" : "bg-surface-2",
+            )}
+            data-testid="auction-record"
+          >
+            拍卖违约 {t.auction_defaults} 次（近 12 个月）
+            {t.auction_banned_until ? (
+              <> · 违约禁拍中，{formatTime(t.auction_banned_until)} 解除</>
+            ) : null}
+          </p>
           <p className="mt-3 text-xs text-fg-muted" data-testid="finalized-note">
             只统计链上已最终确认（finalized）的订单，刚成交的订单要等最终确认后才计入。成功率 = 成功
             ÷（成功 + 本人责任失败），不满 10 笔不显示。

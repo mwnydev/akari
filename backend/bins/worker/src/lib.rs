@@ -61,6 +61,15 @@ struct WithdrawAddressAdded {
 }
 
 #[derive(Deserialize)]
+struct AuctionPayment {
+    to: String,
+    auction_id: i64,
+    #[serde(with = "time::serde::timestamp")]
+    pay_deadline: time::OffsetDateTime,
+    reminder: bool,
+}
+
+#[derive(Deserialize)]
 struct StaffAlert {
     event: String,
     text: String,
@@ -255,6 +264,14 @@ fn render_email(msg: &outbox::Message) -> Result<Email, RenderError> {
             (
                 p.to,
                 templates::withdraw_address_added(&p.address, &p.active_at, p.immediate),
+            )
+        }
+        forum_db::auctions::EMAIL_PAYMENT => {
+            let p: AuctionPayment = serde_json::from_value(msg.payload.clone())?;
+            let deadline = forum_core::email::display_time(p.pay_deadline);
+            (
+                p.to,
+                templates::auction_payment(p.auction_id, &deadline, p.reminder),
             )
         }
         _ => return Err(RenderError::UnknownKind),

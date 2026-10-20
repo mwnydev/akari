@@ -1,6 +1,7 @@
 // 通知的显示文字与跳转地址。`payload` 的结构按 `kind` 而定（后端 `forum_core::chat::Notification`），
 // 是任意 JSON，这里逐个字段检查类型，缺了就退回不带链接的通用说法。
 import type { Schemas } from "@akari/api-client";
+import { formatTime } from "./display";
 import { topicHref } from "./links";
 import { ORDER_STATE } from "./orders";
 import { floorPage } from "./pagination";
@@ -23,6 +24,39 @@ const OFFER_EVENT: Record<string, string> = {
   paid: "已付款，担保订单已生成",
   payment_reverted: "的付款因区块回滚被撤销",
 };
+
+/** Unix 秒 →「2026-10-19 09:04」（站点时区）；不是整数时为空。 */
+function unixTime(v: unknown): string | null {
+  const secs = int(v);
+  return secs === null ? null : formatTime(new Date(secs * 1000).toISOString());
+}
+
+/** 拍卖通知（后端 `forum_db::auctions` 的 `EVENT_*`）：只说本人的事，不带其他出价人。 */
+function describeAuction(p: Record<string, unknown>): NotificationView {
+  const topic = int(p.topic_id);
+  const id = int(p.auction_id);
+  // 后面接中文时编号与文字之间留空格
+  const name = id ? `拍卖 #${id} ` : "拍卖";
+  const pay = unixTime(p.pay_deadline);
+  const payBy = pay ? `，请在 ${pay} 前付款` : "，请尽快付款";
+  const ends = unixTime(p.ends_at);
+  const banUntil = unixTime(p.ban_until);
+  const texts: Record<string, string> = {
+    outbid: `你在${name}的出价已被超过`,
+    won: `你已中标${name.trimEnd()}${payBy}`,
+    runner_up: `${name}的中标者未付款，轮到你按出价成交${payBy}`,
+    pay_reminder: `${name}付款截止时间快到了${payBy}`,
+    ending_soon: `你出过价的${name}即将结束${ends ? `（${ends}）` : ""}`,
+    sold: `你的${name}已成交，等待买家付款`,
+    unsold: `你的${name}已流拍`,
+    defaulted: `${name}逾期未付款，已记一次违约${banUntil ? `，${banUntil} 前不能参与拍卖` : ""}`,
+  };
+  const event = str(p.event);
+  return {
+    text: (event && texts[event]) ?? `${name}有新动态`,
+    href: topic ? topicHref(topic) : null,
+  };
+}
 
 /** 通知 → 一句中文和跳转地址。`actor` 是触发者的显示名（系统通知为 null）。 */
 export function describeNotification(n: Notification, actor: string | null): NotificationView {
@@ -62,6 +96,8 @@ export function describeNotification(n: Notification, actor: string | null): Not
         href: id ? `/orders/${id}` : null,
       };
     }
+    case "auction":
+      return describeAuction(p);
     case "system":
       return describeSystem(p);
     default:

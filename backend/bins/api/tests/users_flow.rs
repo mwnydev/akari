@@ -488,3 +488,151 @@ async fn posts_only_keep_own_images(db: PgPool) {
     let r = call(&app, "GET", &format!("/api/v1/topics/{topic}"), None, &[]).await;
     assert_eq!(r.body["posts"][0]["html"], "<p>x</p>");
 }
+
+/// 给 `user` 记一次拍卖违约（与 worker 判违约同一个函数：违约记录 + 自动禁拍 `ban_secs`），返回禁拍的处罚 ID。
+async fn record_default(db: &PgPool, forum_id: i32, seller: i64, user: i64, ban_secs: u32) -> i64 {
+    use forum_db::auctions as auctions_db;
+    let id = auctions_db::insert_draft(
+        db,
+        auctions_db::NewAuction {
+            seller_id: seller,
+            forum_id,
+            chain_id: 31_337,
+            verifying_contract: &[0x44; 20],
+            seller: &[0x11; 20],
+            currency: 0,
+            cny_per_usdt: 0,
+            start_price: "10000000",
+            increment: "1000000",
+            reserve_price: "10000000",
+            duration_secs: 86_400,
+            eligibility: 0,
+            eligibility_value: None,
+            terms: &json!({}),
+            content_hash: &[7; 32],
+            draft: &json!({}),
+        },
+    )
+    .await
+    .unwrap();
+    let auction = auctions_db::by_id(db, id).await.unwrap().unwrap();
+    let proof = auctions_db::Proof {
+        auction_id: id,
+        round: 1,
+        bid_id: 0,
+        bidder_id: user,
+        auth_hash: vec![0; 32],
+        winner: vec![0x22; 20],
+        price: "10000000".into(),
+        pay_deadline: time::OffsetDateTime::now_utc(),
+        signature: vec![1],
+    };
+    let mut tx = db.begin().await.unwrap();
+    auctions_db::record_default(&mut tx, &auction, &proof, ban_secs)
+        .await
+        .unwrap()
+        .unwrap();
+    tx.commit().await.unwrap();
+    sqlx::query_scalar("SELECT sanction_id FROM auction_defaults WHERE auction_id = $1")
+        .bind(id)
+        .fetch_one(db)
+        .await
+        .unwrap()
+}
+
+/// 拍卖违约记录公开：名片与个人主页显示近 12 个月的违约次数与生效中的违约禁拍；解除禁拍后名片缓存失效。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn auction_defaults_on_card_and_profile(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    let f = forum(&db, "market", 0).await;
+    let (seller, _) = member(&app, &db).await;
+    let (u, _) = member(&app, &db).await;
+    let (clean, _) = member(&app, &db).await;
+    let (admin, ac) = member(&app, &db).await;
+    staff::grant(&db, admin, staff::ROLE_ADMIN, None, None)
+        .await
+        .unwrap()
+        .unwrap();
+    let card = |id: i64| {
+        let app = app.clone();
+        async move {
+            let r = call(
+                &app,
+                "GET",
+                &format!("/api/v1/users/cards?ids={id}"),
+                None,
+                &[],
+            )
+            .await;
+            assert_eq!(r.status, StatusCode::OK);
+            r.body[0]["reputation"].clone()
+        }
+    };
+    let rep = card(clean).await;
+    assert_eq!(rep["auction_defaults"], 0);
+    assert_eq!(rep["auction_banned_until"], Value::Null);
+
+    // 一次 13 个月前（禁拍早已结束）、一次刚刚（禁拍 30 天）
+    let old = record_default(&db, f, seller, u, 86_400).await;
+    sqlx::query(
+        "UPDATE auction_defaults SET created_at = now() - interval '13 months' WHERE sanction_id = $1",
+    )
+    .bind(old)
+    .execute(&db)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE sanctions SET created_at = now() - interval '13 months', ends_at = now() - interval '12 months' WHERE id = $1")
+        .bind(old)
+        .execute(&db)
+        .await
+        .unwrap();
+    let ban = record_default(&db, f, seller, u, 30 * 86_400).await;
+    let rep = card(u).await;
+    assert_eq!(rep["auction_defaults"], 1);
+    let until = time::OffsetDateTime::parse(
+        rep["auction_banned_until"].as_str().unwrap(),
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    assert!((until - time::OffsetDateTime::now_utc()).whole_days() >= 29);
+    // 第二次读来自名片缓存，结果相同
+    assert_eq!(card(u).await, rep);
+    let r = call(&app, "GET", &format!("/api/v1/users/{u}"), None, &[]).await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.body["trade"]["auction_defaults"], 1);
+    assert_eq!(
+        r.body["trade"]["auction_banned_until"],
+        rep["auction_banned_until"]
+    );
+
+    // 管理人员手动的禁拍不公开
+    forum_db::sanctions::create(
+        &db,
+        forum_db::sanctions::NewSanction {
+            kind: forum_db::sanctions::KIND_AUCTION_BAN,
+            user_id: clean,
+            forum_id: None,
+            ends_at: None,
+            reason: "x",
+            created_by: Some(admin),
+        },
+    )
+    .await
+    .unwrap();
+    let r = call(&app, "GET", &format!("/api/v1/users/{clean}"), None, &[]).await;
+    assert_eq!(r.body["trade"]["auction_banned_until"], Value::Null);
+
+    // 解除违约禁拍：名片缓存失效，次数仍在
+    let r = call(
+        &app,
+        "DELETE",
+        &format!("/api/v1/moderation/sanctions/{ban}?reason=申诉成功"),
+        None,
+        &ac,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{:?}", r.body);
+    let rep = card(u).await;
+    assert_eq!(rep["auction_defaults"], 1);
+    assert_eq!(rep["auction_banned_until"], Value::Null);
+}

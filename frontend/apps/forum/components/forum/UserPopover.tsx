@@ -15,6 +15,8 @@ export interface PersonCard {
   online?: boolean | undefined;
   lastSeen?: string | undefined;
   reputation?: TradeReputation | undefined;
+  /** 公开的拍卖违约记录（「拍卖违约 N 次（近 12 个月）」），没有时不显示 */
+  auctionRecord?: string | undefined;
   role?: string | undefined;
   /** 卡片下方的数据格（加入、帖子、获赞……），有才显示 */
   stats?: [label: string, value: string][] | undefined;
@@ -64,6 +66,14 @@ export function UserPopover({
         reputation={user.reputation}
         href={user.href}
       />
+      {user.auctionRecord ? (
+        <p
+          className="mt-2 rounded-md bg-warning-soft px-2 py-1 text-xs"
+          data-testid="auction-record"
+        >
+          {user.auctionRecord}
+        </p>
+      ) : null}
       {user.role ? (
         <Badge tone="accent" className="mt-2">
           {user.role}

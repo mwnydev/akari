@@ -1,5 +1,5 @@
 //! forum-worker：后台任务：发件箱投递（邮件、站内通知、实时推送）与巡检、浏览数回写、报价卡片过期、通知分区维护、
-//! 发帖经验、每日信誉校对、图片转换、仲裁分配与期限、热门排名、拍卖结算；之后接入 apalis 队列（超时处理、发薪）。
+//! 发帖经验、每日信誉校对、图片转换、仲裁分配与期限、热门排名、拍卖结算与提醒；之后接入 apalis 队列（超时处理、发薪）。
 
 use std::time::Duration;
 
@@ -122,6 +122,7 @@ async fn main() -> anyhow::Result<()> {
             let notify = std::sync::Arc::new(forum_worker::auctions::Notify {
                 realtime: realtime.clone(),
                 guest,
+                cards: cache.clone(),
             });
             Some(tokio::spawn(periodic(
                 "auctions",
@@ -144,6 +145,13 @@ async fn main() -> anyhow::Result<()> {
             None
         }
     };
+    let auction_reminders = tokio::spawn(periodic(
+        "auction reminders",
+        forum_worker::auctions::REMIND_INTERVAL,
+        (db.clone(), cache.clone()),
+        shutdown.clone(),
+        |db, _| async move { forum_worker::auctions::remind_once(&db).await },
+    ));
     let views = tokio::spawn(view_flusher(db.clone(), cache, shutdown.clone()));
     let offers = tokio::spawn(offer_expirer(db.clone(), shutdown.clone()));
     let partitions = tokio::spawn(partition_keeper(db.clone(), shutdown.clone()));
@@ -172,6 +180,7 @@ async fn main() -> anyhow::Result<()> {
         ("arbitration", arbitration),
         ("hot ranking", hot),
         ("outbox report", outbox_report),
+        ("auction reminders", auction_reminders),
     ]
     .into_iter()
     .chain(images.map(|t| ("image worker", t)))

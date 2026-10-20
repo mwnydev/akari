@@ -339,6 +339,8 @@ pub enum RevertStatus {
 pub struct RevertEffects {
     topics: Vec<TopicEffect>,
     pages: Vec<i64>,
+    /// 名片要失效的用户（恢复了被解除的处罚：可能是公开显示的违约禁拍）。
+    cards: Vec<i64>,
 }
 
 impl RevertEffects {
@@ -348,6 +350,9 @@ impl RevertEffects {
         }
         for p in &self.pages {
             bump_page1(state, *p).await;
+        }
+        if !self.cards.is_empty() {
+            cards::invalidate(state, &self.cards).await;
         }
     }
 }
@@ -385,6 +390,7 @@ struct SanctionsDetail {
 #[derive(Deserialize)]
 struct LiftDetail {
     sanction_id: i64,
+    user_id: Option<i64>,
 }
 
 fn target_id(entry: &audit::Entry, prefix: &str) -> Option<i64> {
@@ -511,7 +517,13 @@ pub async fn revert(
             None => Ok(NotRevertible),
         },
         action::SANCTION_LIFT => match parse::<LiftDetail>(&entry.detail) {
-            Some(d) => Ok(done(sanctions::unrevoke(&mut **tx, d.sanction_id).await?)),
+            Some(d) => {
+                let ok = sanctions::unrevoke(&mut **tx, d.sanction_id).await?;
+                if ok {
+                    effects.cards.extend(d.user_id);
+                }
+                Ok(done(ok))
+            }
             None => Ok(NotRevertible),
         },
         _ => Ok(NotRevertible),

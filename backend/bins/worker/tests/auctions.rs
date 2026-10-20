@@ -1,6 +1,7 @@
 //! 拍卖结算：流拍、中标、结束时再校验资格（跳过不符合的人）、违约记录与自动禁拍、次高者递补（最多 3 份证明）、
-//! 链上已成交时不判违约、forum-sponsor 不可用时下一轮重试。forum-sponsor 与链上读取用假实现（真实的见
-//! forum-api 的 `auction_e2e.rs`）。需要 PostgreSQL（`DATABASE_URL`）；游客缓存失效的用例另需 Valkey（`VALKEY_URL`，未设置则跳过）。
+//! 链上已成交时不判违约、forum-sponsor 不可用时下一轮重试；即将结束与付款提醒（各发一次）、中标与付款提醒邮件。
+//! forum-sponsor 与链上读取用假实现（真实的见 forum-api 的 `auction_e2e.rs`）。需要 PostgreSQL（`DATABASE_URL`）；
+//! 游客缓存与名片缓存失效的用例另需 Valkey（`VALKEY_URL`，未设置则跳过）。
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // 测试代码
 
@@ -11,8 +12,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use forum_core::Usdt;
 use forum_db::PgPool;
 use forum_db::auctions::{self as db, NewBid};
+use forum_db::notifications::{self, NewNotification};
+use forum_kv::ForumCache;
 use forum_kv::guest_cache::{self, GuestCache, GuestTtl, Lookup};
-use forum_worker::auctions::{Config, Notify, Settlement, run_once};
+use forum_worker::Delivery;
+use forum_worker::auctions::{Config, Notify, Settlement, remind_once, run_once};
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
@@ -287,8 +291,9 @@ async fn state_changes_invalidate_guest_lists(db: PgPool) {
 
     end(&db, id).await;
     let notify = Notify {
-        realtime: forum_kv::Realtime::new(kv, ns.as_str()),
+        realtime: forum_kv::Realtime::new(kv.clone(), ns.as_str()),
         guest: guest.clone(),
+        cards: ForumCache::new(kv, ns.as_str()),
     };
     assert_eq!(
         run_once(&db, &fake, NO_GRACE, Some(&notify)).await.unwrap(),
@@ -438,4 +443,288 @@ async fn runner_up_must_reach_the_reserve(db: PgPool) {
     // 2 号只出到 15，低于保留价 20：没人可递补，流拍
     assert_eq!(state(&db, id).await, (db::STATE_UNSOLD, 1));
     assert_eq!(proofs(&db, id).await.len(), 1);
+}
+
+/// 发件箱里的拍卖付款邮件 `(收件人, 是否提醒)`，按时间。
+async fn payment_emails(db: &PgPool) -> Vec<(String, bool)> {
+    let rows: Vec<Value> = sqlx::query_scalar(
+        "SELECT payload FROM outbox WHERE kind = 'email.auction_payment' ORDER BY id",
+    )
+    .fetch_all(db)
+    .await
+    .unwrap();
+    rows.iter()
+        .map(|p| {
+            (
+                p["to"].as_str().unwrap().to_owned(),
+                p["reminder"].as_bool().unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// 结束时间改到 `mins` 分钟后（模拟防狙击顺延或时间流逝）。
+async fn ends_in(db: &PgPool, id: i64, mins: i64) {
+    sqlx::query(
+        "UPDATE auctions SET ends_at = now() + make_interval(mins => $2::int) WHERE id = $1",
+    )
+    .bind(id)
+    .bind(i32::try_from(mins).unwrap())
+    .execute(db)
+    .await
+    .unwrap();
+}
+
+/// 这场的出价都提前 `hours` 小时（出价在最后一小时之前）。
+async fn bids_earlier(db: &PgPool, id: i64, hours: i32) {
+    sqlx::query(
+        "UPDATE auction_bids SET created_at = created_at - make_interval(hours => $2) WHERE auction_id = $1",
+    )
+    .bind(id)
+    .bind(hours)
+    .execute(db)
+    .await
+    .unwrap();
+}
+
+/// 当前一份证明 `hours` 小时后到付款截止；`issued_hours_ago` 是证明签发了多久。
+async fn pay_due_in(db: &PgPool, id: i64, hours: i32, issued_hours_ago: i32) {
+    sqlx::query(
+        "UPDATE auction_proofs SET pay_deadline = now() + make_interval(hours => $2),
+                created_at = now() - make_interval(hours => $3)
+         WHERE auction_id = $1 AND round = (SELECT round FROM auctions WHERE id = $1)",
+    )
+    .bind(id)
+    .bind(hours)
+    .bind(issued_hours_ago)
+    .execute(db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE auctions SET pay_deadline = now() + make_interval(hours => $2) WHERE id = $1",
+    )
+    .bind(id)
+    .bind(hours)
+    .execute(db)
+    .await
+    .unwrap();
+}
+
+/// 渲染发件箱里的一条消息（worker 投递时用的同一个函数）。
+fn render(id: i64, kind: &str, payload: Value) -> Delivery {
+    forum_worker::render(&forum_db::outbox::Message {
+        id,
+        kind: kind.to_owned(),
+        payload,
+        attempts: 0,
+    })
+    .unwrap()
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn ending_soon_reminds_each_earlier_bidder_once(db: PgPool) {
+    people(&db).await;
+    let id = auction(&db, 10 * U, None).await;
+    ends_in(&db, id, 180).await;
+    bid(&db, id, 2, 10).await;
+    bid(&db, id, 3, 11).await;
+    bid(&db, id, 2, 12).await;
+    bids_earlier(&db, id, 2).await;
+    // 还剩 3 小时：不提醒
+    assert_eq!(remind_once(&db).await.unwrap(), 0);
+
+    ends_in(&db, id, 30).await;
+    // 最后一小时里才第一次出价的 4 号不提醒
+    bid(&db, id, 4, 13).await;
+    assert_eq!(remind_once(&db).await.unwrap(), 2);
+    assert_eq!(events(&db, 2).await, ["ending_soon"]);
+    assert_eq!(events(&db, 3).await, ["ending_soon"]);
+    assert!(events(&db, 4).await.is_empty());
+    assert!(
+        events(&db, 1).await.is_empty(),
+        "the seller is not a bidder"
+    );
+    // 提醒只给本人：内容里没有其他出价人
+    let payload: Value = sqlx::query_scalar(
+        "SELECT payload FROM outbox WHERE kind = 'notify.auction' AND payload->>'event' = 'ending_soon'
+         ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    let mut keys: Vec<&str> = payload
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["auction_id", "ends_at", "event", "to", "topic_id"]);
+
+    // 再巡检、顺延回 1 小时以上再回落：都不再提醒
+    assert_eq!(remind_once(&db).await.unwrap(), 0);
+    ends_in(&db, id, 120).await;
+    assert_eq!(remind_once(&db).await.unwrap(), 0);
+    ends_in(&db, id, 20).await;
+    assert_eq!(remind_once(&db).await.unwrap(), 0);
+    assert_eq!(events(&db, 2).await, ["ending_soon"]);
+
+    // 已结束的拍卖不提醒
+    let done = auction(&db, 10 * U, None).await;
+    bid(&db, done, 5, 10).await;
+    bids_earlier(&db, done, 2).await;
+    end(&db, done).await;
+    assert_eq!(remind_once(&db).await.unwrap(), 0);
+    assert!(events(&db, 5).await.is_empty());
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn winners_are_emailed_and_reminded_before_the_payment_deadline(db: PgPool) {
+    people(&db).await;
+    let fake = Fake::new(&db);
+    let id = auction(&db, 10 * U, None).await;
+    bid(&db, id, 2, 10).await;
+    bid(&db, id, 3, 11).await;
+    end(&db, id).await;
+    run_once(&db, &fake, NO_GRACE, None).await.unwrap();
+    // 中标当时：站内通知（带付款截止时间）+ 邮件
+    assert_eq!(events(&db, 3).await, ["won"]);
+    assert_eq!(payment_emails(&db).await, [("b3@x.test".into(), false)]);
+
+    // 离截止还有 48 小时、7 小时：不提醒
+    assert_eq!(remind_once(&db).await.unwrap(), 0);
+    pay_due_in(&db, id, 7, 41).await;
+    assert_eq!(remind_once(&db).await.unwrap(), 0);
+    // 不到 6 小时：提醒一次（站内 + 邮件）
+    pay_due_in(&db, id, 5, 43).await;
+    assert_eq!(remind_once(&db).await.unwrap(), 1);
+    assert_eq!(remind_once(&db).await.unwrap(), 0);
+    assert_eq!(events(&db, 3).await, ["won", "pay_reminder"]);
+    assert_eq!(
+        payment_emails(&db).await,
+        [("b3@x.test".into(), false), ("b3@x.test".into(), true)]
+    );
+    assert!(events(&db, 2).await.is_empty());
+
+    // 违约 → 递补者 2 号：递补当时的邮件，这一轮另提醒一次
+    overdue(&db, id).await;
+    run_once(&db, &fake, NO_GRACE, None).await.unwrap();
+    assert_eq!(state(&db, id).await, (db::STATE_AWAITING_PAYMENT, 2));
+    assert_eq!(events(&db, 2).await, ["runner_up"]);
+    pay_due_in(&db, id, 5, 19).await;
+    assert_eq!(remind_once(&db).await.unwrap(), 1);
+    assert_eq!(events(&db, 2).await, ["runner_up", "pay_reminder"]);
+    let reminder: Value = sqlx::query_scalar(
+        "SELECT payload FROM outbox WHERE kind = 'notify.auction' AND payload->>'event' = 'pay_reminder'
+         ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(reminder["round"], 2);
+    assert_eq!(
+        payment_emails(&db).await[2..],
+        [("b2@x.test".into(), false), ("b2@x.test".into(), true)]
+    );
+
+    // 证明签发时离截止已不到 6 小时：中标通知刚说过，不再提醒
+    let late = auction(&db, 10 * U, None).await;
+    bid(&db, late, 4, 10).await;
+    end(&db, late).await;
+    run_once(&db, &fake, NO_GRACE, None).await.unwrap();
+    pay_due_in(&db, late, 5, 0).await;
+    assert_eq!(remind_once(&db).await.unwrap(), 0);
+    assert_eq!(events(&db, 4).await, ["won"]);
+}
+
+/// 新的通知内容能投递（`auction` 类型过得了通知类型约束），付款邮件能渲染。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn reminder_messages_render_and_deliver(db: PgPool) {
+    people(&db).await;
+    let id = auction(&db, 10 * U, None).await;
+    bid(&db, id, 2, 10).await;
+    bids_earlier(&db, id, 2).await;
+    ends_in(&db, id, 30).await;
+    remind_once(&db).await.unwrap();
+    let rows: Vec<(i64, String, Value)> =
+        sqlx::query_as("SELECT id, kind, payload FROM outbox ORDER BY id")
+            .fetch_all(&db)
+            .await
+            .unwrap();
+    let mut items: Vec<NewNotification> = Vec::new();
+    for (id, kind, payload) in rows {
+        let Delivery::InSite(site) = render(id, &kind, payload) else {
+            panic!("{kind} must be delivered in-site");
+        };
+        items.extend(site.notifications);
+    }
+    for event in [db::EVENT_PAY_REMINDER, db::EVENT_WON, db::EVENT_RUNNER_UP] {
+        let Delivery::InSite(site) = render(
+            0,
+            db::NOTIFY,
+            json!({"to": 3, "auction_id": id, "topic_id": 1, "event": event, "round": 1, "pay_deadline": 1}),
+        ) else {
+            panic!("in-site");
+        };
+        items.extend(site.notifications);
+    }
+    assert_eq!(items.len(), 4);
+    let inserted = notifications::insert(&db, &items).await.unwrap();
+    assert_eq!(inserted.len(), 4);
+    assert!(
+        inserted
+            .iter()
+            .all(|(_, n)| n.kind == notifications::KIND_AUCTION)
+    );
+    assert_eq!(inserted[0].0, 2);
+    assert_eq!(inserted[0].1.payload["event"], db::EVENT_ENDING_SOON);
+
+    let Delivery::Email(mail) = render(
+        9,
+        db::EMAIL_PAYMENT,
+        json!({"to": "b3@x.test", "auction_id": id, "pay_deadline": 1_792_000_000, "reminder": true}),
+    ) else {
+        panic!("payment reminders are emailed");
+    };
+    assert_eq!(mail.to, "b3@x.test");
+    assert!(mail.text.contains("2026-10-14 17:46 UTC"), "{}", mail.text);
+}
+
+/// 违约记录公开显示在名片上：记违约后名片缓存失效。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn defaults_invalidate_the_card_cache(db: PgPool) {
+    let Some(url) = forum_testkit::valkey_url() else {
+        return;
+    };
+    people(&db).await;
+    let fake = Fake::new(&db);
+    let kv = forum_kv::pool(&url).unwrap();
+    let ns = format!(
+        "wcards{}{}:",
+        std::process::id(),
+        OffsetDateTime::now_utc().unix_timestamp_nanos()
+    );
+    let notify = Notify {
+        realtime: forum_kv::Realtime::new(kv.clone(), ns.as_str()),
+        guest: GuestCache::new(kv.clone(), ns.as_str()),
+        cards: ForumCache::new(kv, ns.as_str()),
+    };
+    let id = auction(&db, 10 * U, None).await;
+    bid(&db, id, 2, 10).await;
+    end(&db, id).await;
+    run_once(&db, &fake, NO_GRACE, Some(&notify)).await.unwrap();
+    notify
+        .cards
+        .cards_put(&[
+            (2, vec![("l", "1".to_owned())]),
+            (3, vec![("l", "1".to_owned())]),
+        ])
+        .await
+        .unwrap();
+    overdue(&db, id).await;
+    run_once(&db, &fake, NO_GRACE, Some(&notify)).await.unwrap();
+    assert_eq!(state(&db, id).await, (db::STATE_UNSOLD, 1));
+    let cached = notify.cards.cards_get(&[2, 3]).await.unwrap();
+    assert!(cached[0].is_none(), "the defaulter's card is refetched");
+    assert!(cached[1].is_some(), "other cards stay cached");
 }

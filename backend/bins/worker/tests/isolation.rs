@@ -417,3 +417,61 @@ async fn every_notification_kind_is_allowed(pool: PgPool) {
         .unwrap();
     assert_eq!(inserted.len(), kinds.len());
 }
+
+/// 拍卖付款邮件（第 10 轮合入的新类型）走同一套失败分类：通道故障按退避重试后送达，payload 不对直接进死信。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn auction_payment_emails_retry_or_dead_letter(pool: PgPool) {
+    let user: i64 =
+        sqlx::query_scalar("INSERT INTO users (email) VALUES ('w@x.test') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let deadline = time::OffsetDateTime::from_unix_timestamp(1_792_000_000).unwrap();
+    forum_db::auctions::payment_email(&pool, user, 7, deadline, true)
+        .await
+        .unwrap();
+    let good: i64 = sqlx::query_scalar("SELECT id FROM outbox WHERE kind = $1")
+        .bind(forum_db::auctions::EMAIL_PAYMENT)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let bad = outbox::enqueue(
+        &pool,
+        forum_db::auctions::EMAIL_PAYMENT,
+        &json!({"to": "w@x.test", "auction_id": 7}),
+        0,
+    )
+    .await
+    .unwrap();
+
+    let mailer = Recorder::default();
+    mailer.down.store(true, Ordering::SeqCst);
+    drain(&pool, &mailer).await;
+    let (attempts, sent, dead, _) = state(&pool, good).await;
+    assert_eq!(
+        (attempts, sent, dead),
+        (1, false, false),
+        "transient: retried"
+    );
+    let (attempts, sent, dead, _) = state(&pool, bad).await;
+    assert_eq!(
+        (attempts, sent, dead),
+        (1, false, true),
+        "bad payload: dead letter"
+    );
+
+    mailer.down.store(false, Ordering::SeqCst);
+    make_due(&pool).await;
+    drain_all(&pool, &mailer).await;
+    assert!(state(&pool, good).await.1);
+    assert_eq!(
+        alerts(&pool).await,
+        [forum_worker::dead_letter_event(
+            forum_db::auctions::EMAIL_PAYMENT
+        )]
+    );
+    let sent = mailer.sent.lock().unwrap();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].to, "w@x.test");
+    assert!(sent[0].text.contains("2026-10-14 17:46 UTC"));
+}

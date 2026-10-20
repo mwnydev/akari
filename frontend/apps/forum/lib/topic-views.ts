@@ -6,6 +6,7 @@ import type { TopicHeaderView } from "../components/forum/TopicHeader";
 import type { TopicKind, TopicRowView } from "../components/forum/TopicTable";
 import type { TradeFacts } from "../components/forum/TradeLine";
 import {
+  auctionRecordLine,
   formatActivity,
   profileHref,
   tradeReputation,
@@ -44,6 +45,7 @@ export function personCard(u: UserCardView): PersonCard {
     level: u.level,
     avatarUrl: u.avatar_url,
     reputation: hasTraded(u.reputation) ? tradeReputation(u.reputation) : undefined,
+    auctionRecord: auctionRecordLine(u.reputation),
   };
 }
 

@@ -1,6 +1,7 @@
 import type { Schemas } from "@akari/api-client";
 import { describe, expect, it } from "vitest";
 import { badgeText } from "./badge";
+import { NO_REPUTATION } from "./display";
 import {
   applyMessage,
   applyRead,
@@ -32,7 +33,7 @@ function conv(id: number, last: number, unread = 0, my_read_id = 0): Schemas["Co
     peer: {
       id: PEER,
       level: 1,
-      reputation: { success: 0, failed: 0, settled: 0, disputes_lost: 0 },
+      reputation: NO_REPUTATION,
     },
     last_message: msg(last, id),
     unread,

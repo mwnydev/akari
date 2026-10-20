@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 付款提醒：待付款、$1 秒内到付款截止时间、这一轮还没提醒过的拍卖（证明签发时离截止已不到 $1 秒的除外），\n-- 一次最多 $2 场；记下已发（kind = $3）并返回这一轮的中标者，调用方在同一事务里写通知与邮件。\n-- $1 window_secs $2 limit $3 kind\nWITH due AS (\n  SELECT a.id AS auction_id, a.topic_id, a.round, p.bidder_id, p.pay_deadline\n  FROM auctions a JOIN auction_proofs p ON p.auction_id = a.id AND p.round = a.round\n  WHERE a.state = 2 AND a.pay_deadline > now() AND a.pay_deadline <= now() + make_interval(secs => $1)\n    AND p.pay_deadline - p.created_at > make_interval(secs => $1)\n    AND NOT EXISTS (SELECT 1 FROM auction_reminders r WHERE r.auction_id = a.id AND r.kind = $3 AND r.round = a.round)\n  ORDER BY a.pay_deadline\n  LIMIT $2\n), sent AS (\n  INSERT INTO auction_reminders (auction_id, kind, round, user_id)\n  SELECT auction_id, $3, round, bidder_id FROM due\n  ON CONFLICT DO NOTHING\n  RETURNING auction_id, round\n)\nSELECT d.auction_id AS \"auction_id!\", d.topic_id AS \"topic_id?\", d.round AS \"round!\", d.bidder_id AS \"user_id!\",\n  d.pay_deadline AS \"pay_deadline!\"\nFROM due d JOIN sent s ON s.auction_id = d.auction_id AND s.round = d.round\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "auction_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "topic_id?",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "topic_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "round!",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "auctions",
+            "name": "round"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "user_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "auction_proofs",
+            "name": "bidder_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "pay_deadline!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auction_proofs",
+            "name": "pay_deadline"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Int8",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3e2ddcc267ff24ab96c4396a60b9f43ebe0a7ccab1f03b8ddb09acf6f1007a67"
+}

@@ -29,6 +29,16 @@ pub const EVENT_RUNNER_UP: &str = "runner_up";
 pub const EVENT_SOLD: &str = "sold";
 pub const EVENT_UNSOLD: &str = "unsold";
 pub const EVENT_DEFAULTED: &str = "defaulted";
+/// 定时提醒（[`remind_ending`]、[`remind_payment`]），每人每场（付款提醒每轮）只发一次。
+pub const EVENT_ENDING_SOON: &str = "ending_soon";
+pub const EVENT_PAY_REMINDER: &str = "pay_reminder";
+
+/// 中标 / 递补与付款提醒的邮件（发件箱，worker 渲染）：付款期过了会记违约并禁拍，站内通知之外再发邮件。
+pub const EMAIL_PAYMENT: &str = "email.auction_payment";
+
+/// `auction_reminders.kind`
+const REMINDER_ENDING: i16 = 1;
+const REMINDER_PAYMENT: i16 = 2;
 
 /// 系统操作的审计日志操作人（与仲裁相同）。
 const SYSTEM_ACTOR: i64 = 0;
@@ -590,10 +600,21 @@ pub async fn notify(
     event: &str,
     extra: Value,
 ) -> Result<(), sqlx::Error> {
+    enqueue_notice(db, to, auction.id, auction.topic_id, event, extra).await
+}
+
+async fn enqueue_notice(
+    db: impl PgExecutor<'_>,
+    to: i64,
+    auction_id: i64,
+    topic_id: Option<i64>,
+    event: &str,
+    extra: Value,
+) -> Result<(), sqlx::Error> {
     let mut payload = json!({
         "to": to,
-        "auction_id": auction.id,
-        "topic_id": auction.topic_id,
+        "auction_id": auction_id,
+        "topic_id": topic_id,
         "event": event,
     });
     if let (Some(p), Value::Object(extra)) = (payload.as_object_mut(), extra) {
@@ -601,6 +622,91 @@ pub async fn notify(
     }
     outbox::enqueue(db, NOTIFY, &payload, outbox::PRIORITY_NORMAL).await?;
     Ok(())
+}
+
+/// 中标 / 递补（`reminder` 为假）或付款提醒的邮件，发到 `to` 的登录邮箱。只带拍卖编号与截止时间，不带帖子内容。
+pub async fn payment_email(
+    db: impl PgExecutor<'_>,
+    to: i64,
+    auction_id: i64,
+    pay_deadline: OffsetDateTime,
+    reminder: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "INSERT INTO outbox (kind, payload, priority)
+         SELECT $1, jsonb_build_object('to', email, 'auction_id', $3::bigint, 'pay_deadline', $4::bigint,
+                                       'reminder', $5::boolean), $6
+         FROM users WHERE id = $2",
+        EMAIL_PAYMENT,
+        to,
+        auction_id,
+        pay_deadline.unix_timestamp(),
+        reminder,
+        outbox::PRIORITY_NORMAL
+    )
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// 「即将结束」：进行中、`window` 内结束的拍卖，给每位出价人发一次（不含最后 `window` 里才第一次出价的人，
+/// 他们正盯着这场）。防狙击顺延不会再发。一次最多 `limit` 人，返回发出的条数。
+pub async fn remind_ending(
+    tx: &mut Transaction<'_, Postgres>,
+    window: time::Duration,
+    limit: i64,
+) -> Result<usize, sqlx::Error> {
+    let rows = sqlx::query_file!(
+        "queries/auction_remind_ending.sql",
+        window.as_seconds_f64(),
+        limit,
+        REMINDER_ENDING
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+    for r in &rows {
+        enqueue_notice(
+            &mut **tx,
+            r.user_id,
+            r.auction_id,
+            r.topic_id,
+            EVENT_ENDING_SOON,
+            json!({ "ends_at": r.ends_at.unix_timestamp() }),
+        )
+        .await?;
+    }
+    Ok(rows.len())
+}
+
+/// 付款提醒：待付款、`window` 内到付款截止时间的拍卖，给这一轮的中标者发站内通知与邮件，每轮一次。成交证明
+/// 签发时离截止已不到 `window` 的不发（中标通知刚说过）。一次最多 `limit` 场，返回发出的条数。
+pub async fn remind_payment(
+    tx: &mut Transaction<'_, Postgres>,
+    window: time::Duration,
+    limit: i64,
+) -> Result<usize, sqlx::Error> {
+    let rows = sqlx::query_file!(
+        "queries/auction_remind_payment.sql",
+        window.as_seconds_f64(),
+        limit,
+        REMINDER_PAYMENT
+    )
+    .fetch_all(&mut **tx)
+    .await?;
+    for r in &rows {
+        let extra = json!({ "round": r.round, "pay_deadline": r.pay_deadline.unix_timestamp() });
+        enqueue_notice(
+            &mut **tx,
+            r.user_id,
+            r.auction_id,
+            r.topic_id,
+            EVENT_PAY_REMINDER,
+            extra,
+        )
+        .await?;
+        payment_email(&mut **tx, r.user_id, r.auction_id, r.pay_deadline, true).await?;
+    }
+    Ok(rows.len())
 }
 
 // ───────────────────────────── 链上成交（forum-indexer） ─────────────────────────────

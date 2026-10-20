@@ -29,7 +29,7 @@ GRANT SELECT, UPDATE ON arbitration_cases, arbitration_assignments TO forum_api;
 GRANT SELECT ON forums TO forum_api;
 GRANT UPDATE (name, description, color, position, allow_trade) ON forums TO forum_api;
 GRANT SELECT ON chains, escrow_orders, order_negotiations, notifications, level_thresholds, user_trade_stats,
-  sponsorships, withdraw_credits, hot_topics, auction_proofs TO forum_api;
+  sponsorships, withdraw_credits, hot_topics, auction_proofs, auction_defaults TO forum_api;
 GRANT INSERT ON outbox TO forum_api;
 -- 后台死信列表与重新投递 / 丢弃：读得到类型、次数与错误，读不到 payload
 GRANT SELECT (id, kind, attempts, last_error, sent_at, failed_at, discarded_at, dedupe_key, created_at) ON outbox TO forum_api;
@@ -39,12 +39,12 @@ GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO forum_api;
 
 -- ---------------------------------------------------------------------------------------------------------------
 -- forum_worker：发件箱投递、浏览数回写、报价过期、经验与信誉校对、图片转换、仲裁分配与期限、热门排名、
--- 拍卖结算（结束、违约禁拍与审计、递补；成交证明由 forum-sponsor 写入）。
+-- 拍卖结算（结束、违约禁拍与审计、递补；成交证明由 forum-sponsor 写入）与提醒（即将结束、付款期）。
 -- ---------------------------------------------------------------------------------------------------------------
 GRANT SELECT, INSERT ON outbox TO forum_worker;
 GRANT UPDATE (attempts, last_error, next_attempt_at, failed_at, discarded_at, payload, sent_at) ON outbox TO forum_worker;
 GRANT SELECT, INSERT ON notifications, exp_ledger, arbitration_assignments, sanctions, auction_passes,
-  auction_defaults TO forum_worker;
+  auction_defaults, auction_reminders TO forum_worker;
 GRANT INSERT, SELECT (id) ON admin_audit_logs TO forum_worker;
 GRANT SELECT ON auctions TO forum_worker;
 GRANT UPDATE (state, round, pay_deadline, updated_at) ON auctions TO forum_worker;

@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO outbox (kind, payload, priority)\n         SELECT $1, jsonb_build_object('to', email, 'auction_id', $3::bigint, 'pay_deadline', $4::bigint,\n                                       'reminder', $5::boolean), $6\n         FROM users WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4fb3e24cb1b09c5852a40f57f70b84c8411e4c874b020d9525392e5dfc119c05"
+}

@@ -84,7 +84,8 @@ pub struct Notification {
     /// message 为 `{conversation_id, message_id}`；
     /// offer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；
     /// auction 为 `{auction_id, topic_id, event, …}`（`event`：`outbid` 被超价、`won` 中标、`runner_up` 递补中标、
-    /// `sold` / `unsold` 卖家的成交（待付款）与流拍、`defaulted` 逾期违约，见 `forum_db::auctions`）；
+    /// `sold` / `unsold` 卖家的成交（待付款）与流拍、`defaulted` 逾期违约、`ending_soon` 出过价的拍卖即将结束（`ends_at`）、
+    /// `pay_reminder` 付款截止时间快到了（`round`、`pay_deadline`），时间为 Unix 秒，见 `forum_db::auctions`）；
     /// system 为发件箱原样内容（含 `event`）。
     #[cfg_attr(feature = "openapi", schema(value_type = Object))]
     pub payload: Value,

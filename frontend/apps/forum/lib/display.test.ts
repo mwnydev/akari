@@ -46,6 +46,8 @@ describe("display helpers", () => {
         settled: 0,
         disputes_lost: 1,
         success_rate_bps: 9231,
+        auction_defaults: 0,
+        auction_banned_until: null,
       }),
     ).toEqual({ successPermille: 923, deals: 12, disputesLost: 1 });
     expect(tradeReputation(NO_REPUTATION)).toEqual({

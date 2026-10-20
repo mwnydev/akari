@@ -54,6 +54,35 @@ describe("describeNotification", () => {
     ).toBe("你举报的内容（#1 楼）经核查未发现违规");
   });
 
+  it("describes auction events for the recipient only", () => {
+    // 2026-10-19 09:04 北京时间
+    const at = Date.UTC(2026, 9, 19, 1, 4) / 1000;
+    expect(
+      describeNotification(
+        n("auction", { auction_id: 7, topic_id: 9, event: "won", pay_deadline: at }),
+        null,
+      ),
+    ).toEqual({ text: "你已中标拍卖 #7，请在 2026-10-19 09:04 前付款", href: "/t/9" });
+    expect(
+      describeNotification(
+        n("auction", { auction_id: 7, topic_id: 9, event: "pay_reminder", pay_deadline: at }),
+        null,
+      ).text,
+    ).toBe("拍卖 #7 付款截止时间快到了，请在 2026-10-19 09:04 前付款");
+    expect(
+      describeNotification(
+        n("auction", { auction_id: 7, topic_id: 9, event: "ending_soon", ends_at: at }),
+        null,
+      ).text,
+    ).toBe("你出过价的拍卖 #7 即将结束（2026-10-19 09:04）");
+    expect(describeNotification(n("auction", { auction_id: 7, event: "runner_up" }), null)).toEqual(
+      { text: "拍卖 #7 的中标者未付款，轮到你按出价成交，请尽快付款", href: null },
+    );
+    expect(describeNotification(n("auction", { auction_id: 7, event: "x" }), null).text).toBe(
+      "拍卖 #7 有新动态",
+    );
+  });
+
   it("falls back gracefully on unexpected payloads", () => {
     expect(describeNotification(n("reply", { topic_id: "x" }), null)).toEqual({
       text: "有人 回复了你",

@@ -10,6 +10,9 @@
 //!
 //! 成交证明由 forum-sponsor 独立核对后签名（本程序不持有任何私钥）；签发失败（被拒或服务不可用）时下一轮重试。
 //! 链上成交由 forum-indexer 标记（`forum_db::auctions::sync_order`）。
+//!
+//! 提醒（[`remind_once`]，不依赖链与 forum-sponsor，单独定时）：剩 [`ENDING_SOON`] 时提醒出过价的人；付款截止前
+//! [`PAY_REMINDER`] 提醒这一轮的中标者（站内 + 邮件）。中标 / 递补当时的通知与邮件在发证明时写。
 
 use std::time::Duration;
 
@@ -21,9 +24,9 @@ use forum_core::auction::{Eligibility, MAX_ROUNDS};
 use forum_core::chat::Event;
 use forum_db::auctions::{self as db, Auction};
 use forum_db::{PgPool, sanctions};
-use forum_kv::Realtime;
 use forum_kv::guest_cache::{self, GuestCache};
 use forum_kv::realtime::{Envelope, Route, Topic};
+use forum_kv::{ForumCache, Realtime};
 use serde::Deserialize;
 use serde_json::json;
 use time::OffsetDateTime;
@@ -32,6 +35,15 @@ use time::OffsetDateTime;
 pub const INTERVAL: Duration = Duration::from_secs(15);
 /// 每轮每类最多处理几场。
 const BATCH: i64 = 50;
+
+/// 提醒的检查间隔。
+pub const REMIND_INTERVAL: Duration = Duration::from_secs(60);
+/// 「即将结束」提醒：剩这么久时。
+pub const ENDING_SOON: time::Duration = time::Duration::hours(1);
+/// 付款提醒：离付款截止这么久时。
+pub const PAY_REMINDER: time::Duration = time::Duration::hours(6);
+/// 每轮最多发几条「即将结束」提醒（按人）；付款提醒按场，用 [`BATCH`]。
+const REMIND_BATCH: i64 = 500;
 
 /// 结算需要的外部服务：链上读取与 forum-sponsor 的成交证明。生产实现是 [`Live`]，测试用假实现。
 #[async_trait::async_trait]
@@ -219,6 +231,16 @@ pub async fn run_once(
     Ok(n)
 }
 
+/// 发一轮提醒，返回发出的条数（只用于日志）。站内通知走发件箱 `notify.auction`（同时实时推送），邮件走
+/// [`db::EMAIL_PAYMENT`]；每条只发一次（`auction_reminders`）。
+pub async fn remind_once(db: &PgPool) -> Result<usize, sqlx::Error> {
+    let mut tx = db.begin().await?;
+    let n = db::remind_ending(&mut tx, ENDING_SOON, REMIND_BATCH).await?
+        + db::remind_payment(&mut tx, PAY_REMINDER, BATCH).await?;
+    tx.commit().await?;
+    Ok(n)
+}
+
 /// 结束：流拍，或给第一位符合资格的出价者发证明。
 async fn ended(
     db: &PgPool,
@@ -266,18 +288,24 @@ async fn overdue(
     }
     let settings = forum_db::settings::auction(db).await?;
     let mut tx = db.begin().await?;
-    if db::record_default(&mut tx, &a, &proof, settings.default_ban_secs)
+    let recorded = db::record_default(&mut tx, &a, &proof, settings.default_ban_secs)
         .await?
-        .is_some()
-    {
+        .is_some();
+    tx.commit().await?;
+    if recorded {
         tracing::info!(
             auction = a.id,
             round = a.round,
             user = proof.bidder_id,
             "auction winner defaulted"
         );
+        // 违约次数与违约禁拍公开显示在名片上
+        if let Some(n) = push
+            && let Err(e) = n.cards.cards_invalidate(&[proof.bidder_id]).await
+        {
+            tracing::warn!(error = %e, "card cache invalidation failed");
+        }
     }
-    tx.commit().await?;
     if a.round < MAX_ROUNDS {
         offer_next(db, s, &a, a.round + 1, push).await?;
     } else {
@@ -346,6 +374,7 @@ async fn offer_next(
             let extra = json!({ "round": round, "price": c.amount, "pay_deadline": pay_deadline.unix_timestamp() });
             db::notify(&mut *tx, c.bidder_id, a, event, extra.clone()).await?;
             db::notify(&mut *tx, a.seller_id, a, db::EVENT_SOLD, extra).await?;
+            db::payment_email(&mut *tx, c.bidder_id, a.id, pay_deadline, false).await?;
         }
         tx.commit().await?;
         publish(push, a, "awaiting_payment").await;
@@ -371,10 +400,11 @@ async fn unsold(db: &PgPool, a: &Auction, push: Option<&Notify>) -> anyhow::Resu
     Ok(())
 }
 
-/// 拍卖状态变化的对外通知：主题页的实时连接与游客缓存（列表里的拍卖信息行）。
+/// 拍卖状态变化的对外通知：主题页的实时连接与游客缓存（列表里的拍卖信息行），以及违约后的名片缓存。
 pub struct Notify {
     pub realtime: Realtime,
     pub guest: GuestCache,
+    pub cards: ForumCache,
 }
 
 /// 状态变了：游客缓存里带这条拍卖信息行的列表失效；订阅了拍卖帖主题页的连接重新取详情。

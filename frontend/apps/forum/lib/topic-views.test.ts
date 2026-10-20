@@ -57,6 +57,27 @@ describe("topic views", () => {
     });
   });
 
+  it("shows public auction defaults and an active default ban on the card", () => {
+    expect(personCard(user(1)).auctionRecord).toBeUndefined();
+    const defaulted = cardLookup([
+      { id: 5, username: "甲", level: 1, reputation: { ...NO_REPUTATION, auction_defaults: 2 } },
+      {
+        id: 6,
+        username: "乙",
+        level: 1,
+        reputation: {
+          ...NO_REPUTATION,
+          auction_defaults: 1,
+          auction_banned_until: "2026-11-19T01:04:00Z",
+        },
+      },
+    ]);
+    expect(personCard(defaulted(5)).auctionRecord).toBe("拍卖违约 2 次（近 12 个月）");
+    expect(personCard(defaulted(6)).auctionRecord).toBe(
+      "拍卖违约 1 次（近 12 个月） · 禁拍至 2026-11-19 09:04",
+    );
+  });
+
   it("maps a summary to a list row", () => {
     const row = topicRowView(summary, user, { forum, now: new Date("2026-10-20T08:00:00Z") });
     expect(row).toMatchObject({

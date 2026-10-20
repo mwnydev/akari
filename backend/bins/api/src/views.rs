@@ -1,7 +1,7 @@
 //! 论坛接口的响应结构。时间一律 RFC 3339（UTC）。
 
 use forum_db::floor::FloorComment;
-use forum_db::users::{Card, TradeCounts};
+use forum_db::users::{AuctionRecord, Card, TradeCounts};
 use forum_db::{forums::Forum, posts::Post, topics};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -168,7 +168,7 @@ impl From<&topics::Topic> for TopicSummary {
 /// 成功率至少要有多少笔计入的订单才显示（plan 第 7 节：不满 10 笔显示「新卖家 · 已成交 N 笔」）。
 pub const MIN_RATED_TRADES: i32 = 10;
 
-/// 名片上的交易信誉（plan 第 7 节；只统计最终确认的链上订单）。
+/// 名片上的交易信誉（plan 第 7 节；只统计最终确认的链上订单）与公开的拍卖违约记录（plan 第 6 节）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ReputationView {
     /// 成交笔数（成功订单，卖家或买家身份）。
@@ -180,10 +180,19 @@ pub struct ReputationView {
     pub settled: i32,
     /// 成功率（万分比）= 成功 ÷（成功 + 本人责任失败）；不满 10 笔为空。
     pub success_rate_bps: Option<u32>,
+    /// 近 12 个月拍卖中标后逾期未付款（违约）的次数。名片缓存最多 1 小时，满 12 个月的记录可能晚一点才不计入。
+    /// （`serde(default)` 只为读取本字段加入之前缓存的页面，接口总会返回。）
+    #[serde(default)]
+    #[schema(required = true)]
+    pub auction_defaults: i32,
+    /// 违约自动禁拍的结束时间；没有生效中的违约禁拍时为空。
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    #[schema(value_type = Option<String>, format = DateTime, required = true)]
+    pub auction_banned_until: Option<OffsetDateTime>,
 }
 
-impl From<TradeCounts> for ReputationView {
-    fn from(t: TradeCounts) -> Self {
+impl ReputationView {
+    pub fn new(t: TradeCounts, a: AuctionRecord) -> Self {
         let failed = t.seller_fault_fail + t.buyer_fault_fail;
         let rated = t.success + failed;
         Self {
@@ -194,6 +203,12 @@ impl From<TradeCounts> for ReputationView {
             success_rate_bps: (rated >= MIN_RATED_TRADES)
                 .then(|| u32::try_from(i64::from(t.success) * 10_000 / i64::from(rated)).ok())
                 .flatten(),
+            auction_defaults: a.defaults,
+            // 缓存的名片可能晚于禁拍结束才过期；名片缓存只存到秒，查库的结果也取到秒，两边一致
+            auction_banned_until: a
+                .banned_until
+                .filter(|e| *e > OffsetDateTime::now_utc())
+                .and_then(|e| e.replace_nanosecond(0).ok()),
         }
     }
 }
@@ -216,7 +231,7 @@ impl From<Card> for UserCardView {
             username: c.username,
             avatar_url: c.avatar_url,
             level: c.level,
-            reputation: c.trade.into(),
+            reputation: ReputationView::new(c.trade, c.auction),
         }
     }
 }

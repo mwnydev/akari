@@ -119,6 +119,34 @@ pub fn ruling_passkey_code(code: &str) -> Rendered {
     (subject, html, text)
 }
 
+/// 拍卖中标（含递补）或付款提醒（`reminder`）。`deadline` 是已格式化的付款截止时间。只写拍卖编号，不带帖子内容
+/// （用户输入）；正文写明逾期的后果。
+pub fn auction_payment(auction_id: i64, deadline: &str, reminder: bool) -> Rendered {
+    let (subject, title, lead) = if reminder {
+        (
+            format!("拍卖 #{auction_id} 付款截止时间快到了"),
+            "拍卖付款提醒",
+            format!("你在拍卖 #{auction_id} 中标，还没有付款。"),
+        )
+    } else {
+        (
+            format!("你已中标拍卖 #{auction_id}，请在 {deadline} 前付款"),
+            "拍卖中标",
+            format!("你已中标拍卖 #{auction_id}。"),
+        )
+    };
+    let advice = "逾期未付款会记一次违约（在信誉里公开显示），并在一段时间内不能参与拍卖。";
+    let action = "请登录论坛，在拍卖帖里付款建立担保订单。";
+    let html = layout(
+        title,
+        &format!("<p>{lead}请在 <strong>{deadline}</strong> 前付款。</p><p>{action}{advice}</p>"),
+    );
+    let text = format!(
+        "{lead}请在 {deadline} 前付款。\n{action}{advice}\n\n官方永远不会向你索要验证码、恢复码，也不会要求私下转账。"
+    );
+    (subject, html, text)
+}
+
 fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -182,6 +210,15 @@ mod tests {
         assert!(text.contains("<script>x</script>"));
         let (subject, _, text) = super::ruling_passkey_code("112233");
         assert!(subject.contains("112233") && text.contains("裁决"));
+    }
+
+    #[test]
+    fn auction_payment_states_the_deadline() {
+        let (subject, html, text) = super::auction_payment(42, "2026-10-20 08:00 UTC", false);
+        assert!(subject.contains("#42") && subject.contains("2026-10-20 08:00 UTC"));
+        assert!(html.contains("2026-10-20 08:00 UTC") && text.contains("违约"));
+        let (subject, _, text) = super::auction_payment(42, "2026-10-20 08:00 UTC", true);
+        assert!(subject.contains("快到了") && text.contains("2026-10-20 08:00 UTC"));
     }
 
     #[test]

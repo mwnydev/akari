@@ -102,7 +102,7 @@ pub async fn user_profile(
         topics,
         posts,
         trade: TradeStatsView {
-            summary: p.trade.into(),
+            summary: ReputationView::new(p.trade, p.auction),
             seller_fault_fail: p.trade.seller_fault_fail,
             buyer_fault_fail: p.trade.buyer_fault_fail,
             volume: p.volume,

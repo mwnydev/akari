@@ -88,6 +88,15 @@ pub struct TradeCounts {
     pub settled: i32,
 }
 
+/// 公开的拍卖违约记录（plan 第 6 节「赢家违约」：违约记录在信誉里公开显示）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AuctionRecord {
+    /// 近 12 个月的违约次数。
+    pub defaults: i32,
+    /// 违约自动禁拍仍在生效时的结束时间。只看违约带来的禁拍：管理人员手动的处罚不公开。
+    pub banned_until: Option<OffsetDateTime>,
+}
+
 /// 用户名片（列表页批量取）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Card {
@@ -96,6 +105,7 @@ pub struct Card {
     pub avatar_url: Option<String>,
     pub level: i16,
     pub trade: TradeCounts,
+    pub auction: AuctionRecord,
 }
 
 pub async fn cards(db: impl PgExecutor<'_>, ids: &[i64]) -> Result<Vec<Card>, sqlx::Error> {
@@ -119,6 +129,10 @@ pub async fn cards(db: impl PgExecutor<'_>, ids: &[i64]) -> Result<Vec<Card>, sq
                 disputes_lost: r.disputes_lost,
                 settled: r.settled,
             },
+            auction: AuctionRecord {
+                defaults: r.auction_defaults,
+                banned_until: r.auction_banned_until,
+            },
         })
         .collect())
 }
@@ -135,6 +149,7 @@ pub struct Profile {
     pub level: i16,
     pub exp: i64,
     pub trade: TradeCounts,
+    pub auction: AuctionRecord,
     /// 成功订单金额合计（USDT 最小单位，十进制字符串）。
     pub volume: String,
     pub avg_reply_secs: Option<i32>,
@@ -159,6 +174,10 @@ pub async fn profile(db: impl PgExecutor<'_>, id: i64) -> Result<Option<Profile>
             buyer_fault_fail: r.buyer_fault_fail,
             disputes_lost: r.disputes_lost,
             settled: r.settled,
+        },
+        auction: AuctionRecord {
+            defaults: r.auction_defaults,
+            banned_until: r.auction_banned_until,
         },
         volume: r.volume,
         avg_reply_secs: r.avg_reply_secs,

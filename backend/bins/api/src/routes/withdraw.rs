@@ -142,18 +142,6 @@ fn parse_label(s: &str) -> ApiResult<&str> {
     Ok(label)
 }
 
-/// 邮件里给人看的时间：`2026-10-20 08:00 UTC`。
-fn display_time(t: OffsetDateTime) -> String {
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02} UTC",
-        t.year(),
-        u8::from(t.month()),
-        t.day(),
-        t.hour(),
-        t.minute()
-    )
-}
-
 /// 添加提币地址。本人第一个地址立即生效，之后添加的 24 小时后生效。需要 5 分钟内的钱包 Passkey 验证。
 #[utoipa::path(
     post, path = "/api/v1/wallet/withdraw-addresses", tag = "wallet",
@@ -211,7 +199,7 @@ pub async fn add_withdraw_address(
         &json!({
             "to": user.email,
             "address": shown,
-            "active_at": display_time(saved.active_at),
+            "active_at": forum_core::email::display_time(saved.active_at),
             "immediate": saved.active,
         }),
         outbox::PRIORITY_HIGH,
@@ -295,11 +283,5 @@ mod tests {
         assert!(parse_label(&"字".repeat(32)).is_ok());
         assert!(parse_label(&"字".repeat(33)).is_err());
         assert!(parse_label("a\nb").is_err());
-    }
-
-    #[test]
-    fn display_time_is_minutes_in_utc() {
-        let t = OffsetDateTime::from_unix_timestamp(1_792_000_000).unwrap();
-        assert_eq!(display_time(t), "2026-10-14 17:46 UTC");
     }
 }

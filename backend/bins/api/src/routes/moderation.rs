@@ -21,6 +21,7 @@ use tower_sessions::Session;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::access::Viewer;
+use crate::cards;
 use crate::error::{ApiError, ApiResult, ErrorBody};
 use crate::moderation::{self, Class, Moderator, action, denied};
 use crate::state::AppState;
@@ -479,6 +480,12 @@ pub async fn lift(
     )
     .await?;
     tx.commit().await?;
+    // 违约带来的禁拍公开显示在名片上
+    if s.kind == sanctions::KIND_AUCTION_BAN
+        && let Some(user_id) = s.user_id
+    {
+        cards::invalidate(&state, &[user_id]).await;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

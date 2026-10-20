@@ -21,6 +21,8 @@ export const NO_REPUTATION: Schemas["ReputationView"] = {
   settled: 0,
   disputes_lost: 0,
   success_rate_bps: null,
+  auction_defaults: 0,
+  auction_banned_until: null,
 };
 
 /** 接口里的用户名片列表 → 按 ID 查找；缺失时给出占位名片，页面不因个别用户缺失而报错。 */
@@ -66,6 +68,15 @@ export function tradeReputation(r: Schemas["ReputationView"]): TradeReputation {
     deals: r.success,
     disputesLost: r.disputes_lost,
   };
+}
+
+/** 名片上的拍卖违约记录（公开）：没有违约也没在违约禁拍中时为空。 */
+export function auctionRecordLine(r: Schemas["ReputationView"]): string | undefined {
+  // 本字段加入之前缓存的页面里没有，按没有违约处理
+  const defaults = r.auction_defaults ?? 0;
+  if (!defaults && !r.auction_banned_until) return undefined;
+  const ban = r.auction_banned_until ? ` · 禁拍至 ${formatTime(r.auction_banned_until)}` : "";
+  return `拍卖违约 ${defaults} 次（近 12 个月）${ban}`;
 }
 
 /** 秒数 → 整天数文案（交易期限都是整天）。 */

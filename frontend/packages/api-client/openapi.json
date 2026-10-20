@@ -7436,7 +7436,7 @@
           },
           "payload": {
             "type": "object",
-            "description": "按类型：reply / mention 为 `{topic_id, post_id, floor}`（评论里的 @ 另有 `comment_id`）；\ncomment 为 `{topic_id, post_id, floor, comment_id, reply}`（`reply` 为真：回复了你的评论，否则是评论了你的楼层）；\nlike 为 `{topic_id, post_id, floor, count, likers}`（合并窗口内新增的赞数与最近几位，新的在前）；\nmessage 为 `{conversation_id, message_id}`；\noffer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；\nauction 为 `{auction_id, topic_id, event, …}`（`event`：`outbid` 被超价、`won` 中标、`runner_up` 递补中标、\n`sold` / `unsold` 卖家的成交（待付款）与流拍、`defaulted` 逾期违约，见 `forum_db::auctions`）；\nsystem 为发件箱原样内容（含 `event`）。"
+            "description": "按类型：reply / mention 为 `{topic_id, post_id, floor}`（评论里的 @ 另有 `comment_id`）；\ncomment 为 `{topic_id, post_id, floor, comment_id, reply}`（`reply` 为真：回复了你的评论，否则是评论了你的楼层）；\nlike 为 `{topic_id, post_id, floor, count, likers}`（合并窗口内新增的赞数与最近几位，新的在前）；\nmessage 为 `{conversation_id, message_id}`；\noffer 为 `{offer_id, conversation_id, event}`；order 为 `{order_id, state, level, correction}`；\nauction 为 `{auction_id, topic_id, event, …}`（`event`：`outbid` 被超价、`won` 中标、`runner_up` 递补中标、\n`sold` / `unsold` 卖家的成交（待付款）与流拍、`defaulted` 逾期违约、`ending_soon` 出过价的拍卖即将结束（`ends_at`）、\n`pay_reminder` 付款截止时间快到了（`round`、`pay_deadline`），时间为 Unix 秒，见 `forum_db::auctions`）；\nsystem 为发件箱原样内容（含 `event`）。"
           },
           "read": { "type": "boolean" }
         }
@@ -8232,9 +8232,26 @@
       },
       "ReputationView": {
         "type": "object",
-        "description": "名片上的交易信誉（plan 第 7 节；只统计最终确认的链上订单）。",
-        "required": ["success", "failed", "disputes_lost", "settled"],
+        "description": "名片上的交易信誉（plan 第 7 节；只统计最终确认的链上订单）与公开的拍卖违约记录（plan 第 6 节）。",
+        "required": [
+          "success",
+          "failed",
+          "disputes_lost",
+          "settled",
+          "auction_defaults",
+          "auction_banned_until"
+        ],
         "properties": {
+          "auction_banned_until": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "违约自动禁拍的结束时间；没有生效中的违约禁拍时为空。"
+          },
+          "auction_defaults": {
+            "type": "integer",
+            "format": "int32",
+            "description": "近 12 个月拍卖中标后逾期未付款（违约）的次数。名片缓存最多 1 小时，满 12 个月的记录可能晚一点才不计入。\n（`serde(default)` 只为读取本字段加入之前缓存的页面，接口总会返回。）"
+          },
           "disputes_lost": { "type": "integer", "format": "int32" },
           "failed": {
             "type": "integer",

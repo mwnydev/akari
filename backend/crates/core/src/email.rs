@@ -1,4 +1,6 @@
-//! 邮箱归一化与基本格式校验。
+//! 邮箱归一化与基本格式校验；邮件里的时间格式。
+
+use time::OffsetDateTime;
 
 use crate::ErrorCode;
 
@@ -22,9 +24,30 @@ pub fn normalize_email(raw: &str) -> Result<String, ErrorCode> {
     Ok(email)
 }
 
+/// 邮件里给人看的时间：`2026-10-20 08:00 UTC`。
+pub fn display_time(t: OffsetDateTime) -> String {
+    let t = t.to_offset(time::UtcOffset::UTC);
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02} UTC",
+        t.year(),
+        u8::from(t.month()),
+        t.day(),
+        t.hour(),
+        t.minute()
+    )
+}
+
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
+
+    #[test]
+    fn display_time_is_minutes_in_utc() {
+        let t = OffsetDateTime::from_unix_timestamp(1_792_000_000).unwrap();
+        assert_eq!(display_time(t), "2026-10-14 17:46 UTC");
+    }
 
     #[test]
     fn normalizes_and_validates() {
