@@ -34,6 +34,16 @@ pub enum MailError {
     Build(String),
     #[error("transport: {0}")]
     Transport(String),
+    /// 服务商明确拒收这封邮件（收件地址无效、已停发），重试也不会成功。
+    #[error("rejected: {0}")]
+    Rejected(String),
+}
+
+impl MailError {
+    /// 重试也不会成功（发件箱直接放进死信）；其余错误（网络、服务商故障与限流、配置）按退避重试。
+    pub fn is_permanent(&self) -> bool {
+        matches!(self, Self::Address(_) | Self::Build(_) | Self::Rejected(_))
+    }
 }
 
 pub trait Mailer: Send + Sync {

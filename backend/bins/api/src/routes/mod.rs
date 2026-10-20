@@ -2,6 +2,7 @@ pub mod aa;
 pub mod admin;
 pub mod admin_auth;
 pub mod admin_forums;
+pub mod admin_outbox;
 pub mod arbitration;
 pub mod auctions;
 pub mod auth;

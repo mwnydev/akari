@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE post_counters SET like_notify_pending = false WHERE post_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eb84433d5a84e9a6e7ec9ac684caed082f1ce867a547dd2f6999a0aa6ae08af8"
+}

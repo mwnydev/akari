@@ -136,7 +136,7 @@ export interface paths {
     delete?: never;
     options?: never;
     head?: never;
-    /** 修改板块。论坛里的板块列表立即生效；主题第 1 页缓存里的板块名与色块最长 10 分钟后更新。 */
+    /** 修改板块。论坛里的板块列表与游客页面立即生效；登录用户的主题第 1 页缓存里的板块名与色块最长 10 分钟后更新。 */
     patch: operations["admin_update_forum"];
     trace?: never;
   };
@@ -185,6 +185,57 @@ export interface paths {
     put?: never;
     /** 退出后台。 */
     post: operations["admin_logout"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/outbox": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** 发件箱概览：每种消息的待发与死信条数，以及死信列表。 */
+    get: operations["admin_outbox"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/outbox/discard": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 丢弃死信：清空 payload，不能再重新投递。 */
+    post: operations["admin_outbox_discard"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/admin/outbox/requeue": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** 重新投递死信：尝试次数清零、立即到期，payload 原样。修好导致失败的原因（约束、配置）之后再用。 */
+    post: operations["admin_outbox_requeue"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3026,6 +3077,27 @@ export interface components {
      * @enum {string}
      */
     Currency: "usdt" | "cny";
+    DeadLetterAction: {
+      /** @description 1–100 条死信的 ID。 */
+      ids: number[];
+    };
+    DeadLetterResult: {
+      /** @description 实际处理的 ID（已不是死信的忽略）。 */
+      ids: number[];
+    };
+    DeadLetterView: {
+      /** Format: int32 */
+      attempts: number;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      failed_at: string;
+      /** Format: int64 */
+      id: number;
+      kind: string;
+      /** @description 最后一次的错误（已去掉邮箱地址等）。 */
+      last_error?: string | null;
+    };
     Deadlines: {
       /**
        * Format: date-time
@@ -3839,6 +3911,33 @@ export interface components {
       updated_at: string;
       /** Format: int64 */
       updated_block: number;
+    };
+    OutboxKindCounts: {
+      /** Format: int64 */
+      dead: number;
+      kind: string;
+      /**
+       * Format: date-time
+       * @description 最早一条待发消息的创建时间。
+       */
+      oldest_pending?: string | null;
+      /**
+       * Format: int64
+       * @description 待发（含退避中与投递中）。
+       */
+      pending: number;
+      /**
+       * Format: int64
+       * @description 其中失败过、正在退避的。
+       */
+      retrying: number;
+    };
+    OutboxOverview: {
+      /** @description 死信，新的在前，每页 50 条。 */
+      dead: components["schemas"]["DeadLetterView"][];
+      kinds: components["schemas"]["OutboxKindCounts"][];
+      /** Format: int64 */
+      next_cursor?: number | null;
     };
     OwnerQueueEntry: {
       /** Format: int64 */
@@ -5394,6 +5493,140 @@ export interface operations {
         content?: never;
       };
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_outbox: {
+    parameters: {
+      query?: {
+        /** @description 只看这一种消息的死信。 */
+        kind?: string | null;
+        /** @description 上一页的 `next_cursor`。 */
+        cursor?: number | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OutboxOverview"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_outbox_discard: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DeadLetterAction"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeadLetterResult"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+    };
+  };
+  admin_outbox_requeue: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DeadLetterAction"];
+      };
+    };
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeadLetterResult"];
+        };
+      };
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorBody"];
+        };
+      };
+      403: {
         headers: {
           [name: string]: unknown;
         };

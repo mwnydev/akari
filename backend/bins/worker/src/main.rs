@@ -1,4 +1,4 @@
-//! forum-worker：后台任务：发件箱投递（邮件、站内通知、实时推送）、浏览数回写、报价卡片过期、通知分区维护、
+//! forum-worker：后台任务：发件箱投递（邮件、站内通知、实时推送）与巡检、浏览数回写、报价卡片过期、通知分区维护、
 //! 发帖经验、每日信誉校对、图片转换、仲裁分配与期限、热门排名、拍卖结算；之后接入 apalis 队列（超时处理、发薪）。
 
 use std::time::Duration;
@@ -101,6 +101,13 @@ async fn main() -> anyhow::Result<()> {
         shutdown.clone(),
         move |db, _| async move { forum_worker::arbitration::run_once(&db, arbitration_cfg).await },
     ));
+    let outbox_report = tokio::spawn(periodic(
+        "outbox report",
+        forum_worker::OUTBOX_REPORT_INTERVAL,
+        (db.clone(), cache.clone()),
+        shutdown.clone(),
+        |db, _| async move { forum_worker::outbox_report(&db).await },
+    ));
     let hot = tokio::spawn(periodic(
         "hot ranking",
         forum_worker::HOT_INTERVAL,
@@ -164,6 +171,7 @@ async fn main() -> anyhow::Result<()> {
         ("trade stats audit", stats),
         ("arbitration", arbitration),
         ("hot ranking", hot),
+        ("outbox report", outbox_report),
     ]
     .into_iter()
     .chain(images.map(|t| ("image worker", t)))

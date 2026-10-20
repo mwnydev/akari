@@ -9,6 +9,9 @@ use crate::{Email, MailError, Mailer};
 
 const ENDPOINT: &str = "https://api.postmarkapp.com/email";
 const TIMEOUT: Duration = Duration::from_secs(15);
+/// <https://postmarkapp.com/developer/api/overview#error-codes>
+const REJECTED_INVALID_ADDRESS: i64 = 300;
+const REJECTED_INACTIVE_RECIPIENT: i64 = 406;
 
 pub struct PostmarkMailer {
     http: reqwest::Client,
@@ -89,12 +92,19 @@ impl Mailer for PostmarkMailer {
         let status = res.status();
         // 出错时只记状态码与 Postmark 错误码：错误说明里可能带收件人地址
         let code = res.json::<Response>().await.ok().map(|r| r.error_code);
-        match (status.is_success(), code) {
-            (true, Some(0)) => Ok(()),
-            (_, code) => Err(MailError::Transport(format!(
+        let detail = || {
+            format!(
                 "postmark: HTTP {status}, error code {}",
                 code.map_or_else(|| "unknown".to_owned(), |c| c.to_string())
-            ))),
+            )
+        };
+        match (status.is_success(), code) {
+            (true, Some(0)) => Ok(()),
+            // 300 收件地址无效、406 收件人已停发：只和这封邮件有关
+            (_, Some(REJECTED_INVALID_ADDRESS | REJECTED_INACTIVE_RECIPIENT)) => {
+                Err(MailError::Rejected(detail()))
+            }
+            _ => Err(MailError::Transport(detail())),
         }
     }
 }
@@ -207,10 +217,29 @@ mod tests {
             r#"{"ErrorCode":300,"Message":"Invalid 'To' address: 'a@example.com'."}"#,
         )
         .await;
-        let MailError::Transport(msg) = result.unwrap_err() else {
-            panic!("expected transport error");
+        let err = result.unwrap_err();
+        assert!(err.is_permanent(), "{err}");
+        let MailError::Rejected(msg) = err else {
+            panic!("expected rejection");
         };
         assert!(msg.contains("422") && msg.contains("300"), "{msg}");
         assert!(!msg.contains("a@example.com"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn outage_and_account_errors_are_retried() {
+        let (result, _, _) = send_to_fake(
+            "500 Internal Server Error",
+            r#"{"ErrorCode":0,"Message":"x"}"#,
+        )
+        .await;
+        assert!(!result.unwrap_err().is_permanent());
+        // 发件人签名未验证（配置问题，修好之后重试能成功）
+        let (result, _, _) = send_to_fake(
+            "422 Unprocessable Entity",
+            r#"{"ErrorCode":400,"Message":"Sender signature not found"}"#,
+        )
+        .await;
+        assert!(matches!(result.unwrap_err(), MailError::Transport(_)));
     }
 }

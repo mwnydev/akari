@@ -233,6 +233,18 @@ pub struct LikeDigest {
     pub likers: Vec<i64>,
 }
 
+/// 这一楼的合并点赞通知进了死信：清掉待发标记，之后的新赞照常排下一条（水位不动，下一条把这些赞一起算上）。
+/// 否则标记一直留着，这一楼再也不会有点赞通知。
+pub async fn release_like_digest(db: impl PgExecutor<'_>, post_id: i64) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE post_counters SET like_notify_pending = false WHERE post_id = $1",
+        post_id
+    )
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
 /// 合并通知里列出的点赞人数。
 const DIGEST_LIKERS: i32 = 3;
 

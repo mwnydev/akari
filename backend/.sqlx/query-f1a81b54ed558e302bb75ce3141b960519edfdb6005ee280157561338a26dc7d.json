@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 认领一批到期的待发消息（`FOR UPDATE SKIP LOCKED`：并发的 worker 各取各的）：尝试次数加一（即这次认领的令牌），\n-- 到期时间推后一个租期——租期内别的 worker 看不到它，投递者崩溃了租期一过重新到期。\n-- 有 `ordering_key` 的只取同一个键里最早未完成的一条（它在投递或退避中时，后面的都等着）。\n-- $1 条数, $2 租期（秒）\nWITH due AS (\n  SELECT id FROM outbox o\n  WHERE sent_at IS NULL AND failed_at IS NULL AND next_attempt_at <= now()\n    AND (ordering_key IS NULL OR NOT EXISTS (\n      SELECT 1 FROM outbox e\n      WHERE e.ordering_key = o.ordering_key AND e.id < o.id AND e.sent_at IS NULL AND e.failed_at IS NULL))\n  ORDER BY priority DESC, id\n  LIMIT $1\n  FOR UPDATE SKIP LOCKED\n), claimed AS (\n  UPDATE outbox SET attempts = attempts + 1, next_attempt_at = now() + make_interval(secs => $2)\n  FROM due WHERE outbox.id = due.id\n  RETURNING outbox.id, outbox.kind, outbox.payload, outbox.attempts, outbox.priority\n)\nSELECT id AS \"id!\", kind AS \"kind!\", payload AS \"payload!\", attempts AS \"attempts!\" FROM claimed ORDER BY priority DESC, id\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "outbox",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "outbox",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "payload!",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "outbox",
+            "name": "payload"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "attempts!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "outbox",
+            "name": "attempts"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f1a81b54ed558e302bb75ce3141b960519edfdb6005ee280157561338a26dc7d"
+}

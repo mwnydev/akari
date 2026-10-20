@@ -1,12 +1,14 @@
 //! 发件箱投递（邮件、站内通知与实时推送、管理员群 Telegram 告警）、浏览数回写、报价卡片过期、通知分区维护、
 //! 发帖经验、每日信誉校对、图片转换、仲裁分配与期限、拍卖结算。
 //!
-//! 现在是最小实现：轮询 `outbox`，`FOR UPDATE SKIP LOCKED` 锁一批、投递、标记，失败按指数退避重试。
+//! 发件箱：轮询 `outbox`，`FOR UPDATE SKIP LOCKED` 认领一批（带租期，可多实例并行），逐条投递、逐条标记；
+//! 失败按指数退避重试，重试不会成功或次数用尽的进死信并告警（[`drain_once`]）。
 //! 发薪、超时处理等关键任务按 plan 第 2 节接入 apalis（PostgreSQL 队列）时，发件箱改为向 apalis 入队，这里只保留转发。
 
 pub mod arbitration;
 pub mod auctions;
 pub mod exp;
+mod failure;
 pub mod images;
 pub mod stats;
 pub mod telegram;
@@ -20,10 +22,15 @@ use forum_mail::{Email, Mailer, templates};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+pub use crate::failure::Failure;
 use crate::telegram::Telegram;
 
-/// 每批最多处理条数。投递期间持有行锁，批不宜大。
+/// 每批最多认领条数。
 pub const BATCH: usize = 10;
+/// 单条消息的投递时限（发邮件、发 Telegram、写站内通知），超时算临时失败。一批在租期内一定处理完，
+/// 正常情况下不会有消息因租期到了被别的 worker 重复投递。
+pub const DELIVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+const _: () = assert!(2 * BATCH as u64 * DELIVERY_TIMEOUT.as_secs() <= outbox::LEASE_SECS as u64);
 
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
@@ -261,50 +268,164 @@ fn render_email(msg: &outbox::Message) -> Result<Email, RenderError> {
     })
 }
 
-/// 处理一批到期消息，返回本批条数（0 表示暂时没有可发的）。
-/// 站内通知与投递标记在同一事务里写入；推送在事务提交之后发布（`push` 为空时不推送，如测试）。
+/// 认领一批到期消息并逐条投递，返回本批条数（0 表示暂时没有可发的）。
+///
+/// 每条消息各自成败：站内通知与「已发送」标记在这条消息自己的事务里写入，推送在提交之后发布（`push` 为空时不推送，
+/// 如测试）；邮件与 Telegram 发出后再标记。一条失败只记它自己的失败（见 [`Failure`]），不影响同批的其他消息。
 /// `telegram` 为空（未配置）时管理员群告警直接标记为已处理，不重试。
+///
+/// 重复投递：发出邮件 / Telegram 之后、标记之前出错（或租期内没处理完）的消息会再发一次。邮件带幂等键
+/// `outbox-<ID>`（Resend 24 小时内只投递一次；Postmark 没有幂等键，可能重复）；Telegram 告警可能重复。
+/// 站内通知与标记同一事务，不会重复。
 pub async fn drain_once<M: Mailer>(
     db: &PgPool,
     mailer: &M,
     telegram: Option<&Telegram>,
     push: Option<&Realtime>,
 ) -> Result<usize, sqlx::Error> {
-    let mut tx = db.begin().await?;
-    let batch = outbox::lock_due(&mut tx, BATCH as i64).await?;
-    let mut publish = Vec::new();
+    let batch = outbox::claim(db, BATCH as i64, outbox::LEASE_SECS).await?;
     for msg in &batch {
-        let result = match render(msg) {
-            Ok(Delivery::Email(email)) => mailer.send(&email).await.map_err(|e| e.to_string()),
-            Ok(Delivery::Telegram(text)) => match telegram {
-                Some(t) => t.send(&text).await,
-                None => Ok(()),
-            },
-            Ok(Delivery::InSite(site)) => {
-                deliver(&mut tx, site, &mut publish).await?;
-                Ok(())
-            }
-            Err(e) => Err(e.to_string()),
+        let result = if msg.attempts > outbox::MAX_ATTEMPTS {
+            // 上次认领之后没有标记（worker 在投递中退出或崩溃），次数已经用尽
+            Err(Failure::permanent(
+                "abandoned: worker stopped during delivery",
+            ))
+        } else {
+            tokio::time::timeout(DELIVERY_TIMEOUT, deliver_one(db, mailer, telegram, msg))
+                .await
+                .unwrap_or_else(|_| Err(Failure::transient("delivery timed out")))
         };
         match result {
-            Ok(()) => outbox::mark_sent(&mut *tx, msg.id).await?,
-            Err(err) => {
-                // 只记 ID、类型和错误，不记收件人与内容。
-                tracing::warn!(id = msg.id, kind = %msg.kind, attempts = msg.attempts + 1, error = %err, "outbox delivery failed");
-                outbox::mark_failed(&mut *tx, msg.id, &err).await?;
+            Ok(Some(publish)) => {
+                if let Some(rt) = push {
+                    for e in &publish {
+                        if let Err(err) = rt.publish(e).await {
+                            // 数据已在库里，客户端重连后会补拉。
+                            tracing::warn!(error = %err, "realtime publish failed");
+                        }
+                    }
+                }
             }
-        }
-    }
-    tx.commit().await?;
-    if let Some(rt) = push {
-        for e in &publish {
-            if let Err(err) = rt.publish(e).await {
-                // 数据已在库里，客户端重连后会补拉。
-                tracing::warn!(error = %err, "realtime publish failed");
+            Ok(None) => {
+                tracing::warn!(id = msg.id, kind = %msg.kind, "outbox claim expired before delivery was recorded");
             }
+            Err(failure) => record_failure(db, msg, failure).await,
         }
     }
     Ok(batch.len())
+}
+
+/// 投递一条消息并标记已发送，返回提交后要发布的推送；这次认领已失效（租期过后被重新认领，或已被站长处理）时
+/// 返回 `None`，站内写入随之回滚。
+async fn deliver_one<M: Mailer>(
+    db: &PgPool,
+    mailer: &M,
+    telegram: Option<&Telegram>,
+    msg: &outbox::Message,
+) -> Result<Option<Vec<Envelope>>, Failure> {
+    let mut publish = Vec::new();
+    match render(msg)? {
+        Delivery::Email(email) => mailer.send(&email).await?,
+        Delivery::Telegram(text) => {
+            if let Some(t) = telegram {
+                t.send(&text).await.map_err(Failure::transient)?;
+            }
+        }
+        Delivery::InSite(site) => {
+            let mut tx = db.begin().await?;
+            deliver(&mut tx, site, &mut publish).await?;
+            if !outbox::mark_sent(&mut *tx, msg.id, msg.attempts).await? {
+                return Ok(None);
+            }
+            tx.commit().await?;
+            return Ok(Some(publish));
+        }
+    }
+    Ok(outbox::mark_sent(db, msg.id, msg.attempts)
+        .await?
+        .then_some(publish))
+}
+
+/// 记一次失败；进了死信就推送管理员群（同一种消息一小时一条）。记录失败本身出错（数据库不可用）时只写日志：
+/// 消息仍是认领状态，租期过后重新到期。
+async fn record_failure(db: &PgPool, msg: &outbox::Message, failure: Failure) {
+    let error = failure.error();
+    // 只记 ID、类型和错误，不记收件人与内容。
+    tracing::warn!(id = msg.id, kind = %msg.kind, attempts = msg.attempts, permanent = failure.permanent,
+        error = %error, "outbox delivery failed");
+    match outbox::mark_failed(db, msg.id, msg.attempts, &error, failure.permanent).await {
+        Ok(Some(true)) => {
+            if let Err(e) = dead_lettered(db, msg, &error).await {
+                tracing::error!(id = msg.id, error = %e, "outbox dead-letter follow-up failed");
+            }
+        }
+        Ok(Some(false)) => {}
+        Ok(None) => {
+            tracing::warn!(id = msg.id, kind = %msg.kind, "outbox claim expired before the failure was recorded");
+        }
+        Err(e) => {
+            tracing::error!(id = msg.id, error = %e, "recording outbox failure failed; retried after the lease")
+        }
+    }
+}
+
+/// 管理员群里同一种消息的死信提醒间隔。
+pub const DEAD_LETTER_ALERT_SECS: f64 = 3600.0;
+
+/// 告警事件名（同时是去重键）：`outbox.dead_letter.<消息类型>`。
+pub fn dead_letter_event(kind: &str) -> String {
+    format!("outbox.dead_letter.{kind}")
+}
+
+async fn dead_lettered(db: &PgPool, msg: &outbox::Message, error: &str) -> Result<(), sqlx::Error> {
+    tracing::error!(id = msg.id, kind = %msg.kind, attempts = msg.attempts, error = %error,
+        "outbox message dead-lettered");
+    if msg.kind == forum_db::floor::NOTIFY_LIKES
+        && let Ok(p) = serde_json::from_value::<PostId>(msg.payload.clone())
+    {
+        forum_db::floor::release_like_digest(db, p.post_id).await?;
+    }
+    // 告警自己进了死信时不再告警（Telegram 不可用，告警也发不出去），只留日志
+    if msg.kind != outbox::KIND_STAFF_ALERT {
+        let text = format!(
+            "发件箱消息 #{}（{}）尝试 {} 次后进了死信：{error}。一小时内同类型的死信不再单独提醒，\
+             请在后台「发件箱」查看，修复后重新投递或丢弃。",
+            msg.id, msg.kind, msg.attempts
+        );
+        outbox::staff_alert_deduped(
+            db,
+            &dead_letter_event(&msg.kind),
+            &text,
+            DEAD_LETTER_ALERT_SECS,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// 发件箱状况的巡检间隔：丢弃过期死信，按类型记录积压与死信条数。
+pub const OUTBOX_REPORT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(300);
+/// 最早一条待发消息等了这么久就算积压（写警告日志）。
+const BACKLOG_SECS: i64 = 600;
+
+/// 丢弃过期死信，并按类型记录待发、重试中、死信条数：一切正常只写一行汇总，有死信或积压的类型写警告。
+/// 返回丢弃的死信条数。
+pub async fn outbox_report(db: &PgPool) -> Result<usize, sqlx::Error> {
+    let discarded = outbox::discard_expired(db, outbox::DEAD_LETTER_RETENTION_SECS).await?;
+    let counts = outbox::counts(db).await?;
+    let now = time::OffsetDateTime::now_utc();
+    let (mut pending, mut dead) = (0, 0);
+    for c in &counts {
+        pending += c.pending;
+        dead += c.dead;
+        let waited = c.oldest_pending.map_or(0, |t| (now - t).whole_seconds());
+        if c.dead > 0 || waited > BACKLOG_SECS {
+            tracing::warn!(kind = %c.kind, pending = c.pending, retrying = c.retrying, dead = c.dead,
+                oldest_pending_secs = waited, "outbox kind needs attention");
+        }
+    }
+    tracing::info!(pending, dead, discarded, "outbox status");
+    Ok(discarded as usize)
 }
 
 fn envelope(route: Route, event: &Event) -> Option<Envelope> {

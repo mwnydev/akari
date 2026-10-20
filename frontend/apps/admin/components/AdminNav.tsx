@@ -13,6 +13,7 @@ const links = [
   { href: "/revoke/", label: "批量撤销" },
   { href: "/audit/", label: "审计日志" },
   { href: "/settings/", label: "限速与阈值" },
+  { href: "/outbox/", label: "发件箱" },
 ];
 
 export function AdminNav({ active }: { active: string }) {

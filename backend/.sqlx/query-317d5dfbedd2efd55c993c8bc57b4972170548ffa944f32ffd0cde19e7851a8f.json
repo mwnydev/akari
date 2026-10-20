@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 每种消息的待发与死信条数（不读 payload）：待发走 outbox_pending，死信走 outbox_dead，已发送的行不碰。\nSELECT kind AS \"kind!\",\n       count(*) FILTER (WHERE failed_at IS NULL) AS \"pending!\",\n       count(*) FILTER (WHERE failed_at IS NULL AND attempts > 0) AS \"retrying!\",\n       count(*) FILTER (WHERE failed_at IS NOT NULL) AS \"dead!\",\n       min(created_at) FILTER (WHERE failed_at IS NULL) AS oldest_pending\nFROM (\n  SELECT kind, attempts, failed_at, created_at FROM outbox WHERE sent_at IS NULL AND failed_at IS NULL\n  UNION ALL\n  SELECT kind, attempts, failed_at, created_at FROM outbox WHERE failed_at IS NOT NULL AND discarded_at IS NULL\n) t\nGROUP BY kind ORDER BY kind\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "retrying!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "dead!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "oldest_pending",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "317d5dfbedd2efd55c993c8bc57b4972170548ffa944f32ffd0cde19e7851a8f"
+}

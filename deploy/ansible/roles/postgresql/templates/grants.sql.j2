@@ -14,7 +14,7 @@ REVOKE ALL ON ALL TABLES IN SCHEMA public FROM forum_api, forum_worker, forum_in
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM forum_api, forum_worker, forum_indexer, forum_sponsor;
 
 -- ---------------------------------------------------------------------------------------------------------------
--- forum_api：论坛 HTTP API。论坛表读写；链上派生表（订单、链配置）只读；发件箱只写（读不到验证码等 payload）。
+-- forum_api：论坛 HTTP API。论坛表读写；链上派生表（订单、链配置）只读；发件箱只写与处理死信（读不到验证码等 payload）。
 -- ---------------------------------------------------------------------------------------------------------------
 GRANT SELECT, INSERT, UPDATE ON users, user_devices, user_levels, posts, post_sources, topics, floor_comments,
   post_counters, conversations, notification_reads, order_message_reads, passkeys, offers, uploads,
@@ -31,7 +31,9 @@ GRANT UPDATE (name, description, color, position, allow_trade) ON forums TO foru
 GRANT SELECT ON chains, escrow_orders, order_negotiations, notifications, level_thresholds, user_trade_stats,
   sponsorships, withdraw_credits, hot_topics, auction_proofs TO forum_api;
 GRANT INSERT ON outbox TO forum_api;
-GRANT SELECT (id, dedupe_key, created_at) ON outbox TO forum_api;
+-- 后台死信列表与重新投递 / 丢弃：读得到类型、次数与错误，读不到 payload
+GRANT SELECT (id, kind, attempts, last_error, sent_at, failed_at, discarded_at, dedupe_key, created_at) ON outbox TO forum_api;
+GRANT UPDATE (attempts, next_attempt_at, failed_at, discarded_at, payload) ON outbox TO forum_api;
 -- 回帖与发主题在一条语句里先取楼层 ID（nextval），其余表的 identity 列插入不需要序列权限
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO forum_api;
 
@@ -40,7 +42,7 @@ GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO forum_api;
 -- 拍卖结算（结束、违约禁拍与审计、递补；成交证明由 forum-sponsor 写入）。
 -- ---------------------------------------------------------------------------------------------------------------
 GRANT SELECT, INSERT ON outbox TO forum_worker;
-GRANT UPDATE (attempts, last_error, next_attempt_at, failed_at, payload, sent_at) ON outbox TO forum_worker;
+GRANT UPDATE (attempts, last_error, next_attempt_at, failed_at, discarded_at, payload, sent_at) ON outbox TO forum_worker;
 GRANT SELECT, INSERT ON notifications, exp_ledger, arbitration_assignments, sanctions, auction_passes,
   auction_defaults TO forum_worker;
 GRANT INSERT, SELECT (id) ON admin_audit_logs TO forum_worker;

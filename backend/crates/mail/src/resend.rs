@@ -35,7 +35,38 @@ impl Mailer for ResendMailer {
             .batch
             .send(vec![msg].with_idempotency_key(&email.idempotency_key))
             .await
-            .map_err(|e| MailError::Transport(e.to_string()))?;
+            .map_err(transport)?;
         Ok(())
+    }
+}
+
+/// 服务商返回的说明里可能带收件人地址，只留状态码与错误名；按退避重试（Resend 的校验错误分不清是这封邮件的问题
+/// 还是发件配置的问题，不当作拒收）。
+fn transport(e: resend_rs::Error) -> MailError {
+    MailError::Transport(match e {
+        resend_rs::Error::Resend(r) => format!("resend: HTTP {} {}", r.status_code, r.name),
+        resend_rs::Error::Http(e) => format!("resend: {}", e.without_url()),
+        resend_rs::Error::Parse { .. } => "resend: unreadable response".to_owned(),
+        resend_rs::Error::RateLimit { .. } => "resend: rate limited".to_owned(),
+        other => format!("resend: {other}"),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn errors_keep_status_and_name_only() {
+        let e = transport(resend_rs::Error::Resend(resend_rs::types::ErrorResponse {
+            status_code: 422,
+            message: "Invalid `to` field: a@example.com".into(),
+            name: "validation_error".into(),
+        }));
+        assert_eq!(
+            e.to_string(),
+            "transport: resend: HTTP 422 validation_error"
+        );
+        assert!(!e.is_permanent());
     }
 }

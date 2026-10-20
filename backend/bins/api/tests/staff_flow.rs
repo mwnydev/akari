@@ -1986,3 +1986,109 @@ async fn batch_revoke_reopens_reports_and_unhides_posts(db: PgPool) {
         .body;
     assert_eq!(q["open_count"], 2);
 }
+
+/// 发件箱死信：只有站长；列表不含 payload；重新投递与丢弃写审计日志，已不是死信的 ID 忽略。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn owner_requeues_and_discards_dead_letters(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    let o = owner(&app, &db).await;
+    let (_, uc) = member(&app, &db).await;
+    let dead: Vec<i64> = sqlx::query_scalar(
+        "INSERT INTO outbox (kind, payload, attempts, failed_at, last_error)
+         SELECT k, jsonb_build_object('to', 'secret@example.com'), 3, now(), 'violates check constraint'
+         FROM unnest(ARRAY['notify.auction', 'notify.auction', 'email.new_device']) k RETURNING id",
+    )
+    .fetch_all(&db)
+    .await
+    .unwrap();
+
+    let r = admin_call(&app, "GET", "/api/v1/admin/outbox", None, &uc).await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    let r = admin_call(&app, "GET", "/api/v1/admin/outbox", None, &o.admin).await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert!(!r.body.to_string().contains("secret@example.com"));
+    let listed: Vec<i64> = r.body["dead"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["id"].as_i64().unwrap())
+        .collect();
+    assert_eq!(listed, vec![dead[2], dead[1], dead[0]]);
+    let auction = r.body["kinds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|k| k["kind"] == "notify.auction")
+        .unwrap();
+    assert_eq!(
+        (&auction["dead"], &auction["pending"]),
+        (&json!(2), &json!(0))
+    );
+    let r = admin_call(
+        &app,
+        "GET",
+        "/api/v1/admin/outbox?kind=email.new_device",
+        None,
+        &o.admin,
+    )
+    .await;
+    assert_eq!(r.body["dead"].as_array().unwrap().len(), 1);
+
+    let act = |path: &'static str, ids: Value| {
+        let (app, cookies) = (app.clone(), o.admin.clone());
+        async move { admin_call(&app, "POST", path, Some(json!({ "ids": ids })), &cookies).await }
+    };
+    assert_eq!(
+        act("/api/v1/admin/outbox/requeue", json!([])).await.status,
+        StatusCode::BAD_REQUEST
+    );
+    let r = act(
+        "/api/v1/admin/outbox/requeue",
+        json!([dead[0], dead[1], 999_999]),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    assert_eq!(r.body["ids"], json!([dead[0], dead[1]]));
+    let r = act("/api/v1/admin/outbox/discard", json!([dead[0], dead[2]])).await;
+    assert_eq!(
+        r.body["ids"],
+        json!([dead[2]]),
+        "requeued is no longer dead"
+    );
+    let rows: Vec<(i32, bool, bool, Value)> = sqlx::query_as(
+        "SELECT attempts, failed_at IS NOT NULL, discarded_at IS NOT NULL, payload FROM outbox
+         WHERE id = ANY($1) ORDER BY id",
+    )
+    .bind(&dead)
+    .fetch_all(&db)
+    .await
+    .unwrap();
+    let to = json!({"to": "secret@example.com"});
+    assert_eq!(
+        rows,
+        vec![
+            (0, false, false, to.clone()),
+            (0, false, false, to),
+            (3, true, true, json!({}))
+        ]
+    );
+    let audit: Vec<(String, Value)> = sqlx::query_as(
+        "SELECT action, detail FROM admin_audit_logs WHERE action LIKE 'outbox.%' ORDER BY id",
+    )
+    .fetch_all(&db)
+    .await
+    .unwrap();
+    assert_eq!(
+        audit,
+        vec![
+            (
+                "outbox.requeue".into(),
+                json!({"ids": [dead[0], dead[1]], "kinds": ["notify.auction", "notify.auction"]})
+            ),
+            (
+                "outbox.discard".into(),
+                json!({"ids": [dead[2]], "kinds": ["email.new_device"]})
+            ),
+        ]
+    );
+}

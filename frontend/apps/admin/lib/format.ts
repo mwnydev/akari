@@ -63,6 +63,8 @@ export const ACTION_LABEL: Record<string, string> = {
   "settings.moderation": "改限速与阈值",
   "admin.revoke_actions": "批量撤销",
   "admin.passkey_add": "绑定后台 Passkey",
+  "outbox.requeue": "重新投递死信",
+  "outbox.discard": "丢弃死信",
 };
 
 export function actionLabel(action: string): string {

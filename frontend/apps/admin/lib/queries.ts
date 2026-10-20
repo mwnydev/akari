@@ -14,6 +14,7 @@ export const keys = {
   arbitration: (days: number) => ["admin-arbitration", days] as const,
   execution: ["admin-execution"] as const,
   audit: (actor: number | null, cursor: number | null) => ["admin-audit", actor, cursor] as const,
+  outbox: (cursor: number | null) => ["admin-outbox", cursor] as const,
 };
 
 export function useStaff() {

@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE outbox SET\n             last_error = left($3, 500),\n             failed_at = CASE WHEN $4 OR attempts >= $5 THEN now() END,\n             next_attempt_at = now() + make_interval(secs => least(power(2, attempts), 3600) * (0.5 + random() / 2))\n           WHERE id = $1 AND attempts = $2 AND sent_at IS NULL AND failed_at IS NULL\n           RETURNING failed_at IS NOT NULL AS \"dead!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dead!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Text",
+        "Bool",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "70601a28f15b281f80f46999dbe38e8e08782a81ea07149c6ac9530061669b3c"
+}

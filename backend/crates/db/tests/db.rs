@@ -39,7 +39,7 @@ async fn device_first_seen(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
-async fn outbox_priority_skip_locked_and_sent(pool: PgPool) {
+async fn outbox_claims_by_priority_and_marks_sent(pool: PgPool) {
     let low = outbox::enqueue(&pool, "k", &json!({"n": 1}), outbox::PRIORITY_NORMAL)
         .await
         .unwrap();
@@ -47,24 +47,73 @@ async fn outbox_priority_skip_locked_and_sent(pool: PgPool) {
         .await
         .unwrap();
 
-    let mut tx1 = pool.begin().await.unwrap();
-    let first = outbox::lock_due(&mut tx1, 1).await.unwrap();
+    let first = outbox::claim(&pool, 1, 60.0).await.unwrap();
     assert_eq!(first[0].id, high, "higher priority first");
-
-    // 另一个 worker 看不到已锁定的行
-    let mut tx2 = pool.begin().await.unwrap();
-    let second = outbox::lock_due(&mut tx2, 10).await.unwrap();
+    assert_eq!(first[0].attempts, 1);
+    // 认领中的消息别的 worker 取不到
+    let second = outbox::claim(&pool, 10, 60.0).await.unwrap();
     assert_eq!(second.iter().map(|m| m.id).collect::<Vec<_>>(), vec![low]);
-    tx2.rollback().await.unwrap();
 
-    outbox::mark_sent(&mut *tx1, high).await.unwrap();
-    tx1.commit().await.unwrap();
+    // 令牌不对（不是这次认领）不生效
+    assert!(!outbox::mark_sent(&pool, high, 0).await.unwrap());
+    assert!(outbox::mark_sent(&pool, high, 1).await.unwrap());
+    assert!(
+        !outbox::mark_sent(&pool, high, 1).await.unwrap(),
+        "only once"
+    );
     let payload: serde_json::Value = sqlx::query_scalar("SELECT payload FROM outbox WHERE id = $1")
         .bind(high)
         .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!(payload, json!({}), "payload cleared after send");
+}
+
+/// 同一订单的 `order.updated` 一次只认领最早未完成的一条；别的订单与别的消息不受影响。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn outbox_orders_messages_per_key(pool: PgPool) {
+    let order = |id: i64, state: &str| json!({"id": id, "state": state});
+    let a1 = outbox::enqueue(&pool, "order.updated", &order(1, "funded"), 0)
+        .await
+        .unwrap();
+    let a2 = outbox::enqueue(&pool, "order.updated", &order(1, "shipped"), 0)
+        .await
+        .unwrap();
+    let b1 = outbox::enqueue(&pool, "order.updated", &order(2, "funded"), 0)
+        .await
+        .unwrap();
+    let other = outbox::enqueue(&pool, "notify.reply", &json!({"to": 1}), 0)
+        .await
+        .unwrap();
+    let ids = |m: Vec<outbox::Message>| m.into_iter().map(|m| m.id).collect::<Vec<_>>();
+
+    let first = outbox::claim(&pool, 10, 0.0).await.unwrap();
+    assert_eq!(ids(first.clone()), vec![a1, b1, other]);
+    // a1 在退避中：a2 仍然等着
+    assert_eq!(
+        outbox::mark_failed(&pool, a1, first[0].attempts, "boom", false)
+            .await
+            .unwrap(),
+        Some(false)
+    );
+    for m in &first[1..] {
+        outbox::mark_sent(&pool, m.id, m.attempts).await.unwrap();
+    }
+    sqlx::query("UPDATE outbox SET next_attempt_at = now() WHERE id = $1")
+        .bind(a1)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let again = outbox::claim(&pool, 10, 0.0).await.unwrap();
+    assert_eq!(ids(again.clone()), vec![a1]);
+    // a1 进了死信之后 a2 不再被挡
+    assert_eq!(
+        outbox::mark_failed(&pool, a1, again[0].attempts, "bad", true)
+            .await
+            .unwrap(),
+        Some(true)
+    );
+    assert_eq!(ids(outbox::claim(&pool, 10, 0.0).await.unwrap()), vec![a2]);
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
@@ -79,7 +128,12 @@ async fn staff_alerts_dedupe_by_event_even_after_sending(pool: PgPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    outbox::mark_sent(&pool, id).await.unwrap();
+    let claimed = outbox::claim(&pool, 10, 60.0).await.unwrap();
+    assert!(
+        outbox::mark_sent(&pool, id, claimed[0].attempts)
+            .await
+            .unwrap()
+    );
     assert!(
         !outbox::staff_alert_deduped(&pool, "sponsor.hot_wallet_low", "还是低", 3600.0)
             .await
@@ -114,30 +168,123 @@ async fn staff_alerts_dedupe_by_event_even_after_sending(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
-async fn outbox_backoff_then_give_up(pool: PgPool) {
+async fn outbox_backoff_then_dead_letter_then_requeue(pool: PgPool) {
     let id = outbox::enqueue(&pool, "k", &json!({"secret": 1}), 0)
         .await
         .unwrap();
-    outbox::mark_failed(&pool, id, "boom").await.unwrap();
-    let mut tx = pool.begin().await.unwrap();
-    assert!(
-        outbox::lock_due(&mut tx, 10).await.unwrap().is_empty(),
-        "not due during backoff"
-    );
-    tx.rollback().await.unwrap();
-
-    for _ in 1..outbox::MAX_ATTEMPTS {
-        outbox::mark_failed(&pool, id, "boom").await.unwrap();
-    }
-    let (attempts, failed, payload): (i32, bool, serde_json::Value) =
-        sqlx::query_as("SELECT attempts, failed_at IS NOT NULL, payload FROM outbox WHERE id = $1")
+    let due_in = || async {
+        sqlx::query_scalar::<_, f64>(
+            "SELECT extract(epoch FROM next_attempt_at - now())::float8 FROM outbox WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    };
+    let make_due = || async {
+        sqlx::query("UPDATE outbox SET next_attempt_at = now() WHERE id = $1")
             .bind(id)
-            .fetch_one(&pool)
+            .execute(&pool)
             .await
             .unwrap();
-    assert_eq!(attempts, outbox::MAX_ATTEMPTS);
-    assert!(failed);
+    };
+    for attempt in 1..=outbox::MAX_ATTEMPTS {
+        let m = outbox::claim(&pool, 10, 60.0).await.unwrap();
+        assert_eq!(m[0].attempts, attempt);
+        let dead = outbox::mark_failed(&pool, id, attempt, "boom", false)
+            .await
+            .unwrap();
+        assert_eq!(dead, Some(attempt == outbox::MAX_ATTEMPTS));
+        if attempt < 6 {
+            // 2^n 秒乘 0.5–1
+            let base = f64::from(1 << attempt);
+            let d = due_in().await;
+            assert!(d > base * 0.5 - 1.0 && d <= base, "attempt {attempt}: {d}");
+            assert!(
+                outbox::claim(&pool, 10, 60.0).await.unwrap().is_empty(),
+                "not due during backoff"
+            );
+        }
+        make_due().await;
+    }
+    // 死信：不再认领，payload 保留
+    assert!(outbox::claim(&pool, 10, 60.0).await.unwrap().is_empty());
+    let dead = outbox::dead_letters(&pool, None, None, 10).await.unwrap();
+    assert_eq!(dead.len(), 1);
+    assert_eq!(
+        (dead[0].id, dead[0].attempts, dead[0].last_error.as_deref()),
+        (id, outbox::MAX_ATTEMPTS, Some("boom"))
+    );
+    assert!(
+        outbox::dead_letters(&pool, Some("other"), None, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let counts = outbox::counts(&pool).await.unwrap();
+    assert_eq!((counts[0].pending, counts[0].dead), (0, 1));
+
+    // 重新投递：从头计数、立即到期、payload 原样
+    let handled = outbox::requeue(&pool, &[id, id + 100]).await.unwrap();
+    assert_eq!(handled.iter().map(|h| h.id).collect::<Vec<_>>(), vec![id]);
+    assert!(
+        outbox::requeue(&pool, &[id]).await.unwrap().is_empty(),
+        "not dead any more"
+    );
+    let m = outbox::claim(&pool, 10, 60.0).await.unwrap();
+    assert_eq!((m[0].attempts, &m[0].payload), (1, &json!({"secret": 1})));
+
+    // 丢弃：清空 payload，不能再重新投递
+    outbox::mark_failed(&pool, id, 1, "bad", true)
+        .await
+        .unwrap();
+    assert_eq!(outbox::discard(&pool, &[id]).await.unwrap().len(), 1);
+    assert!(outbox::requeue(&pool, &[id]).await.unwrap().is_empty());
+    let payload: serde_json::Value = sqlx::query_scalar("SELECT payload FROM outbox WHERE id = $1")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(payload, json!({}));
+    assert!(outbox::counts(&pool).await.unwrap().is_empty());
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn outbox_dead_letters_expire(pool: PgPool) {
+    let old = outbox::enqueue(&pool, "k", &json!({"to": "a@example.com"}), 0)
+        .await
+        .unwrap();
+    let fresh = outbox::enqueue(&pool, "k", &json!({"to": "b@example.com"}), 0)
+        .await
+        .unwrap();
+    for m in outbox::claim(&pool, 10, 60.0).await.unwrap() {
+        outbox::mark_failed(&pool, m.id, m.attempts, "bad", true)
+            .await
+            .unwrap();
+    }
+    sqlx::query("UPDATE outbox SET failed_at = now() - interval '15 days' WHERE id = $1")
+        .bind(old)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        outbox::discard_expired(&pool, outbox::DEAD_LETTER_RETENTION_SECS)
+            .await
+            .unwrap(),
+        1
+    );
+    let rows: Vec<(i64, bool, serde_json::Value)> =
+        sqlx::query_as("SELECT id, discarded_at IS NOT NULL, payload FROM outbox ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        rows,
+        vec![
+            (old, true, json!({})),
+            (fresh, false, json!({"to": "b@example.com"}))
+        ]
+    );
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]

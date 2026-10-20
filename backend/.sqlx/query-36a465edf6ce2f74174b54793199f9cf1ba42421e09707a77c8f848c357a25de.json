@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "-- 丢弃进死信超过 $1 秒的消息并清空 payload。\nUPDATE outbox SET discarded_at = now(), payload = '{}'\nWHERE failed_at IS NOT NULL AND discarded_at IS NULL AND failed_at < now() - make_interval(secs => $1)\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "36a465edf6ce2f74174b54793199f9cf1ba42421e09707a77c8f848c357a25de"
+}

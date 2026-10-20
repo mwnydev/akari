@@ -247,7 +247,7 @@
     "/api/v1/admin/forums/{id}": {
       "patch": {
         "tags": ["admin"],
-        "summary": "修改板块。论坛里的板块列表立即生效；主题第 1 页缓存里的板块名与色块最长 10 分钟后更新。",
+        "summary": "修改板块。论坛里的板块列表与游客页面立即生效；登录用户的主题第 1 页缓存里的板块名与色块最长 10 分钟后更新。",
         "operationId": "admin_update_forum",
         "parameters": [
           {
@@ -366,6 +366,116 @@
         "responses": {
           "204": {},
           "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/outbox": {
+      "get": {
+        "tags": ["admin"],
+        "summary": "发件箱概览：每种消息的待发与死信条数，以及死信列表。",
+        "operationId": "admin_outbox",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "只看这一种消息的死信。",
+            "required": false,
+            "schema": { "type": ["string", "null"] }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "上一页的 `next_cursor`。",
+            "required": false,
+            "schema": { "type": ["integer", "null"], "format": "int64" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OutboxOverview" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/outbox/discard": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "丢弃死信：清空 payload，不能再重新投递。",
+        "operationId": "admin_outbox_discard",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/DeadLetterAction" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/DeadLetterResult" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/outbox/requeue": {
+      "post": {
+        "tags": ["admin"],
+        "summary": "重新投递死信：尝试次数清零、立即到期，payload 原样。修好导致失败的原因（约束、配置）之后再用。",
+        "operationId": "admin_outbox_requeue",
+        "requestBody": {
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/DeadLetterAction" } }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/DeadLetterResult" } }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
+            }
+          },
+          "403": {
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorBody" } }
             }
@@ -6419,6 +6529,44 @@
         "description": "拍卖币种（`AuctionAuth.currency`）。",
         "enum": ["usdt", "cny"]
       },
+      "DeadLetterAction": {
+        "type": "object",
+        "required": ["ids"],
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": { "type": "integer", "format": "int64" },
+            "description": "1–100 条死信的 ID。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeadLetterResult": {
+        "type": "object",
+        "required": ["ids"],
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": { "type": "integer", "format": "int64" },
+            "description": "实际处理的 ID（已不是死信的忽略）。"
+          }
+        }
+      },
+      "DeadLetterView": {
+        "type": "object",
+        "required": ["id", "kind", "attempts", "created_at", "failed_at"],
+        "properties": {
+          "attempts": { "type": "integer", "format": "int32" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "failed_at": { "type": "string", "format": "date-time" },
+          "id": { "type": "integer", "format": "int64" },
+          "kind": { "type": "string" },
+          "last_error": {
+            "type": ["string", "null"],
+            "description": "最后一次的错误（已去掉邮箱地址等）。"
+          }
+        }
+      },
       "Deadlines": {
         "type": "object",
         "properties": {
@@ -7589,6 +7737,45 @@
           "token": { "type": "string" },
           "updated_at": { "type": "string", "format": "date-time" },
           "updated_block": { "type": "integer", "format": "int64" }
+        }
+      },
+      "OutboxKindCounts": {
+        "type": "object",
+        "required": ["kind", "pending", "retrying", "dead"],
+        "properties": {
+          "dead": { "type": "integer", "format": "int64" },
+          "kind": { "type": "string" },
+          "oldest_pending": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "最早一条待发消息的创建时间。"
+          },
+          "pending": {
+            "type": "integer",
+            "format": "int64",
+            "description": "待发（含退避中与投递中）。"
+          },
+          "retrying": {
+            "type": "integer",
+            "format": "int64",
+            "description": "其中失败过、正在退避的。"
+          }
+        }
+      },
+      "OutboxOverview": {
+        "type": "object",
+        "required": ["kinds", "dead"],
+        "properties": {
+          "dead": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DeadLetterView" },
+            "description": "死信，新的在前，每页 50 条。"
+          },
+          "kinds": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/OutboxKindCounts" }
+          },
+          "next_cursor": { "type": ["integer", "null"], "format": "int64" }
         }
       },
       "OwnerQueueEntry": {

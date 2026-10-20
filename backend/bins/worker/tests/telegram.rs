@@ -147,5 +147,5 @@ async fn disabled_when_not_configured(pool: PgPool) {
     forum_worker::drain_once(&pool, &NoMail, None, None)
         .await
         .unwrap();
-    assert_eq!(row(&pool, id).await, (true, 0, None));
+    assert_eq!(row(&pool, id).await, (true, 1, None));
 }

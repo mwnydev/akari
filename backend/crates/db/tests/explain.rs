@@ -1506,3 +1506,73 @@ async fn auction_queries_use_indexes(db: PgPool) {
     )
     .await;
 }
+
+/// 发件箱：20 万条已发送的旧消息里认领待发消息（含同一订单按顺序的判断）、统计、列死信、丢弃过期死信，
+/// 都只走待发 / 死信的部分索引。
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn outbox_queries_use_indexes(db: PgPool) {
+    sqlx::raw_sql(
+        r"
+        INSERT INTO outbox (kind, payload, sent_at, attempts)
+        SELECT CASE WHEN g % 3 = 0 THEN 'order.updated' ELSE 'notify.reply' END, '{}', now(), 1
+        FROM generate_series(1, 200000) g;
+        INSERT INTO outbox (kind, payload, next_attempt_at, attempts)
+        SELECT 'order.updated', jsonb_build_object('id', g % 50), now() + ((g % 7) || ' seconds')::interval, g % 3
+        FROM generate_series(1, 300) g;
+        INSERT INTO outbox (kind, payload) SELECT 'notify.reply', '{}' FROM generate_series(1, 200) g;
+        INSERT INTO outbox (kind, payload, failed_at, attempts, last_error, discarded_at)
+        SELECT 'notify.auction', '{}', now() - ((g % 20) || ' days')::interval, 1, 'x',
+               CASE WHEN g % 2 = 0 THEN now() END
+        FROM generate_series(1, 400) g;
+        ANALYZE;
+        ",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+    check(
+        &db,
+        "outbox_claim",
+        sqlx::query(q!("outbox_claim.sql"))
+            .bind(10_i64)
+            .bind(60.0_f64),
+        "outbox_pending",
+    )
+    .await;
+    let (claim, plan) = explain(
+        &db,
+        sqlx::query(q!("outbox_claim.sql"))
+            .bind(10_i64)
+            .bind(60.0_f64),
+    )
+    .await;
+    assert!(
+        claim.indexes.iter().any(|i| i == "outbox_ordering"),
+        "ordering check uses outbox_ordering: {:?}\n{plan:#}",
+        claim.indexes
+    );
+    check(
+        &db,
+        "outbox_counts",
+        sqlx::query(q!("outbox_counts.sql")),
+        "outbox_dead",
+    )
+    .await;
+    check(
+        &db,
+        "outbox_dead_letters",
+        sqlx::query(q!("outbox_dead_letters.sql"))
+            .bind(Some("notify.auction"))
+            .bind(None::<i64>)
+            .bind(50_i64),
+        "outbox_dead",
+    )
+    .await;
+    check(
+        &db,
+        "outbox_dead_expire",
+        sqlx::query(q!("outbox_dead_expire.sql")).bind(14.0 * 86_400.0_f64),
+        "outbox_dead",
+    )
+    .await;
+}

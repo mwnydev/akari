@@ -68,8 +68,9 @@ async fn delivers_login_code_first_and_marks_sent(pool: PgPool) {
     assert_eq!(sent[1].to, "a@example.com");
 }
 
+/// 临时失败（邮件通道不可用）按退避重试；不认识的类型重试也没用，直接进死信并提醒管理员群。
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
-async fn failures_are_retried_later(pool: PgPool) {
+async fn transient_failures_retry_and_unknown_kinds_dead_letter(pool: PgPool) {
     let id = outbox::enqueue(
         &pool,
         "email.login_code",
@@ -92,15 +93,30 @@ async fn failures_are_retried_later(pool: PgPool) {
         2
     );
 
-    let rows: Vec<(i64, i32, Option<String>)> =
-        sqlx::query_as("SELECT id, attempts, last_error FROM outbox ORDER BY id")
-            .fetch_all(&pool)
+    let rows: Vec<(i64, i32, Option<String>, bool)> = sqlx::query_as(
+        "SELECT id, attempts, last_error, failed_at IS NOT NULL FROM outbox WHERE id IN ($1, $2) ORDER BY id",
+    )
+    .bind(id)
+    .bind(bad)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(rows[0], (id, 1, Some("transport: down".into()), false));
+    assert_eq!(rows[1], (bad, 1, Some("unknown outbox kind".into()), true));
+    // 退避期内邮件不再取出；只剩死信提醒（未配置 Telegram，直接算已处理）
+    assert_eq!(
+        forum_worker::drain_once(&pool, &mailer, None, None)
             .await
-            .unwrap();
-    assert_eq!(rows[0], (id, 1, Some("transport: down".into())));
-    assert_eq!(rows[1].0, bad);
-    assert_eq!(rows[1].2.as_deref(), Some("unknown outbox kind"));
-    // 退避期内不再取出
+            .unwrap(),
+        1
+    );
+    let alert: String = sqlx::query_scalar(
+        "SELECT dedupe_key FROM outbox WHERE kind = 'staff_alert' AND sent_at IS NOT NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(alert, forum_worker::dead_letter_event("no.such.kind"));
     assert_eq!(
         forum_worker::drain_once(&pool, &mailer, None, None)
             .await
@@ -197,19 +213,20 @@ async fn in_site_notifications_are_stored_not_emailed(pool: PgPool) {
             ),
         ]
     );
-    // 缺收件人的消息投递失败、按退避重试
+    // 缺收件人的消息重试也不会成功：直接进死信
     let bad = outbox::enqueue(&pool, "notify.mention", &json!({"from": 2}), 0)
         .await
         .unwrap();
     forum_worker::drain_once(&pool, &mailer, None, None)
         .await
         .unwrap();
-    let attempts: i32 = sqlx::query_scalar("SELECT attempts FROM outbox WHERE id = $1")
-        .bind(bad)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(attempts, 1);
+    let (attempts, dead): (i32, bool) =
+        sqlx::query_as("SELECT attempts, failed_at IS NOT NULL FROM outbox WHERE id = $1")
+            .bind(bad)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((attempts, dead), (1, true));
 }
 
 /// 窗口内的赞合成一条 `like` 通知（楼主自己的赞不算）；投递后再来的赞排下一条，全被取消时不通知。
@@ -331,9 +348,15 @@ async fn order_updates_notify_parties_and_push(pool: PgPool) {
         ready.await.unwrap();
     }
     let mailer = Recorder::default();
-    forum_worker::drain_once(&pool, &mailer, None, rt.as_ref().map(|(_, r)| r))
-        .await
-        .unwrap();
+    // 同一订单的两条变化按顺序投递：第二条等第一条发完，下一批才取到
+    for expected in [2, 1, 0] {
+        assert_eq!(
+            forum_worker::drain_once(&pool, &mailer, None, rt.as_ref().map(|(_, r)| r))
+                .await
+                .unwrap(),
+            expected
+        );
+    }
     for user in [10, 11] {
         let n = notifications_of(&pool, user).await;
         assert_eq!(n.len(), 1, "only the chain event notifies");
