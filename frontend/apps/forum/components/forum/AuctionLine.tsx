@@ -16,7 +16,7 @@ export interface AuctionFacts {
   reserveMet: boolean;
 }
 
-/** 主题列表行里拍卖帖的信息：当前价、出价次数、剩余时间、是否达到保留价。 */
+/** 主题列表行里拍卖帖的信息：当前价、出价次数、剩余时间、是否达到保留价（有人出价之后）。 */
 export function AuctionLine({ auction }: { auction: AuctionFacts }) {
   const soon = auction.secondsLeft > 0 && auction.secondsLeft < ENDING_SOON;
   return (
@@ -37,9 +37,12 @@ export function AuctionLine({ auction }: { auction: AuctionFacts }) {
       ) : (
         <span>已结束</span>
       )}
-      <Badge tone={auction.reserveMet ? "success" : "neutral"}>
-        {auction.reserveMet ? "已达保留价" : "未达保留价"}
-      </Badge>
+      {/* 还没人出价时不显示：卖家没设保留价（保留价 = 起拍价）时「未达保留价」只会让人误会 */}
+      {auction.bids > 0 ? (
+        <Badge tone={auction.reserveMet ? "success" : "neutral"}>
+          {auction.reserveMet ? "已达保留价" : "未达保留价"}
+        </Badge>
+      ) : null}
     </>
   );
 }

@@ -25,7 +25,7 @@ function Swatch({ hex }: { hex: string | null | undefined }) {
   );
 }
 
-/** 板块管理：名称、简介、色块、排序与能否发交易帖（站长；改交易帖开关要再验证）。 */
+/** 板块管理：名称、简介、色块、排序与能否发交易帖、拍卖帖（站长；改这两个开关要再验证）。 */
 export function BoardsPage() {
   const forums = useForums();
   const [editing, setEditing] = useState<number | null>(null);
@@ -39,7 +39,7 @@ export function BoardsPage() {
           const board = boards.find((b) => b.id === editing);
           return (
             <>
-              <Table label="板块" head={["排序", "名称", "简介", "色块", "交易帖", ""]}>
+              <Table label="板块" head={["排序", "名称", "简介", "色块", "交易帖", "拍卖帖", ""]}>
                 {boards.map((b) => (
                   <tr key={b.id} data-testid="board-row">
                     <Td className="amount">{b.position}</Td>
@@ -53,6 +53,7 @@ export function BoardsPage() {
                       <Swatch hex={b.color} />
                     </Td>
                     <Td>{b.allow_trade ? <Badge tone="success">允许</Badge> : "—"}</Td>
+                    <Td>{b.allow_auction ? <Badge tone="success">允许</Badge> : "—"}</Td>
                     <Td>
                       <Button size="sm" variant="secondary" onClick={() => setEditing(b.id)}>
                         编辑

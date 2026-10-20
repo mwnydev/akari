@@ -69,6 +69,12 @@ export function LiveFloor({
         postId={post.id}
         floor={post.floor}
         author={card.name}
+        mention={
+          // 回复 1 楼就是回复主题（楼主本来就收到回帖通知），不必 @
+          post.floor > 1 && !perms.own && author.username
+            ? { id: author.id, label: author.username }
+            : null
+        }
         quoteHref={topicHref(topic.id, page, post.floor)}
         title={post.floor === 1 ? topic.title : undefined}
         deleted={post.deleted}

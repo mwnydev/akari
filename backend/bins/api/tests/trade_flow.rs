@@ -36,6 +36,7 @@ async fn board(db: &PgPool, slug: &str) -> i32 {
             post_min_level: 1,
             reply_min_level: 1,
             allow_trade: true,
+            allow_auction: false,
             color: None,
         },
     )
@@ -172,6 +173,7 @@ async fn listing_only_on_trade_boards(db: PgPool) {
             post_min_level: 1,
             reply_min_level: 1,
             allow_trade: false,
+            allow_auction: false,
             color: None,
         },
     )

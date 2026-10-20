@@ -2613,7 +2613,7 @@
     "/api/v1/forums/{slug}/auctions": {
       "post": {
         "tags": ["auction"],
-        "summary": "挂拍第一步：校验条件并保存草稿（还不发帖）。需要已开通交易、没被封号或禁拍，板块允许交易帖。",
+        "summary": "挂拍第一步：校验条件并保存草稿（还不发帖）。需要已开通交易、没被封号或禁拍，板块允许拍卖帖（`allow_auction`）。",
         "operationId": "create_auction",
         "parameters": [
           { "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }
@@ -3995,7 +3995,7 @@
       },
       "post": {
         "tags": ["forum"],
-        "summary": "评论楼层。门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户人机验证与限频、评论限频。\n通知楼主、被回复的人与被 @ 的人，并推给打开着这个主题页的连接。",
+        "summary": "评论楼层。主楼（1 楼）不能评论（`FIRST_POST_NO_COMMENTS`，请回复主题）。\n门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户人机验证与限频、评论限频。\n通知楼主、被回复的人与被 @ 的人，并推给打开着这个主题页的连接。",
         "operationId": "create_comment",
         "parameters": [
           {
@@ -6708,6 +6708,8 @@
           "USERNAME_TAKEN",
           "USERNAME_CHANGE_TOO_SOON",
           "TRADE_NOT_ALLOWED",
+          "AUCTION_NOT_ALLOWED",
+          "FIRST_POST_NO_COMMENTS",
           "UNSUPPORTED_IMAGE",
           "IMAGE_TOO_LARGE",
           "UPLOADS_UNAVAILABLE",
@@ -6833,6 +6835,10 @@
       "ForumUpdateRequest": {
         "type": "object",
         "properties": {
+          "allow_auction": {
+            "type": ["boolean", "null"],
+            "description": "能否发拍卖帖（拍卖区）；修改需要 5 分钟内再验证过。"
+          },
           "allow_trade": {
             "type": ["boolean", "null"],
             "description": "能否发交易帖；修改需要 5 分钟内再验证过。"
@@ -6865,9 +6871,11 @@
           "view_min_level",
           "post_min_level",
           "reply_min_level",
-          "allow_trade"
+          "allow_trade",
+          "allow_auction"
         ],
         "properties": {
+          "allow_auction": { "type": "boolean", "description": "能否发拍卖帖（拍卖区）。" },
           "allow_trade": { "type": "boolean", "description": "能否发交易帖。" },
           "color": {
             "type": ["string", "null"],

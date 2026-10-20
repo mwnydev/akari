@@ -14,8 +14,13 @@ import {
   type Editor,
   type JSONContent,
 } from "@tiptap/react";
+import { PluginKey } from "@tiptap/pm/state";
 import StarterKit from "@tiptap/starter-kit";
-import type { SuggestionKeyDownProps, SuggestionProps } from "@tiptap/suggestion";
+import {
+  exitSuggestion,
+  type SuggestionKeyDownProps,
+  type SuggestionProps,
+} from "@tiptap/suggestion";
 import {
   Bold,
   Code,
@@ -79,6 +84,9 @@ function searchUsers(q: string): Promise<Schemas["MentionView"][]> {
   return found;
 }
 
+/** @提及的建议插件（Esc 关菜单时按它退出建议状态）。 */
+const MENTION_KEY = new PluginKey("forum-mention");
+
 /** 创建编辑器，并返回 @提及菜单与图片上传的状态（由 <EditorField> 渲染）。 */
 export function useForumEditor({
   content,
@@ -111,6 +119,7 @@ export function useForumEditor({
       Image.configure({ allowBase64: false }),
       Mention.configure({
         suggestion: {
+          pluginKey: MENTION_KEY,
           char: "@",
           items: async ({ query }) => {
             const q = mentionQuery(query);
@@ -168,6 +177,22 @@ export function useForumEditor({
     },
     onUpdate: () => latest.current.onChange?.(),
   });
+
+  // 提及菜单开着时 Esc 只关菜单：在 window 的捕获阶段先拦下，外层的弹窗（Radix 在 document 上监听 Esc，
+  // 还会把事件标成已处理，编辑器自己就收不到了）不会被一起关掉
+  const menuOpen = menu !== null;
+  useEffect(() => {
+    if (!menuOpen || !editor) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !editor.view.hasFocus()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      exitSuggestion(editor.view, MENTION_KEY);
+      setMenu(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [menuOpen, editor]);
 
   /** 选好图片：先在本地检查类型与大小，再直传、等服务器转成 WebP 后插入。 */
   async function insertImage(file: File) {

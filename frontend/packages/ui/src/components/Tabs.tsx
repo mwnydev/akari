@@ -16,10 +16,13 @@ const segmentItem =
   "data-[state=on]:bg-surface data-[state=on]:font-medium data-[state=on]:text-fg data-[state=active]:shadow-float data-[state=on]:shadow-float " +
   "focus-visible:outline-2 focus-visible:outline-accent";
 
-// 下划线样式（论坛列表顶部的「最新 / 热门」）：纯文字，选中项只换颜色和下划线，字重不变以免跳版
-const underlineList = "flex max-w-full items-center gap-1 overflow-x-auto";
+// 下划线样式（论坛列表顶部的「最新 / 热门」）：纯文字，选中项只换颜色和下划线，字重不变以免跳版。
+// 整条列表下移 1px 压在外层的分隔线上（而不是每个标签各自 -mb-px：那样标签比列表高 1px，横向可滚的列表
+// 在纵向也溢出，Windows 常驻滚动条会在标签旁边画出一条竖滚动条）；纵向不滚动，横向放不下时才出细滚动条。
+const underlineList =
+  "-mb-px flex max-w-full items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:thin]";
 const underlineItem =
-  "-mb-px shrink-0 border-b-2 border-transparent px-3 py-1.5 text-fg-muted transition-colors duration-150 " +
+  "shrink-0 border-b-2 border-transparent px-3 py-1.5 text-fg-muted transition-colors duration-150 " +
   "hover:text-fg data-[state=active]:border-accent-fill data-[state=active]:text-fg " +
   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent";
 

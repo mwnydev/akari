@@ -27,6 +27,7 @@ async fn forum(db: &PgPool, slug: &str) {
             post_min_level: 1,
             reply_min_level: 1,
             allow_trade: false,
+            allow_auction: false,
             color: None,
         },
     )

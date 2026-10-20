@@ -23,6 +23,7 @@ export interface BoardValues {
   color: string;
   position: number;
   allowTrade: boolean;
+  allowAuction: boolean;
 }
 
 export function boardValues(b: Board): BoardValues {
@@ -32,17 +33,18 @@ export function boardValues(b: Board): BoardValues {
     color: b.color ?? "",
     position: b.position,
     allowTrade: b.allow_trade,
+    allowAuction: b.allow_auction,
   };
 }
 
 /**
- * 只提交改了的字段（后端不改没给的字段）；没有改动返回 null。`tradeChanged`：改了「能否发交易帖」，
- * 后端要求 5 分钟内再验证过。
+ * 只提交改了的字段（后端不改没给的字段）；没有改动返回 null。`moneyChanged`：改了「能否发交易帖 / 拍卖帖」
+ * （涉及钱），后端要求 5 分钟内再验证过。
  */
 export function boardPatch(
   b: Board,
   v: BoardValues,
-): { body: BoardUpdate; tradeChanged: boolean } | null {
+): { body: BoardUpdate; moneyChanged: boolean } | null {
   const body: BoardUpdate = {};
   const name = v.name.trim();
   const description = v.description.trim();
@@ -50,7 +52,8 @@ export function boardPatch(
   if (description !== b.description) body.description = description;
   if (v.color !== (b.color ?? "")) body.color = v.color === "" ? null : v.color;
   if (v.position !== b.position) body.position = v.position;
-  const tradeChanged = v.allowTrade !== b.allow_trade;
-  if (tradeChanged) body.allow_trade = v.allowTrade;
-  return Object.keys(body).length ? { body, tradeChanged } : null;
+  if (v.allowTrade !== b.allow_trade) body.allow_trade = v.allowTrade;
+  if (v.allowAuction !== b.allow_auction) body.allow_auction = v.allowAuction;
+  const moneyChanged = body.allow_trade !== undefined || body.allow_auction !== undefined;
+  return Object.keys(body).length ? { body, moneyChanged } : null;
 }

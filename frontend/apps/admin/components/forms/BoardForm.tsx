@@ -28,12 +28,13 @@ const Schema = z.object({
       z.lte(9999, { error: "不能大于 9999" }),
     ),
   allowTrade: z.boolean(),
+  allowAuction: z.boolean(),
 });
 
 const selectClass =
   "h-10 w-full rounded-md border border-border bg-surface px-3 text-sm text-fg focus-visible:outline-2 focus-visible:outline-accent";
 
-/** 编辑一个板块（表单库按需加载）。只提交改了的字段；改「能否发交易帖」涉及钱，先用后台 Passkey 再验证。 */
+/** 编辑一个板块（表单库按需加载）。只提交改了的字段；改「能否发交易帖 / 拍卖帖」涉及钱，先用后台 Passkey 再验证。 */
 export default function BoardForm({ board, onDone }: { board: Board; onDone: () => void }) {
   const { sensitive } = useAdminSession();
   const queryClient = useQueryClient();
@@ -52,7 +53,7 @@ export default function BoardForm({ board, onDone }: { board: Board; onDone: () 
             body: patch.body,
           }),
         );
-      return patch.tradeChanged ? sensitive(run) : run();
+      return patch.moneyChanged ? sensitive(run) : run();
     },
     onSuccess: (saved) => {
       if (saved) {
@@ -93,10 +94,19 @@ export default function BoardForm({ board, onDone }: { board: Board; onDone: () 
             </select>
           </Field>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" {...form.register("allowTrade")} />
-          允许发交易帖（修改需要后台 Passkey 再验证）
-        </label>
+        <fieldset className="space-y-1.5">
+          <legend className="text-sm text-fg-muted">
+            涉及钱的开关，修改需要后台 Passkey 再验证
+          </legend>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" {...form.register("allowTrade")} />
+            允许发交易帖
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" {...form.register("allowAuction")} />
+            允许发拍卖帖（拍卖区）
+          </label>
+        </fieldset>
         {save.isError ? (
           <p role="alert" className="text-sm text-danger">
             {errorMessage(save.error)}

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE forums SET name = coalesce($2, name), description = coalesce($3, description),\n                color = CASE WHEN $4 THEN $5 ELSE color END, position = coalesce($6, position),\n                allow_trade = coalesce($7, allow_trade)\n         WHERE id = $1\n         RETURNING id, parent_id, slug, name, description, position,\n                   view_min_level, post_min_level, reply_min_level, allow_trade, color",
+  "query": "SELECT id, parent_id, slug, name, description, position,\n                view_min_level, post_min_level, reply_min_level, allow_trade, allow_auction, color\n         FROM forums WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -115,6 +115,17 @@
       },
       {
         "ordinal": 10,
+        "name": "allow_auction",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "forums",
+            "name": "allow_auction"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
         "name": "color",
         "type_info": "Text",
         "origin": {
@@ -127,13 +138,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int4",
-        "Text",
-        "Text",
-        "Bool",
-        "Text",
-        "Int4",
-        "Bool"
+        "Int4"
       ]
     },
     "nullable": [
@@ -147,8 +152,9 @@
       false,
       false,
       false,
+      false,
       true
     ]
   },
-  "hash": "02dc177b34d6359b7c9ec655e4f067ede6a4194c12eb0c62475e66b857333da4"
+  "hash": "ac62cf86db8bb46587d9da94d3b33a413131ff71c1c2c2bae4ea0690c9eac01e"
 }

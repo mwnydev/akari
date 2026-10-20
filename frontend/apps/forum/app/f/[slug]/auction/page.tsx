@@ -43,8 +43,8 @@ export default async function NewAuctionPage({ params }: { params: Promise<{ slu
     );
   }
   const forum = forums.find((f) => f.slug === slug);
-  // 拍卖帖与交易帖同样只能发在允许交易的板块
-  if (!forum || auctionParams.settings.enabled !== true || !forum.allow_trade) notFound();
+  // 拍卖帖只能发在拍卖板块（allow_auction），且拍卖总开关打开
+  if (!forum || auctionParams.settings.enabled !== true || !forum.allow_auction) notFound();
 
   return (
     <AppShell active={slug}>

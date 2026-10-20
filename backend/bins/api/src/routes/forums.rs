@@ -383,7 +383,7 @@ impl PreparedTopic {
     }
 }
 
-/// 发主题前的检查：登录、板块权限（交易帖与拍卖帖只能发在允许交易的板块）、标题与内容过滤、新用户人机验证与限制、限流。
+/// 发主题前的检查：登录、板块权限（交易帖只能发在允许交易的板块，拍卖帖只能发在拍卖板块）、标题与内容过滤、新用户人机验证与限制、限流。
 pub async fn prepare_topic(
     state: &AppState,
     session: &Session,
@@ -407,8 +407,11 @@ pub async fn prepare_topic(
         }
     }
     posting::check_sanctions(state, actor.id, Some(forum.id)).await?;
-    if matches!(kind, topics::KIND_TRADE | topics::KIND_AUCTION) && !forum.allow_trade {
+    if kind == topics::KIND_TRADE && !forum.allow_trade {
         return Err(ApiError(ErrorCode::TradeNotAllowed));
+    }
+    if kind == topics::KIND_AUCTION && !forum.allow_auction {
+        return Err(ApiError(ErrorCode::AuctionNotAllowed));
     }
     let title = forum_content::clean_title(&req.title)?;
     let cleaned = posting::clean(state, &actor, &req.html, &req.source)?;

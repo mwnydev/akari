@@ -52,11 +52,11 @@ export async function signIn(context: BrowserContext, baseURL: string, tag: stri
   return { email, loginMail: mail };
 }
 
-/** 测试用的交易版块（新用户也能发帖、允许交易帖），不存在就建；返回 slug。 */
+/** 测试用的交易版块（新用户也能发帖、允许交易帖与拍卖帖），不存在就建；返回 slug。 */
 export function ensureBoard(): string {
   const slug = "e2e";
   psql(
-    "INSERT INTO forums (slug, name, post_min_level, allow_trade) VALUES (:'slug', 'e2e', 0, true) ON CONFLICT (slug) DO UPDATE SET allow_trade = true;",
+    "INSERT INTO forums (slug, name, post_min_level, allow_trade, allow_auction) VALUES (:'slug', 'e2e', 0, true, true) ON CONFLICT (slug) DO UPDATE SET allow_trade = true, allow_auction = true;",
     { slug },
   );
   return slug;

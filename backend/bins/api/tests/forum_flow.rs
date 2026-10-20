@@ -26,6 +26,7 @@ async fn forum(db: &PgPool, slug: &str, view: i16, post: i16) -> i32 {
             post_min_level: post,
             reply_min_level: 1,
             allow_trade: false,
+            allow_auction: false,
             color: None,
         },
     )
@@ -838,6 +839,7 @@ async fn forum_colors_come_from_the_palette(db: PgPool) {
         post_min_level: 1,
         reply_min_level: 1,
         allow_trade: false,
+        allow_auction: false,
         color,
     };
     forums::create(&db, &new("green", Some("#2e9d5c")))

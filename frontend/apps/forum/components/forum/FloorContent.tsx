@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Pencil,
   Quote,
+  Reply,
   Trash2,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -18,8 +19,10 @@ import { useState, type ReactNode } from "react";
 import type { UserCardView } from "../../lib/display";
 import type { PostSocial, SocialPerson } from "../../lib/floor-social";
 import { reportPost } from "../../lib/floor-social-client";
+import { ownText } from "../../lib/quote";
 import { useAfterSubmit } from "../composer/useAfterSubmit";
 import { usePostModeration, type PostModeration } from "../moderation/usePostModeration";
+import { prefetchComposer } from "./BottomComposer";
 import { useComposer } from "./ComposerContext";
 import { FloorSocialBlock, LikeButton, useFloorSocial } from "./FloorSocial";
 import { usePreview } from "./preview";
@@ -28,8 +31,8 @@ const Composer = dynamic(() => import("../composer/Composer"), { ssr: false });
 const DeleteDialog = dynamic(() => import("../topic/DeleteDialog"), { ssr: false });
 const HistoryDialog = dynamic(() => import("../topic/HistoryDialog"), { ssr: false });
 
-/** 引用摘录最长字数。 */
-const QUOTE_CHARS = 140;
+/** 窄屏上操作按钮只留图标（文字留给读屏），一行放得下赞、评论、引用、回复、编辑和「…」。 */
+const narrowLabel = "max-sm:sr-only";
 
 export interface FloorPermissions {
   /** 作者本人（主题未锁定）或管理人员 */
@@ -42,18 +45,22 @@ export interface FloorPermissions {
   own?: boolean;
 }
 
-/** 引用的摘录：访问者在这层楼里选中了文字就用选中的，否则取正文开头。 */
+/**
+ * 引用的摘录：访问者在这层楼里选中了文字就用选中的，否则取正文开头；正文里的引用块去掉（不嵌套引用）。
+ */
 function quoteExcerpt(floor: number): string {
   const body = document.querySelector(`#floor-${floor} [data-floor-body]`);
+  if (!body) return "";
   const sel = window.getSelection();
-  const picked =
-    sel && !sel.isCollapsed && body?.contains(sel.anchorNode) ? sel.toString() : body?.textContent;
-  const text = (picked ?? "").replace(/\s+/g, " ").trim();
-  return text.length > QUOTE_CHARS ? `${text.slice(0, QUOTE_CHARS)}…` : text;
+  const range =
+    sel && !sel.isCollapsed && sel.rangeCount > 0 && body.contains(sel.anchorNode)
+      ? sel.getRangeAt(0)
+      : null;
+  return ownText(range ? range.cloneContents() : body.cloneNode(true));
 }
 
 /**
- * 楼层里的交互部分：正文（编辑时原地换成编辑器）、嵌入内容、右对齐的操作行（赞、评论、引用回复、编辑、「…」），
+ * 楼层里的交互部分：正文（编辑时原地换成编辑器）、嵌入内容、右对齐的操作行（赞、评论、引用、回复、编辑、「…」），
  * 以及下方的点赞评论块。正文由服务端渲染后作为 children 传入。
  * `social` 为空（已删除的楼层）时不显示赞和评论；`viewer` 为空（游客）时只读。
  * `hidden`：被管理人员隐藏的楼层（与已删除的一样不能点赞、评论、引用、编辑、举报，管理人员仍可删除）。
@@ -64,6 +71,7 @@ export function FloorContent({
   postId,
   floor,
   author,
+  mention = null,
   quoteHref,
   title,
   deleted = false,
@@ -82,7 +90,9 @@ export function FloorContent({
   postId: number;
   floor: number;
   author: string;
-  /** 「引用回复」引用块里链接回这层楼的地址 */
+  /** 「回复」这层楼时编辑器开头 @ 的人（作者本人、没有用户名的、1 楼为空） */
+  mention?: { id: number; label: string } | null;
+  /** 「引用」引用块里链接回这层楼的地址 */
   quoteHref: string;
   /** 1 楼编辑时可以一起改标题 */
   title?: string | undefined;
@@ -153,24 +163,45 @@ export function FloorContent({
   }
   menu.push(...moderation.items);
 
+  const replying = canReply && composer && !frozen;
   const actions = (
     <>
-      {canReply && composer && !frozen ? (
-        <Button
-          variant="subtle"
-          size="sm"
-          onClick={() =>
-            composer.openComposer({ floor, author, href: quoteHref, text: quoteExcerpt(floor) })
-          }
-        >
-          <Quote size={16} aria-hidden />
-          引用回复
-        </Button>
+      {replying ? (
+        <>
+          <Button
+            variant="subtle"
+            size="sm"
+            aria-haspopup="dialog"
+            onPointerEnter={prefetchComposer}
+            onClick={() =>
+              composer.openComposer({
+                kind: "quote",
+                floor,
+                author,
+                href: quoteHref,
+                text: quoteExcerpt(floor),
+              })
+            }
+          >
+            <Quote size={16} aria-hidden />
+            <span className={narrowLabel}>引用</span>
+          </Button>
+          <Button
+            variant="subtle"
+            size="sm"
+            aria-haspopup="dialog"
+            onPointerEnter={prefetchComposer}
+            onClick={() => composer.openComposer({ kind: "reply", floor, author, mention })}
+          >
+            <Reply size={16} aria-hidden />
+            <span className={narrowLabel}>回复</span>
+          </Button>
+        </>
       ) : null}
       {canEdit && !editing ? (
         <Button variant="subtle" size="sm" onClick={() => setEditing(true)}>
           <Pencil size={16} aria-hidden />
-          编辑
+          <span className={narrowLabel}>编辑</span>
         </Button>
       ) : null}
       <LazyMenu
@@ -209,6 +240,7 @@ export function FloorContent({
           postId={postId}
           floor={floor}
           social={social}
+          comments={floor > 1}
           viewer={viewer}
           canModerate={canModerate}
         >
@@ -240,12 +272,19 @@ export function FloorContent({
   );
 }
 
-/** 有点赞评论数据时的操作行：赞、评论在前，其余按钮（children）在后，下面是评论块。 */
+/** 主楼不显示评论（以前留下的也不显示，与后端一致；游客缓存里的旧页面也一样）。 */
+const NO_COMMENTS: PostSocial["comments"] = { total: 0, items: [], next_cursor: null };
+
+/**
+ * 有点赞评论数据时的操作行：赞、评论在前，其余按钮（children）在后，下面是评论块。
+ * `comments` 为假（主楼）时只有赞：没有「评论」按钮和评论列表，要说话就回复主题。
+ */
 function SocialRow({
   topicId,
   postId,
   floor,
-  social: initial,
+  social: given,
+  comments,
   viewer,
   canModerate,
   children,
@@ -254,21 +293,29 @@ function SocialRow({
   postId: number;
   floor: number;
   social: PostSocial;
+  comments: boolean;
   viewer: SocialPerson | null;
   canModerate: boolean;
   children: ReactNode;
 }) {
-  const social = useFloorSocial({ topicId, postId, initial, viewer });
+  const initial = comments ? given : { ...given, comments: NO_COMMENTS };
+  const social = useFloorSocial({ topicId, postId, initial, viewer, comments });
   return (
     <div className="mt-3">
       <div className="-mr-2 flex flex-wrap items-center justify-end gap-0.5">
         {viewer ? (
           <>
             <LikeButton social={social} />
-            <Button variant="subtle" size="sm" onClick={() => social.startReply({ kind: "floor" })}>
-              <MessageCircle size={16} aria-hidden />
-              评论
-            </Button>
+            {comments ? (
+              <Button
+                variant="subtle"
+                size="sm"
+                onClick={() => social.startReply({ kind: "floor" })}
+              >
+                <MessageCircle size={16} aria-hidden />
+                <span className={narrowLabel}>评论</span>
+              </Button>
+            ) : null}
           </>
         ) : null}
         {children}

@@ -14,7 +14,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use forum_core::ErrorCode;
 use forum_core::chat::Event;
-use forum_core::floor::{PREVIEW_COMMENTS, PREVIEW_LIKERS};
+use forum_core::floor::{PREVIEW_COMMENTS, PREVIEW_LIKERS, takes_comments};
 use forum_core::staff::{Permission, Scope};
 use forum_db::floor::{self, CommentRow, FloorComment};
 use forum_db::posts::STATUS_NORMAL;
@@ -46,7 +46,8 @@ const COMMENT_PAGE: i64 = 50;
 const MAX_REPORT_REASON_CHARS: usize = 500;
 
 /// 本页各楼的点赞与评论概况（顺序同 `posts`），以及其中出现的用户（点赞名单、评论作者与被回复的人）。
-/// 已删除的楼层、访问者看不到的隐藏楼层给空概况，不查也不返回它的评论。两次批量查询，与楼层数无关。
+/// 已删除的楼层、访问者看不到的隐藏楼层给空概况，不查也不返回它的评论；主楼（1 楼）不带评论（只有点赞）。
+/// 两次批量查询，与楼层数无关。
 pub async fn page_social(
     state: &AppState,
     posts: &[PostView],
@@ -64,8 +65,13 @@ pub async fn page_social(
             .into_iter()
             .map(|s| (s.post_id, s))
             .collect();
+    let commentable: Vec<i64> = posts
+        .iter()
+        .filter(|p| takes_comments(p.floor) && p.readable(staff, viewer))
+        .map(|p| p.id)
+        .collect();
     let mut comments: HashMap<i64, Vec<FloorComment>> = HashMap::new();
-    for c in floor::preview(&state.db, &live, PREVIEW_COMMENTS).await? {
+    for c in floor::preview(&state.db, &commentable, PREVIEW_COMMENTS).await? {
         comments.entry(c.post_id).or_default().push(c);
     }
     let mut users = Vec::new();
@@ -91,7 +97,11 @@ pub async fn page_social(
                 likes: s.likes,
                 liked: s.liked,
                 likers: s.likers,
-                comment_count: s.comments,
+                comment_count: if takes_comments(p.floor) {
+                    s.comments
+                } else {
+                    0
+                },
                 comments,
             }
         })
@@ -236,8 +246,12 @@ pub async fn comments(
     if !ctx.readable(viewer.user.map(|u| u.id)) {
         return Err(ApiError(ErrorCode::NotFound));
     }
-    let mut rows =
-        floor::comments_after(&state.db, id, q.after.unwrap_or(0), COMMENT_PAGE + 1).await?;
+    // 主楼不显示评论（以前留下的也不显示）
+    let mut rows = if takes_comments(ctx.post.floor) {
+        floor::comments_after(&state.db, id, q.after.unwrap_or(0), COMMENT_PAGE + 1).await?
+    } else {
+        Vec::new()
+    };
     let more = rows.len() as i64 > COMMENT_PAGE;
     rows.truncate(COMMENT_PAGE as usize);
     let next_cursor = rows.last().map(|c| c.id).filter(|_| more);
@@ -263,7 +277,8 @@ pub struct NewCommentRequest {
     pub captcha: Option<String>,
 }
 
-/// 评论楼层。门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户人机验证与限频、评论限频。
+/// 评论楼层。主楼（1 楼）不能评论（`FIRST_POST_NO_COMMENTS`，请回复主题）。
+/// 门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户人机验证与限频、评论限频。
 /// 通知楼主、被回复的人与被 @ 的人，并推给打开着这个主题页的连接。
 #[utoipa::path(
     post, path = "/api/v1/posts/{id}/comments", tag = "forum", operation_id = "create_comment",
@@ -285,6 +300,9 @@ pub async fn create_comment(
     let viewer = Viewer::load(&state, &session).await?;
     let actor = viewer.require()?;
     let ctx = live_post(&state, &viewer, id).await?;
+    if !takes_comments(ctx.post.floor) {
+        return Err(ApiError(ErrorCode::FirstPostNoComments));
+    }
     if !ctx.staff {
         if ctx.topic.flags & FLAG_LOCKED != 0 {
             return Err(ApiError(ErrorCode::TopicLocked));

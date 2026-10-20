@@ -218,6 +218,7 @@ async fn auction_settles_on_chain_through_the_sponsor(db: PgPool) {
             post_min_level: 1,
             reply_min_level: 1,
             allow_trade: true,
+            allow_auction: true,
             color: None,
         },
     )

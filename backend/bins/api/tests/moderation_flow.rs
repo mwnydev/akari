@@ -30,6 +30,7 @@ async fn forum(db: &PgPool, slug: &str) -> i32 {
             post_min_level: 1,
             reply_min_level: 1,
             allow_trade: false,
+            allow_auction: false,
             color: None,
         },
     )
@@ -959,7 +960,6 @@ async fn turnstile_guards_login_and_new_user_posting(db: PgPool) {
     let r = new_topic(Some("ok:post")).await;
     assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
     let t = r.body["topic_id"].as_i64().unwrap();
-    let post = r.body["post_id"].as_i64().unwrap();
 
     let reply = |captcha: Option<&str>| {
         let app = app.clone();
@@ -977,7 +977,10 @@ async fn turnstile_guards_login_and_new_user_posting(db: PgPool) {
         }
     };
     assert_eq!(code(&reply(None).await).1, Some("CAPTCHA_REQUIRED"));
-    assert_eq!(reply(Some("ok:post")).await.status, StatusCode::CREATED);
+    let r = reply(Some("ok:post")).await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    // 评论回帖（主楼不能评论）
+    let post = r.body["post_id"].as_i64().unwrap();
     let r = call(
         &app,
         "POST",

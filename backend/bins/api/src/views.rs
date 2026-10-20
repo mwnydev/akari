@@ -21,6 +21,8 @@ pub struct ForumView {
     pub reply_min_level: i16,
     /// 能否发交易帖。
     pub allow_trade: bool,
+    /// 能否发拍卖帖（拍卖区）。
+    pub allow_auction: bool,
     /// 板块色块：固定色板里的 `#rrggbb`；为空时前端按排序位置轮换。
     pub color: Option<String>,
 }
@@ -38,6 +40,7 @@ impl From<&Forum> for ForumView {
             post_min_level: f.post_min_level,
             reply_min_level: f.reply_min_level,
             allow_trade: f.allow_trade,
+            allow_auction: f.allow_auction,
             color: f.color.clone(),
         }
     }

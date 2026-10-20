@@ -39,6 +39,7 @@ async fn forum(db: &PgPool, slug: &str) -> i32 {
             post_min_level: 1,
             reply_min_level: 1,
             allow_trade: false,
+            allow_auction: false,
             color: None,
         },
     )
@@ -1812,6 +1813,8 @@ async fn owner_edits_boards_and_sees_report_counts(db: PgPool) {
     age_session(&ns, &o.admin, "reverified_at", 301).await;
     let r = patch(json!({"allow_trade": true}), o.admin.clone()).await;
     assert_eq!(code(&r).1, Some("ADMIN_REVERIFY_REQUIRED"));
+    let r = patch(json!({"allow_auction": true}), o.admin.clone()).await;
+    assert_eq!(code(&r).1, Some("ADMIN_REVERIFY_REQUIRED"));
     assert_eq!(
         patch(json!({"position": 1}), o.admin.clone()).await.status,
         StatusCode::OK
@@ -1819,6 +1822,8 @@ async fn owner_edits_boards_and_sees_report_counts(db: PgPool) {
     assertion(&app, &mut o.auth, "reverify", &o.admin).await;
     let r = patch(json!({"allow_trade": true}), o.admin.clone()).await;
     assert_eq!(r.body["allow_trade"], true, "{:?}", r.body);
+    let r = patch(json!({"allow_auction": true}), o.admin.clone()).await;
+    assert_eq!(r.body["allow_auction"], true, "{:?}", r.body);
 
     // 每次修改写审计日志（只记改动的字段）并推送管理员群
     let details: Vec<Value> = sqlx::query_scalar(
@@ -1828,10 +1833,14 @@ async fn owner_edits_boards_and_sees_report_counts(db: PgPool) {
     .fetch_all(&db)
     .await
     .unwrap();
-    assert_eq!(details.len(), 4);
+    assert_eq!(details.len(), 5);
     assert_eq!(
         details[3],
         json!({"old": {"allow_trade": false}, "new": {"allow_trade": true}})
+    );
+    assert_eq!(
+        details[4],
+        json!({"old": {"allow_auction": false}, "new": {"allow_auction": true}})
     );
     let alerts: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM outbox WHERE kind = 'staff_alert' AND payload->>'event' = 'forum.update'",
@@ -1839,7 +1848,7 @@ async fn owner_edits_boards_and_sees_report_counts(db: PgPool) {
     .fetch_one(&db)
     .await
     .unwrap();
-    assert_eq!(alerts, 4);
+    assert_eq!(alerts, 5);
 
     // 色板与数据库约束一致
     let check: String = sqlx::query_scalar(

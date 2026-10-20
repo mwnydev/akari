@@ -85,7 +85,8 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::BidBalanceInsufficient
         | ErrorCode::AccessBanned
         | ErrorCode::AdminReverifyRequired
-        | ErrorCode::TradeNotAllowed => StatusCode::FORBIDDEN,
+        | ErrorCode::TradeNotAllowed
+        | ErrorCode::AuctionNotAllowed => StatusCode::FORBIDDEN,
         ErrorCode::OfferUnavailable
         | ErrorCode::Conflict
         | ErrorCode::SponsorPending
@@ -139,7 +140,8 @@ fn status(code: ErrorCode) -> StatusCode {
         | ErrorCode::RulingMismatch
         | ErrorCode::AuctionDurationInvalid
         | ErrorCode::AuctionIncrementTooLow
-        | ErrorCode::AuctionSignatureInvalid => StatusCode::BAD_REQUEST,
+        | ErrorCode::AuctionSignatureInvalid
+        | ErrorCode::FirstPostNoComments => StatusCode::BAD_REQUEST,
     }
 }
 

@@ -10,7 +10,7 @@ import { clearDraft, loadDraft, saveDraft, type Draft } from "../../lib/drafts";
 import type { UserCardView } from "../../lib/display";
 import { topicHref } from "../../lib/links";
 import { usePostCaptcha } from "../captcha/PostCaptcha";
-import type { QuoteTarget } from "../forum/ComposerContext";
+import type { ComposeContext, QuoteTarget } from "../forum/ComposerContext";
 import { usePreview } from "../forum/preview";
 import { QueryProvider } from "../QueryProvider";
 import { EditorField, useForumEditor } from "./Editor";
@@ -25,10 +25,12 @@ export interface ComposerProps {
   /** 提交成功：发主题、回帖给出要跳转的地址，编辑为 null（原地刷新） */
   onDone: (href: string | null) => void;
   onCancel: () => void;
-  /** 引用回复：打开时在开头插入被引用楼层的摘录 */
-  quote?: QuoteTarget | null;
-  /** 打开后把光标放进编辑框（底部编辑器） */
+  /** 从楼层打开：「引用」在开头插入被引用楼层的摘录，「回复」在开头 @ 楼层作者 */
+  context?: ComposeContext | null;
+  /** 打开后把光标放进编辑框（编辑器弹窗） */
   autoFocus?: boolean;
+  /** 有没有写了还没发出去的内容（弹窗据此在关闭前确认） */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 const SUBMIT_LABEL: Record<ComposeTarget["kind"], [idle: string, pending: string]> = {
@@ -67,12 +69,23 @@ function quoteBlock(q: QuoteTarget): JSONContent {
   };
 }
 
-function withQuote(doc: JSONContent | null, q: QuoteTarget): JSONContent {
+/** 打开时的初始内容：草稿（或空）前面加上引用块，或一段「@作者 」。 */
+function withContext(doc: JSONContent | null, c: ComposeContext | null | undefined) {
+  if (!c || (c.kind === "reply" && !c.mention)) return doc;
   const rest = doc?.content ?? [];
-  return {
-    type: "doc",
-    content: [quoteBlock(q), ...(rest.length ? rest : [{ type: "paragraph" }])],
-  };
+  const first: JSONContent =
+    c.kind === "quote"
+      ? quoteBlock(c)
+      : {
+          type: "paragraph",
+          content: [
+            { type: "mention", attrs: { id: String(c.mention?.id), label: c.mention?.label } },
+            { type: "text", text: " " },
+          ],
+        };
+  // @ 作者那一段之后接着写（光标在末尾）；引用块后面留一个空段落
+  const tail = rest.length ? rest : c.kind === "quote" ? [{ type: "paragraph" }] : [];
+  return { type: "doc", content: [first, ...tail] };
 }
 
 /** `captcha`：新用户发主题、回帖时的 Turnstile 令牌（编辑不需要）。 */
@@ -116,8 +129,9 @@ function ComposerForm({
   mentionable,
   onDone,
   onCancel,
-  quote,
+  context,
   autoFocus = false,
+  onDirtyChange,
   initial,
 }: ComposerProps & {
   initial: { title: string; doc: JSONContent | null; savedAt: number | null };
@@ -128,13 +142,15 @@ function ComposerForm({
   const [savedAt, setSavedAt] = useState(initial.savedAt);
   const [localError, setLocalError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** 有一次还没写进本机的自动保存（关闭弹窗时立即补上，不丢最后几个字） */
+  const pendingSave = useRef<(() => void) | null>(null);
   const titleRef = useRef(title);
   const preview = usePreview();
   const postCaptcha = usePostCaptcha();
   const captcha = target.kind === "edit" ? null : postCaptcha;
 
-  // 引用回复：引用块放在初始内容最前面（BottomComposer 换引用时会重新挂载本组件）
-  const [content] = useState(() => (quote ? withQuote(initial.doc, quote) : initial.doc));
+  // 从楼层打开：引用块或 @作者 放在初始内容最前面（弹窗换了楼层会重新挂载本组件）
+  const [content] = useState(() => withContext(initial.doc, context));
   const ed = useForumEditor({
     content,
     placeholder: PLACEHOLDER[target.kind],
@@ -145,16 +161,41 @@ function ComposerForm({
   });
   const editor = ed.editor;
 
+  // 「改过」= 与打开时的内容（草稿、引用块、@作者）不同；草稿本来就存在本机，没改过就不必确认
+  const baseline = useRef<string | null>(null);
+  const dirtyRef = useRef<boolean | null>(null);
+  function reportDirty() {
+    if (!editor) return;
+    const now = JSON.stringify(editor.getJSON());
+    baseline.current ??= now;
+    const dirty = now !== baseline.current || titleRef.current !== initial.title;
+    if (dirty !== dirtyRef.current) {
+      dirtyRef.current = dirty;
+      onDirtyChange?.(dirty);
+    }
+  }
+  useEffect(reportDirty);
+
   function scheduleSave() {
+    reportDirty();
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
+    const save = () => {
+      pendingSave.current = null;
       if (!editor) return;
       const draft: Draft = { doc: editor.getJSON(), savedAt: Date.now() };
       if (withTitle) draft.title = titleRef.current;
       if (saveDraft(key, draft)) setSavedAt(draft.savedAt);
-    }, AUTOSAVE_DELAY_MS);
+    };
+    pendingSave.current = save;
+    timer.current = setTimeout(save, AUTOSAVE_DELAY_MS);
   }
-  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      pendingSave.current?.();
+    },
+    [],
+  );
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -172,6 +213,7 @@ function ComposerForm({
     onSettled: () => captcha?.renew(),
     onSuccess: (href) => {
       clearTimeout(timer.current);
+      pendingSave.current = null;
       clearDraft(key);
       onDone(href);
     },
@@ -187,8 +229,12 @@ function ComposerForm({
 
   function discard() {
     clearTimeout(timer.current);
+    pendingSave.current = null;
     clearDraft(key);
     setSavedAt(null);
+    // 草稿已经放弃：弹窗不必再确认
+    dirtyRef.current = false;
+    onDirtyChange?.(false);
     onCancel();
   }
 
@@ -299,7 +345,7 @@ function NewContent(props: ComposerProps) {
   );
 }
 
-/** 发主题 / 回帖 / 编辑的编辑器（按需加载，见 BottomComposer 与 FloorContent）。 */
+/** 发主题 / 回帖 / 编辑的编辑器（按需加载，见 ComposerDialog 与 FloorContent）。 */
 export default function Composer(props: ComposerProps) {
   const { target } = props;
   return (

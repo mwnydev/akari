@@ -40,7 +40,7 @@ COOKIE_SIGNING_KEY=<后端 COOKIE_SECRET 前 64 个字符> DATABASE_URL=<同后�
 
 ## 拍卖（`auction.spec.ts`）
 
-需要板块种子数据（同下，用允许交易的 `trade` 板块）、forum-worker 在跑（出价推送经主题频道）、`DATABASE_URL`：
+需要板块种子数据（同下，用允许拍卖帖的 `auction` 板块）、forum-worker 在跑（出价推送经主题频道）、`DATABASE_URL`：
 测试直接写库打开拍卖总开关（`site_settings`）、给用户造钱包、把普通主题改成上线中的拍卖，以及模拟结束后的成交证明。
 卖家在钱包签授权、链上验签与付款建单不在这里测（见 forum-api 的 `auction_e2e.rs` 与钱包的 `e2e/auction.spec.ts`）。
 

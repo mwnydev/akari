@@ -98,8 +98,8 @@ export default async function BoardPage({
     );
   }
   const { forum } = data;
-  // 拍卖帖与交易帖同样只能发在允许交易的板块；拍卖总开关关闭（或读不到）时不显示发拍卖帖入口
-  const auctionBoard = forum.allow_trade;
+  // 拍卖帖只能发在拍卖板块（allow_auction）；拍卖总开关关闭（或读不到）时不显示发拍卖帖入口
+  const auctionBoard = forum.allow_auction;
   const canAuction = me !== null && auctionBoard && (await auctionsEnabled());
   const topics = [...data.pinned, ...data.topics];
   const ctx = { user: cardLookup(data.users) };

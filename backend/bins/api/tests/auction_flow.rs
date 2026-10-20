@@ -37,6 +37,7 @@ async fn market(db: &PgPool) -> i32 {
             post_min_level: 1,
             reply_min_level: 1,
             allow_trade: true,
+            allow_auction: true,
             color: None,
         },
     )
@@ -236,6 +237,90 @@ async fn switched_off_by_default(db: PgPool) {
     let r = call(&app, "GET", &format!("/api/v1/auctions/{id}"), None, &[]).await;
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(r.body["state"], "live");
+}
+
+#[sqlx::test(migrator = "forum_db::MIGRATOR")]
+async fn only_auction_boards_take_auctions(db: PgPool) {
+    let Some(app) = build(db.clone()) else { return };
+    let market_id = market(&db).await;
+    // 只允许交易帖的板块不能挂拍
+    forums::create(
+        &db,
+        &NewForum {
+            parent_id: None,
+            slug: "trade",
+            name: "trade",
+            description: "",
+            position: 1,
+            view_min_level: 0,
+            post_min_level: 1,
+            reply_min_level: 1,
+            allow_trade: true,
+            allow_auction: false,
+            color: None,
+        },
+    )
+    .await
+    .unwrap();
+    let s = seller(&app, &db).await;
+    switch(&db, true).await;
+    let r = call(
+        &app,
+        "POST",
+        "/api/v1/forums/trade/auctions",
+        Some(usdt_auction(10 * U, U, 20 * U)),
+        &s.cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    assert_eq!(code(&r), "AUCTION_NOT_ALLOWED");
+    let r = call(&app, "GET", "/api/v1/forums", None, &[]).await;
+    let flags: Vec<(Value, Value)> = r
+        .body
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| (f["slug"].clone(), f["allow_auction"].clone()))
+        .collect();
+    assert_eq!(
+        flags,
+        [
+            (json!("market"), json!(true)),
+            (json!("trade"), json!(false))
+        ]
+    );
+
+    // 草稿建好之后站长关掉了拍卖：签名后也不能上线，不发帖
+    let r = create(&app, &s, usdt_auction(10 * U, U, 20 * U)).await;
+    let id = r.body["id"].as_i64().unwrap();
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/auctions/{id}/start"),
+        None,
+        &s.cookies,
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
+    sqlx::query("UPDATE forums SET allow_auction = false WHERE id = $1")
+        .bind(market_id)
+        .execute(&db)
+        .await
+        .unwrap();
+    let r = call(
+        &app,
+        "POST",
+        &format!("/api/v1/auctions/{id}/finish"),
+        Some(json!({"signature": VALID_AUCTION_SIGNATURE})),
+        &s.cookies,
+    )
+    .await;
+    assert_eq!(code(&r), "AUCTION_NOT_ALLOWED");
+    let topics: i64 = sqlx::query_scalar("SELECT count(*) FROM topics")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(topics, 0);
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]

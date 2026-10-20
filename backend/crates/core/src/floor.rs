@@ -13,6 +13,12 @@ pub const PREVIEW_LIKERS: i64 = 5;
 /// 一条评论最多通知几个被 @ 的人。
 pub const MAX_COMMENT_MENTIONS: usize = 5;
 
+/// 这一楼能不能评论：主楼（1 楼，主题正文）不能评论，只能回复主题（站长反馈）；1 楼以前的评论也不再显示。
+/// 点赞不受影响。
+pub const fn takes_comments(floor: i32) -> bool {
+    floor > 1
+}
+
 /// 楼层下的一条评论。`body` 是纯文本（服务端已去掉控制字符），客户端必须按文本渲染，不能当 HTML。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]

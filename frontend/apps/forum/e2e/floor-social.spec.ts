@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { member } from "./auth";
-import { createTopic } from "./staff-helpers";
+import { createTopic, replyTo } from "./staff-helpers";
 
 /** 打开主题页并等它订阅上主题推送（WebSocket 回 `subscribed` 且带这个 topic_id）。 */
 async function openLive(page: Page, topicId: number) {
@@ -16,6 +16,7 @@ async function openLive(page: Page, topicId: number) {
 }
 
 // 楼层点赞与朋友圈式评论：一人点赞、评论，另一人不刷新就看到（主题页 WebSocket 推送），刷新后数据还在。
+// 主楼（1 楼）只能点赞、不能评论（要说话就回复主题），评论都在 2 楼。
 test("likes and comments on a floor show up live for other readers", async ({
   browser,
   baseURL,
@@ -27,9 +28,13 @@ test("likes and comments on a floor show up live for other readers", async ({
   try {
     const title = `楼中评论 ${info.project.name} ${Date.now()}`;
     const topicId = await createTopic(a.page, base, "general", title);
+    expect(await replyTo(a.page, base, topicId, "<p>楼主补充</p>")).toBe(2);
     await Promise.all([openLive(a.page, topicId), openLive(b.page, topicId)]);
-    const floorA = a.page.locator("#floor-1");
-    const floorB = b.page.locator("#floor-1");
+    const first = b.page.locator("#floor-1");
+    await expect(first.getByRole("button", { name: "赞" })).toBeVisible();
+    await expect(first.getByRole("button", { name: "评论", exact: true })).toHaveCount(0);
+    const floorA = a.page.locator("#floor-2");
+    const floorB = b.page.locator("#floor-2");
 
     // b 点赞：自己立刻变成「已赞」，楼主那边推送更新名单
     await floorB.getByRole("button", { name: "赞" }).click();
@@ -41,7 +46,7 @@ test("likes and comments on a floor show up live for other readers", async ({
 
     // b 评论楼层，a 不刷新就看到
     await floorB.getByRole("button", { name: "评论", exact: true }).click();
-    await floorB.getByRole("textbox", { name: "评论 #1" }).fill("什么时候发货？");
+    await floorB.getByRole("textbox", { name: "评论 #2" }).fill("什么时候发货？");
     await floorB.getByRole("button", { name: "发送" }).click();
     const fromB = floorA.getByTestId("floor-comment").filter({ hasText: "什么时候发货？" });
     await expect(fromB).toContainText(b.username ?? "");

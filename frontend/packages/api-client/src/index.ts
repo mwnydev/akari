@@ -52,6 +52,8 @@ export const ERROR_MESSAGES: Record<ErrorCode, string> = {
   USERNAME_TAKEN: "用户名已被使用",
   USERNAME_CHANGE_TOO_SOON: "用户名 30 天内只能修改一次",
   TRADE_NOT_ALLOWED: "这个板块不能发交易帖",
+  AUCTION_NOT_ALLOWED: "这个板块不能发拍卖帖，请到拍卖区发帖",
+  FIRST_POST_NO_COMMENTS: "主楼不能评论，请直接回复主题",
   UNSUPPORTED_IMAGE: "只支持 JPG、PNG、GIF、WebP、HEIC 图片",
   IMAGE_TOO_LARGE: "图片不能超过 10 MB",
   UPLOADS_UNAVAILABLE: "图片上传暂时不可用，请稍后再试",

@@ -38,6 +38,7 @@ async fn forum(db: &PgPool, slug: &str) -> i32 {
             post_min_level: 1,
             reply_min_level: 1,
             allow_trade: true,
+            allow_auction: false,
             color: None,
         },
     )
@@ -64,6 +65,12 @@ async fn topic(app: &Router, cookies: &[String], slug: &str) -> (i64, i64) {
         r.body["topic_id"].as_i64().unwrap(),
         r.body["post_id"].as_i64().unwrap(),
     )
+}
+
+/// 发主题并由楼主自己回一楼，返回 `(主题 ID, 2 楼 ID)`：主楼（1 楼）不能评论，评论都落在 2 楼。
+async fn discussion(app: &Router, cookies: &[String], slug: &str) -> (i64, i64) {
+    let (t, _) = topic(app, cookies, slug).await;
+    (t, reply(app, cookies, t).await)
 }
 
 /// 回帖，返回楼层 ID。
@@ -224,7 +231,7 @@ async fn comments_notify_page_and_sanitise(db: PgPool) {
     let (bob, b) = member(&app, &db).await;
     let (carol, c) = member(&app, &db).await;
     set_username(&db, carol, "carol_c").await;
-    let (t, p1) = topic(&app, &a, "general").await;
+    let (t, p1) = discussion(&app, &a, "general").await;
 
     // 纯文本：控制字符换成空格，HTML 原样当文字保存；@ 已存在的用户名会通知
     let r = comment(
@@ -282,6 +289,40 @@ async fn comments_notify_page_and_sanitise(db: PgPool) {
         (Some(carol), Some(c1))
     );
 
+    // 主楼（1 楼）不能评论，只能回复主题；以前留下的评论不再显示（计数为 0、翻页为空），点赞照常
+    let first = page(&app, &[], t).await["posts"][0]["id"].as_i64().unwrap();
+    let r = comment(&app, &b, first, json!({"body": "沙发"})).await;
+    assert_eq!(
+        (r.status, r.body["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("FIRST_POST_NO_COMMENTS"))
+    );
+    sqlx::query("INSERT INTO floor_comments (post_id, author_id, body) VALUES ($1, $2, '旧评论')")
+        .bind(first)
+        .bind(bob)
+        .execute(&db)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO post_counters (post_id, comments) VALUES ($1, 1)")
+        .bind(first)
+        .execute(&db)
+        .await
+        .unwrap();
+    assert_eq!(like(&app, &b, first, "PUT").await.status, StatusCode::OK);
+    let s = page(&app, &[], t).await["social"][0].clone();
+    assert_eq!(
+        (&s["likes"], &s["comment_count"], &s["comments"]),
+        (&json!(1), &json!(0), &json!([]))
+    );
+    let r = call(
+        &app,
+        "GET",
+        &format!("/api/v1/posts/{first}/comments"),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(r.body["comments"], json!([]), "{:?}", r.body);
+
     // 回复的评论必须在同一楼
     let p2 = reply(&app, &b, t).await;
     let r = comment(&app, &c, p2, json!({"body": "x", "reply_to": c1})).await;
@@ -293,7 +334,7 @@ async fn comments_notify_page_and_sanitise(db: PgPool) {
         assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
     }
     let body = page(&app, &[], t).await;
-    let s = &body["social"][0];
+    let s = &body["social"][1];
     assert_eq!(s["comment_count"], 8);
     let shown = s["comments"].as_array().unwrap();
     assert_eq!(shown.len(), 5);
@@ -322,8 +363,8 @@ async fn comments_notify_page_and_sanitise(db: PgPool) {
     let r = call(&app, "DELETE", &format!("/api/v1/comments/{c1}"), None, &b).await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
     let body = page(&app, &[], t).await;
-    assert_eq!(body["social"][0]["comment_count"], 7);
-    assert_ne!(body["social"][0]["comments"][0]["id"], c1);
+    assert_eq!(body["social"][1]["comment_count"], 7);
+    assert_ne!(body["social"][1]["comments"][0]["id"], c1);
     let audits: i64 = sqlx::query_scalar("SELECT count(*) FROM admin_audit_logs")
         .fetch_one(&db)
         .await
@@ -350,7 +391,7 @@ async fn comment_permissions_sanctions_and_moderation(db: PgPool) {
     staff::grant(&db, other_mod, staff::ROLE_MODERATOR, Some(other), None)
         .await
         .unwrap();
-    let (t, p1) = topic(&app, &a, "general").await;
+    let (t, p1) = discussion(&app, &a, "general").await;
     let c1 = comment(&app, &b, p1, json!({"body": "广告"})).await.body["comment"]["id"]
         .as_i64()
         .unwrap();
@@ -390,7 +431,7 @@ async fn comment_permissions_sanctions_and_moderation(db: PgPool) {
         (action.as_str(), target.as_str(), reason.as_str()),
         ("comment.delete", &*format!("comment:{c1}"), "广告")
     );
-    assert_eq!(page(&app, &[], t).await["social"][0]["comment_count"], 0);
+    assert_eq!(page(&app, &[], t).await["social"][1]["comment_count"], 0);
 
     // 恢复（管理操作）后又看得到；审计日志一键撤销把恢复再撤掉
     let r = call(
@@ -402,7 +443,7 @@ async fn comment_permissions_sanctions_and_moderation(db: PgPool) {
     )
     .await;
     assert_eq!(r.status, StatusCode::NO_CONTENT, "{:?}", r.body);
-    assert_eq!(page(&app, &[], t).await["social"][0]["comment_count"], 1);
+    assert_eq!(page(&app, &[], t).await["social"][1]["comment_count"], 1);
     let restore = forum_db::audit::list(&db, Some(mod_id), None, 1)
         .await
         .unwrap()
@@ -417,7 +458,7 @@ async fn comment_permissions_sanctions_and_moderation(db: PgPool) {
     // 撤销接口提交后执行的缓存维护（游客缓存里的主题页带着评论）
     effects.apply(&state).await;
     assert_eq!(status, RevertStatus::Reverted);
-    assert_eq!(page(&app, &[], t).await["social"][0]["comment_count"], 0);
+    assert_eq!(page(&app, &[], t).await["social"][1]["comment_count"], 0);
 
     // 被禁言（本板块）或封号不能评论
     sanction(&db, forum_db::sanctions::KIND_MUTE, bob, mod_id).await;
@@ -495,7 +536,7 @@ async fn comment_permissions_sanctions_and_moderation(db: PgPool) {
         StatusCode::OK
     );
     let body = page(&app, &d, t).await;
-    assert_eq!(body["social"][0]["comments"], json!([]));
+    assert_eq!(body["social"][1]["comments"], json!([]));
 }
 
 #[sqlx::test(migrator = "forum_db::MIGRATOR")]
@@ -503,7 +544,7 @@ async fn new_users_share_the_posting_limit(db: PgPool) {
     let Some(app) = build(db.clone()) else { return };
     forum(&db, "general").await;
     let (_, a) = member(&app, &db).await;
-    let (_, p1) = topic(&app, &a, "general").await;
+    let (_, p1) = discussion(&app, &a, "general").await;
     let (_, fresh) = user(&app, &db).await;
     for i in 0..5 {
         let r = comment(&app, &fresh, p1, json!({"body": format!("{i}")})).await;
@@ -519,7 +560,7 @@ async fn reports_are_recorded_once(db: PgPool) {
     let general = forum(&db, "general").await;
     let (alice, a) = member(&app, &db).await;
     let (bob, b) = member(&app, &db).await;
-    let (_, p1) = topic(&app, &a, "general").await;
+    let (_, p1) = discussion(&app, &a, "general").await;
     let c1 = comment(&app, &a, p1, json!({"body": "x"})).await.body["comment"]["id"]
         .as_i64()
         .unwrap();
@@ -769,7 +810,7 @@ async fn topic_page_updates_live(db: PgPool) {
     forum(&db, "general").await;
     let (_, a) = member(&app, &db).await;
     let (bob, b) = member(&app, &db).await;
-    let (t, p1) = topic(&app, &a, "general").await;
+    let (t, p1) = discussion(&app, &a, "general").await;
 
     let mut wa = ws(addr, &a).await;
     expect(&mut wa, "ready").await;
@@ -812,7 +853,7 @@ async fn topic_page_updates_live(db: PgPool) {
 
     // 主题被隐藏后：管理人员也不能再评论；管理人员取消赞照常但不推送
     // （之后在另一个主题里的评论先到、中间没有点赞推送，说明那条没有推）
-    let (t2, p2) = topic(&app, &a, "general").await;
+    let (t2, p2) = discussion(&app, &a, "general").await;
     send(&mut wa, json!({"type": "subscribe", "topic_id": t2})).await;
     expect(&mut wa, "subscribed").await;
     let (admin_id, m) = member(&app, &db).await;

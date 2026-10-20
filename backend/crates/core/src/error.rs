@@ -70,6 +70,10 @@ pub enum ErrorCode {
     UsernameChangeTooSoon,
     #[error("board does not allow trade listings")]
     TradeNotAllowed,
+    #[error("board does not allow auctions")]
+    AuctionNotAllowed,
+    #[error("the first post does not take comments")]
+    FirstPostNoComments,
     #[error("unsupported image")]
     UnsupportedImage,
     #[error("image too large")]
@@ -205,6 +209,8 @@ impl ErrorCode {
             Self::UsernameTaken => "用户名已被使用",
             Self::UsernameChangeTooSoon => "用户名 30 天内只能修改一次",
             Self::TradeNotAllowed => "这个板块不能发交易帖",
+            Self::AuctionNotAllowed => "这个板块不能发拍卖帖，请到拍卖区发帖",
+            Self::FirstPostNoComments => "主楼不能评论，请直接回复主题",
             Self::UnsupportedImage => "只支持 JPG、PNG、GIF、WebP、HEIC 图片",
             Self::ImageTooLarge => "图片不能超过 10 MB",
             Self::UploadsUnavailable => "图片上传暂时不可用，请稍后再试",

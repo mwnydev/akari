@@ -1168,7 +1168,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** 挂拍第一步：校验条件并保存草稿（还不发帖）。需要已开通交易、没被封号或禁拍，板块允许交易帖。 */
+    /** 挂拍第一步：校验条件并保存草稿（还不发帖）。需要已开通交易、没被封号或禁拍，板块允许拍卖帖（`allow_auction`）。 */
     post: operations["create_auction"];
     delete?: never;
     options?: never;
@@ -1715,7 +1715,8 @@ export interface paths {
     get: operations["post_comments"];
     put?: never;
     /**
-     * 评论楼层。门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户人机验证与限频、评论限频。
+     * 评论楼层。主楼（1 楼）不能评论（`FIRST_POST_NO_COMMENTS`，请回复主题）。
+     *     门槛与回帖相同：回复等级、锁帖（管理人员除外）、禁言 / 封号、新用户人机验证与限频、评论限频。
      *     通知楼主、被回复的人与被 @ 的人，并推给打开着这个主题页的连接。
      */
     post: operations["create_comment"];
@@ -3207,6 +3208,8 @@ export interface components {
       | "USERNAME_TAKEN"
       | "USERNAME_CHANGE_TOO_SOON"
       | "TRADE_NOT_ALLOWED"
+      | "AUCTION_NOT_ALLOWED"
+      | "FIRST_POST_NO_COMMENTS"
       | "UNSUPPORTED_IMAGE"
       | "IMAGE_TOO_LARGE"
       | "UPLOADS_UNAVAILABLE"
@@ -3309,6 +3312,8 @@ export interface components {
       open: number;
     };
     ForumUpdateRequest: {
+      /** @description 能否发拍卖帖（拍卖区）；修改需要 5 分钟内再验证过。 */
+      allow_auction?: boolean | null;
       /** @description 能否发交易帖；修改需要 5 分钟内再验证过。 */
       allow_trade?: boolean | null;
       /** @description 色板里的 `#rrggbb`；`null` 清除（前端按排序位置轮换）；不传不改。 */
@@ -3324,6 +3329,8 @@ export interface components {
       position?: number | null;
     };
     ForumView: {
+      /** @description 能否发拍卖帖（拍卖区）。 */
+      allow_auction: boolean;
       /** @description 能否发交易帖。 */
       allow_trade: boolean;
       /** @description 板块色块：固定色板里的 `#rrggbb`；为空时前端按排序位置轮换。 */

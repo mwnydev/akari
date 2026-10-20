@@ -32,6 +32,7 @@ const forum: Schemas["ForumView"] = {
   post_min_level: 1,
   reply_min_level: 1,
   allow_trade: true,
+  allow_auction: false,
 };
 
 const traded = { ...NO_REPUTATION, success: 12, success_rate_bps: 9900 };

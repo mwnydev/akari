@@ -67,6 +67,16 @@ export async function createTopic(page: Page, baseURL: string, slug: string, tit
   return ((await res.json()) as { topic_id: number }).topic_id;
 }
 
+/** 经 API 回帖（`html` 原样提交，后端过滤），返回楼层号。 */
+export async function replyTo(page: Page, baseURL: string, topicId: number, html: string) {
+  const res = await page.request.post(`/api/v1/topics/${topicId}/posts`, {
+    headers: { origin: new URL(baseURL).origin },
+    data: { html, source: { type: "doc" } },
+  });
+  expect(res.status(), await res.text()).toBe(201);
+  return ((await res.json()) as { floor: number }).floor;
+}
+
 const CHAIN_ID = 421_614;
 
 /**

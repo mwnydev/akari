@@ -1,9 +1,9 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { PostCaptchaProvider } from "../captcha/PostCaptcha";
 
-/** 「引用回复」：被引用的楼层，正文摘录插进编辑器开头的引用块。 */
+/** 「引用」：被引用的楼层，正文摘录插进编辑器开头的引用块。 */
 export interface QuoteTarget {
   floor: number;
   author: string;
@@ -12,18 +12,29 @@ export interface QuoteTarget {
   text: string;
 }
 
+/**
+ * 编辑器从哪里打开（弹窗标题「回复 #2 张三」「引用 #2 张三」）：
+ * - `reply`：楼层上的「回复」，`mention` 不为空时编辑器开头先 @ 这层楼的作者（对方会收到提及通知）；
+ * - `quote`：楼层上的「引用」，开头插入引用块。
+ */
+export type ComposeContext =
+  | { kind: "reply"; floor: number; author: string; mention: { id: number; label: string } | null }
+  | ({ kind: "quote" } & QuoteTarget);
+
 interface ComposerApi {
   open: boolean;
-  quote: QuoteTarget | null;
-  /** 打开底部编辑器；传楼层即「引用回复」 */
-  openComposer: (quote?: QuoteTarget) => void;
+  context: ComposeContext | null;
+  /** 打开编辑器弹窗；不传 = 回复本帖 / 发新帖 */
+  openComposer: (context?: ComposeContext) => void;
   closeComposer: () => void;
+  /** 关闭后把焦点还给打开它的按钮 */
+  restoreFocus: () => void;
 }
 
 const Ctx = createContext<ComposerApi | null>(null);
 
 /**
- * 页面共享的底部编辑器状态：楼层里的「引用回复」、列表顶部的「发新帖」都打开同一个底部编辑器。
+ * 页面共享的编辑器状态：楼层里的「回复」「引用」、回复栏、列表顶部的「发新帖」都打开同一个居中弹窗。
  * `captcha`：访问者发帖要先过人机验证（needsPostCaptcha），编辑器与楼层评论框据此显示 Turnstile。
  */
 export function ComposerProvider({
@@ -34,18 +45,27 @@ export function ComposerProvider({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const [quote, setQuote] = useState<QuoteTarget | null>(null);
+  const [context, setContext] = useState<ComposeContext | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
   const api = useMemo<ComposerApi>(
     () => ({
       open,
-      quote,
-      openComposer: (q) => {
-        setQuote(q ?? null);
+      context,
+      openComposer: (c) => {
+        if (!open) {
+          opener.current =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        }
+        setContext(c ?? null);
         setOpen(true);
       },
       closeComposer: () => setOpen(false),
+      restoreFocus: () => {
+        if (opener.current?.isConnected) opener.current.focus();
+        opener.current = null;
+      },
     }),
-    [open, quote],
+    [open, context],
   );
   return (
     <Ctx.Provider value={api}>

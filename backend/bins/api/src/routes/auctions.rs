@@ -430,7 +430,7 @@ struct Draft {
     mentions: Vec<i64>,
 }
 
-/// 挂拍第一步：校验条件并保存草稿（还不发帖）。需要已开通交易、没被封号或禁拍，板块允许交易帖。
+/// 挂拍第一步：校验条件并保存草稿（还不发帖）。需要已开通交易、没被封号或禁拍，板块允许拍卖帖（`allow_auction`）。
 #[utoipa::path(
     post, path = "/api/v1/forums/{slug}/auctions", tag = "auction",
     params(("slug" = String, Path)),
@@ -754,8 +754,9 @@ pub async fn finish_auction(
     let forum = forum_db::forums::by_id(&state.db, a.forum_id)
         .await?
         .ok_or(ApiError(ErrorCode::NotFound))?;
-    if !forum.allow_trade {
-        return Err(ApiError(ErrorCode::TradeNotAllowed));
+    // 建草稿之后站长可能关掉了这个板块的拍卖
+    if !forum.allow_auction {
+        return Err(ApiError(ErrorCode::AuctionNotAllowed));
     }
     let mut tx = state.db.begin().await?;
     let created = topics::create(

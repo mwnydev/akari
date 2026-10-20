@@ -1,5 +1,5 @@
-//! 站长后台的板块管理（ADR 0013）：改名称、简介、色块、排序与能否发交易帖。只有站长（后台会话），
-//! 改「能否发交易帖」涉及钱，另需 5 分钟内用后台 Passkey 再验证；每次修改写审计日志并推送管理员群。
+//! 站长后台的板块管理（ADR 0013）：改名称、简介、色块、排序与能否发交易帖、拍卖帖。只有站长（后台会话），
+//! 改「能否发交易帖 / 拍卖帖」涉及钱，另需 5 分钟内用后台 Passkey 再验证；每次修改写审计日志并推送管理员群。
 //! 板块列表用 `GET /api/v1/admin/forums`（`routes::admin::admin_forums`）。
 
 use axum::Json;
@@ -43,6 +43,8 @@ pub struct ForumUpdateRequest {
     pub position: Option<i32>,
     /// 能否发交易帖；修改需要 5 分钟内再验证过。
     pub allow_trade: Option<bool>,
+    /// 能否发拍卖帖（拍卖区）；修改需要 5 分钟内再验证过。
+    pub allow_auction: Option<bool>,
 }
 
 fn trimmed(raw: &str, min: usize, max: usize) -> ApiResult<&str> {
@@ -82,12 +84,14 @@ fn patch(req: &ForumUpdateRequest) -> ApiResult<ForumPatch<'_>> {
         color,
         position: req.position,
         allow_trade: req.allow_trade,
+        allow_auction: req.allow_auction,
     };
     if p.name.is_none()
         && p.description.is_none()
         && p.color.is_none()
         && p.position.is_none()
         && p.allow_trade.is_none()
+        && p.allow_auction.is_none()
     {
         return Err(ApiError(ErrorCode::InvalidParameter));
     }
@@ -116,6 +120,11 @@ fn changes(old: &Forum, new: &Forum) -> (Value, Value) {
         json!(old.allow_trade),
         json!(new.allow_trade),
     );
+    diff(
+        "allow_auction",
+        json!(old.allow_auction),
+        json!(new.allow_auction),
+    );
     (Value::Object(before), Value::Object(after))
 }
 
@@ -142,7 +151,9 @@ pub async fn admin_update_forum(
     let old = forums::by_id(&mut *tx, id)
         .await?
         .ok_or(ApiError(ErrorCode::NotFound))?;
-    if p.allow_trade.is_some_and(|t| t != old.allow_trade) {
+    if p.allow_trade.is_some_and(|t| t != old.allow_trade)
+        || p.allow_auction.is_some_and(|a| a != old.allow_auction)
+    {
         admin.require_recent()?;
     }
     let new = forums::update(&mut *tx, id, &p)
@@ -206,5 +217,11 @@ mod tests {
         assert!(patch(&req(json!({ "position": -1 }))).is_err());
         assert!(patch(&req(json!({ "position": 10_000 }))).is_err());
         assert!(serde_json::from_value::<ForumUpdateRequest>(json!({ "slug": "x" })).is_err());
+        assert_eq!(
+            patch(&req(json!({ "allow_auction": true })))
+                .unwrap()
+                .allow_auction,
+            Some(true)
+        );
     }
 }

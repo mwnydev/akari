@@ -4,7 +4,7 @@
 #
 #   deploy/staging/release.sh build <sslip 基础名>      如 203-0-113-7.sslip.io；产物在 .run/staging/
 #   deploy/staging/release.sh install <服务器 IP>       上传最新产物并 sudo install-release install --unattested
-#   deploy/staging/release.sh seed <服务器 IP>          板块（seeds/dev.sql）、打开拍卖；OWNER_EMAIL_FILE 里的邮箱已注册时授予站长（role 1）
+#   deploy/staging/release.sh seed <服务器 IP>          板块（seeds/dev.sql，含拍卖区）、打开拍卖；OWNER_EMAIL_FILE 里的邮箱已注册时授予站长（role 1）
 #   deploy/staging/release.sh migrate <服务器 IP>       跑数据库迁移（本机 sqlx-cli 传到服务器，以 postgres 连接、
 #                                                     SET ROLE akari_owner，表归属主所有；之后重跑 play 套用授权）
 #

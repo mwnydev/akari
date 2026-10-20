@@ -24,7 +24,8 @@ export function ForumShell({
       {header}
       <div className="mx-auto max-w-[90rem] px-3 sm:px-4 lg:grid lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-8">
         <aside className="hidden lg:block">
-          <div className="sticky top-14 max-h-[calc(100dvh-3.5rem)] overflow-y-auto py-5">
+          {/* 只有板块多到超出视口时才滚动，细滚动条；滚到头不带动页面 */}
+          <div className="sticky top-14 max-h-[calc(100dvh-3.5rem)] overflow-y-auto overscroll-contain py-5 [scrollbar-width:thin]">
             {nav}
           </div>
         </aside>

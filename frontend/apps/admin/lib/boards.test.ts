@@ -13,6 +13,7 @@ const board: Board = {
   post_min_level: 1,
   reply_min_level: 1,
   allow_trade: true,
+  allow_auction: false,
   color: "#2e9d5c",
 };
 
@@ -21,14 +22,21 @@ describe("boardPatch", () => {
     expect(boardPatch(board, boardValues(board))).toBeNull();
     expect(boardPatch(board, { ...boardValues(board), name: " 交易 ", position: 1 })).toEqual({
       body: { name: "交易", position: 1 },
-      tradeChanged: false,
+      moneyChanged: false,
+    });
+  });
+
+  it("flags auction changes for re-verification", () => {
+    expect(boardPatch(board, { ...boardValues(board), allowAuction: true })).toEqual({
+      body: { allow_auction: true },
+      moneyChanged: true,
     });
   });
 
   it("clears the colour with null and flags trade changes for re-verification", () => {
     expect(boardPatch(board, { ...boardValues(board), color: "", allowTrade: false })).toEqual({
       body: { color: null, allow_trade: false },
-      tradeChanged: true,
+      moneyChanged: true,
     });
   });
 });

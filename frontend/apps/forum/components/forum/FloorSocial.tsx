@@ -97,11 +97,14 @@ export function useFloorSocial({
   postId,
   initial,
   viewer,
+  comments = true,
 }: {
   topicId: number;
   postId: number;
   initial: PostSocial;
   viewer: SocialPerson | null;
+  /** 主楼为假：只收点赞推送 */
+  comments?: boolean;
 }) {
   const preview = usePreview();
   const [state, dispatch] = useReducer(socialReducer, initial, initialSocial);
@@ -116,11 +119,11 @@ export function useFloorSocial({
     if (preview || viewerId === undefined) return;
     return watchTopicSocial(topicId, (e) => {
       const post = e.type === "comment" ? e.comment.post_id : e.post_id;
-      if (post !== postId) return;
+      if (post !== postId || (!comments && e.type !== "likes")) return;
       const self = e.type === "likes" && e.user_id === viewerId;
       void socialEvent(e, people).then((event) => dispatch({ type: "event", event, self }));
     });
-  }, [preview, topicId, postId, viewerId, people]);
+  }, [preview, topicId, postId, viewerId, people, comments]);
 
   const toggleLike = () => {
     if (!viewer) return;

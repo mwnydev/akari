@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { PayButton } from "../../components/PayButton";
 import { WalletNav } from "../../components/WalletNav";
 import { checkoutCost, listing, wallet } from "../../lib/mock";
+import { NETWORK_LABEL } from "../../lib/wallet/config";
 
 export const metadata: Metadata = { title: "确认下单" };
 
@@ -75,7 +76,7 @@ export default function Checkout() {
             <span className="whitespace-nowrap text-fg-muted">钱包余额</span>
             <span className="flex flex-wrap items-center justify-end gap-2">
               <Amount value={wallet.balance} />
-              <NetworkBadge />
+              <NetworkBadge label={NETWORK_LABEL} />
             </span>
           </div>
           {enough ? (

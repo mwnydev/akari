@@ -5,7 +5,7 @@ import { db, member, type Member } from "./auth";
 // 发起拍卖到钱包签名的交接。拍卖上线要卖家在钱包签授权并经链上验签（forum-api 的 auction_e2e.rs 与钱包的端到端测试
 // 覆盖），这里先经 API 发普通主题，再直接在库里把它变成上线中的拍卖；钱包也直接写库（与 trade-page.spec 同一思路）。
 
-const BOARD = "trade";
+const BOARD = "auction";
 const HOUR = 3_600_000;
 const DAY = 86_400;
 

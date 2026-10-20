@@ -27,7 +27,7 @@ GRANT SELECT, INSERT ON withdraw_addresses TO forum_api;
 GRANT UPDATE (revoked_at) ON withdraw_addresses TO forum_api;
 GRANT SELECT, UPDATE ON arbitration_cases, arbitration_assignments TO forum_api;
 GRANT SELECT ON forums TO forum_api;
-GRANT UPDATE (name, description, color, position, allow_trade) ON forums TO forum_api;
+GRANT UPDATE (name, description, color, position, allow_trade, allow_auction) ON forums TO forum_api;
 GRANT SELECT ON chains, escrow_orders, order_negotiations, notifications, level_thresholds, user_trade_stats,
   sponsorships, withdraw_credits, hot_topics, auction_proofs, auction_defaults TO forum_api;
 GRANT INSERT ON outbox TO forum_api;

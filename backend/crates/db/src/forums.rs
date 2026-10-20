@@ -16,6 +16,8 @@ pub struct Forum {
     pub reply_min_level: i16,
     /// 能否发交易帖。
     pub allow_trade: bool,
+    /// 能否发拍卖帖（拍卖区）。
+    pub allow_auction: bool,
     /// 色块（固定色板里的 `#rrggbb`，迁移里有 CHECK）；为空时前端按位置轮换。
     pub color: Option<String>,
 }
@@ -35,6 +37,7 @@ pub struct ForumPatch<'a> {
     pub color: Option<Option<&'a str>>,
     pub position: Option<i32>,
     pub allow_trade: Option<bool>,
+    pub allow_auction: Option<bool>,
 }
 
 /// 后台创建板块用的参数。
@@ -49,6 +52,7 @@ pub struct NewForum<'a> {
     pub post_min_level: i16,
     pub reply_min_level: i16,
     pub allow_trade: bool,
+    pub allow_auction: bool,
     pub color: Option<&'a str>,
 }
 
@@ -56,7 +60,7 @@ pub async fn list_all(db: impl PgExecutor<'_>) -> Result<Vec<Forum>, sqlx::Error
     sqlx::query_as!(
         Forum,
         "SELECT id, parent_id, slug, name, description, position,
-                view_min_level, post_min_level, reply_min_level, allow_trade, color
+                view_min_level, post_min_level, reply_min_level, allow_trade, allow_auction, color
          FROM forums
          ORDER BY parent_id NULLS FIRST, position, id"
     )
@@ -68,7 +72,7 @@ pub async fn by_slug(db: impl PgExecutor<'_>, slug: &str) -> Result<Option<Forum
     sqlx::query_as!(
         Forum,
         "SELECT id, parent_id, slug, name, description, position,
-                view_min_level, post_min_level, reply_min_level, allow_trade, color
+                view_min_level, post_min_level, reply_min_level, allow_trade, allow_auction, color
          FROM forums WHERE slug = $1",
         slug
     )
@@ -80,7 +84,7 @@ pub async fn by_id(db: impl PgExecutor<'_>, id: i32) -> Result<Option<Forum>, sq
     sqlx::query_as!(
         Forum,
         "SELECT id, parent_id, slug, name, description, position,
-                view_min_level, post_min_level, reply_min_level, allow_trade, color
+                view_min_level, post_min_level, reply_min_level, allow_trade, allow_auction, color
          FROM forums WHERE id = $1",
         id
     )
@@ -92,8 +96,9 @@ pub async fn by_id(db: impl PgExecutor<'_>, id: i32) -> Result<Option<Forum>, sq
 pub async fn create(db: impl PgExecutor<'_>, f: &NewForum<'_>) -> Result<i32, sqlx::Error> {
     let row = sqlx::query!(
         "INSERT INTO forums (parent_id, slug, name, description, position,
-                             view_min_level, post_min_level, reply_min_level, allow_trade, color)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
+                             view_min_level, post_min_level, reply_min_level, allow_trade,
+                             allow_auction, color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id",
         f.parent_id,
         f.slug,
         f.name,
@@ -103,6 +108,7 @@ pub async fn create(db: impl PgExecutor<'_>, f: &NewForum<'_>) -> Result<i32, sq
         f.post_min_level,
         f.reply_min_level,
         f.allow_trade,
+        f.allow_auction,
         f.color
     )
     .fetch_one(db)
@@ -120,17 +126,18 @@ pub async fn update(
         Forum,
         "UPDATE forums SET name = coalesce($2, name), description = coalesce($3, description),
                 color = CASE WHEN $4 THEN $5 ELSE color END, position = coalesce($6, position),
-                allow_trade = coalesce($7, allow_trade)
+                allow_trade = coalesce($7, allow_trade), allow_auction = coalesce($8, allow_auction)
          WHERE id = $1
          RETURNING id, parent_id, slug, name, description, position,
-                   view_min_level, post_min_level, reply_min_level, allow_trade, color",
+                   view_min_level, post_min_level, reply_min_level, allow_trade, allow_auction, color",
         id,
         p.name,
         p.description,
         p.color.is_some(),
         p.color.flatten(),
         p.position,
-        p.allow_trade
+        p.allow_trade,
+        p.allow_auction
     )
     .fetch_optional(db)
     .await

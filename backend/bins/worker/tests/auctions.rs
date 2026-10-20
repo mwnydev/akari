@@ -97,7 +97,7 @@ async fn people(db: &PgPool) {
         INSERT INTO wallets (user_id, chain_id, address, passkey_id)
           SELECT u.id, 31337, decode(lpad(to_hex(160 + u.id), 40, '0'), 'hex'), p.id
           FROM users u JOIN passkeys p ON p.user_id = u.id;
-        INSERT INTO forums (slug, name, allow_trade) VALUES ('market', 'market', true);
+        INSERT INTO forums (slug, name, allow_trade, allow_auction) VALUES ('market', 'market', true, true);
         ",
     )
     .await;
