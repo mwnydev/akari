@@ -5,7 +5,12 @@ all-features = true
 version = 2
 yanked = "deny"
 # paste：只是个编译期宏（alloy-primitives 的依赖），作者归档不再维护，没有已知漏洞；等 alloy 换掉后删除。
-ignore = [{ id = "RUSTSEC-2024-0436", reason = "proc-macro only, via alloy-primitives; no vulnerability" }]
+# webpki-roots 0.26.11：只是转发到 1.x 的空壳（tokio-tungstenite 经 alloy-transport-ws 引入），根证书数据来自已修复的 1.0.10；
+# 公告按版本号匹配到了它。tokio-tungstenite 改依赖 1.x 后删除。
+ignore = [
+  { id = "RUSTSEC-2024-0436", reason = "proc-macro only, via alloy-primitives; no vulnerability" },
+  { id = "RUSTSEC-2026-0381", reason = "only matched webpki-roots 0.26.11, a shim re-exporting 1.x locked at the fixed 1.0.10" },
+]
 
 [licenses]
 version = 2

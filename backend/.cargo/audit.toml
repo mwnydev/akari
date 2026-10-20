@@ -1,0 +1,3 @@
+# 与 deny.toml 的 [advisories] ignore 保持一致，理由见那里。
+[advisories]
+ignore = ["RUSTSEC-2024-0436", "RUSTSEC-2026-0381"]
